@@ -69,6 +69,7 @@ func main() {
 	go open(generateURL(*port, *secure))
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
+	// TODO Add Cmd From Web Client ...
 	// Waiting for SIGINT (kill -2)
 	<-stop
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

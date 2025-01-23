@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"syscall"
 
 	"github.com/rs/cors"
 )
@@ -89,6 +90,9 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 	*/
 	m.HandleFunc("/cmd/fetchUrl", FetchURLHandleFunc)
 	m.HandleFunc("/cmd/uploadFile", CreateUploadFileHandleFunc(root))
+	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
+		syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+	})
 	m.Handle("/f/", http.StripPrefix("/f", mux0))
 	m.Handle("/ls/", http.StripPrefix("/ls", mux1))
 	m.Handle("/w/", http.StripPrefix("/w", mux2))
