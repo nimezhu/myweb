@@ -34,6 +34,10 @@
                     {
                         stopBtn.remove()
                         $("stopped").style.display = null
+                    }).catch((e)=>{
+                        console.log(e)
+                        stopBtn.remove()
+                        $("stopped").style.display = null
                     })
             }
         })()

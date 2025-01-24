@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"os"
+	// "runtime"
 	"strconv"
 	"syscall"
 
@@ -16,6 +18,26 @@ var VERSION = "0.0.1"
 
 type IServer interface {
 	Shutdown(ctx context.Context) error
+}
+
+func killProcess(pid int) error {
+	/*
+		if runtime.GOOS == "windows" {
+			p, err := os.FindProcess(pid)
+			if err != nil {
+				return err
+			}
+			return p.Signal(syscall.SIGTERM)
+		} else {
+			return syscall.Kill(pid, syscall.SIGTERM)
+		}
+	*/
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return err
+	}
+	return p.Signal(syscall.SIGTERM)
+
 }
 
 //go:embed all:ctrl
@@ -29,7 +51,49 @@ func getFS() http.FileSystem {
 	return http.FS(fsys)
 }
 
-func StartServer(root string, webFS http.FileSystem, port int, secure bool, global bool, readOnly bool) IServer {
+// core := make(map[string]interface{})
+// TODO Settings Include CORS ...
+// service interface
+// name string
+// handle ...
+// core settings ...
+// core services ...
+// TODO Using Core ...
+func addServiceWrite(root string, m *http.ServeMux) {
+	mux2 := http.NewServeMux()
+	mux2.HandleFunc("/", CreateWriteHandleFunc(root))
+	mux3 := http.NewServeMux()
+	mux3.HandleFunc("/", CreateRemoveHandleFunc(root))
+	m.Handle("/w/", http.StripPrefix("/w", mux2))
+	m.Handle("/rm/", http.StripPrefix("/rm", mux3))
+	m.HandleFunc("/cmd/uploadFile", CreateUploadFileHandleFunc(root))
+}
+
+func addServiceFile(root string, m *http.ServeMux) {
+	mux0 := http.NewServeMux()
+	mux0.Handle("/", http.FileServer(http.Dir(root)))
+
+	mux1 := http.NewServeMux()
+	mux1.HandleFunc("/", CreateLsHandleFunc(root))
+	m.Handle("/f/", http.StripPrefix("/f", mux0))
+	m.Handle("/ls/", http.StripPrefix("/ls", mux1))
+}
+
+/* last added */
+func addServiceWeb(webFS http.FileSystem, m *http.ServeMux) {
+	webmux := http.NewServeMux()
+	webmux.Handle("/", http.FileServer(webFS))
+	m.Handle("/", webmux)
+}
+
+// func StartServer(root string, webFS http.FileSystem, port int, secure bool, global bool, readOnly bool) IServer {
+func StartServer(core map[string]interface{}) IServer {
+	root, _ := core["root"].(string)
+	webFS, _ := core["webfs"].(http.FileSystem)
+	port, _ := core["port"].(int)
+	secure, _ := core["secure"].(bool)
+	global, _ := core["global"].(bool)
+	readOnly, _ := core["readOnly"].(bool)
 	CORS := []string{
 		"https://codepen.io",
 		"https://cdpn.io",
@@ -52,30 +116,20 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization"},
 	}
+	// TODO Add Simpler Version ?
+	// TODO Setting In Core ...
 
-	//TODO Add Simpler Version ?
-	mux0 := http.NewServeMux()
-	mux0.Handle("/", http.FileServer(http.Dir(root)))
-
-	mux1 := http.NewServeMux()
-	mux1.HandleFunc("/", CreateLsHandleFunc(root))
 	m := http.NewServeMux()
-
+	core["mux"] = m
+	addServiceFile(root, m)
 	if !readOnly {
-		mux2 := http.NewServeMux()
-		mux2.HandleFunc("/", CreateWriteHandleFunc(root))
-		mux3 := http.NewServeMux()
-		mux3.HandleFunc("/", CreateRemoveHandleFunc(root))
-		m.Handle("/w/", http.StripPrefix("/w", mux2))
-		m.Handle("/rm/", http.StripPrefix("/rm", mux3))
-		m.HandleFunc("/cmd/uploadFile", CreateUploadFileHandleFunc(root))
+		addServiceWrite(root, m)
 	} else {
 		log.Println("Read only mode.")
 	}
 
-	webmux := http.NewServeMux()
-
-	webmux.Handle("/", http.FileServer(webFS))
+	//webmux := http.NewServeMux()
+	//webmux.Handle("/", http.FileServer(webFS))
 
 	cmux := http.NewServeMux()
 	cmux.Handle("/", http.FileServer(getFS()))
@@ -84,20 +138,26 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 	m.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(VERSION))
 	})
+
 	m.HandleFunc("/cmd/fetchUrl", FetchURLHandleFunc)
 	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+			killProcess(syscall.Getpid())
 		case http.MethodGet:
 			w.Write([]byte("Post data only"))
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
-	m.Handle("/f/", http.StripPrefix("/f", mux0))
-	m.Handle("/ls/", http.StripPrefix("/ls", mux1))
-	m.Handle("/", webmux)
+	// TODO Add Command Services Plugin in POST ...
+	// cmd name and services ...
+	// m.HandleFunc("/cmd/"+cmd , func() )
+	// add kernel Map {string}{Interface{}} ...
+
+	/* last added */
+	/* TODO add prefix */
+	addServiceWeb(webFS, m)
 
 	handler := cors.New(corsOptions).Handler(m)
 	var ipstr string
@@ -128,4 +188,5 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 		}()
 		return server
 	}
+
 }

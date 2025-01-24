@@ -87,7 +87,16 @@ func main() {
 		webFS = getFileSystem()
 	}
 	p := getPort(*port)
-	server := StartServer(*directory, webFS, p, *secure, *global, *readOnly)
+
+	core := make(map[string]interface{})
+	core["root"] = *directory
+	core["webfs"] = webFS
+	core["port"] = p
+	core["secure"] = *secure
+	core["global"] = *global
+	core["readOnly"] = *readOnly
+
+	server := StartServer(core)
 	go open(generateURL(p, *secure))
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)

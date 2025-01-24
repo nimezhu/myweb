@@ -38,12 +38,12 @@ func CreateWriteHandleFunc(root string) func(w http.ResponseWriter, r *http.Requ
 }
 
 /*
-		responseJson.success = 1;
-        responseJson.file = {
-          url: image.path,
-          name: image.name,
-          size: image.size
-        };
+			responseJson.success = 1;
+	        responseJson.file = {
+	          url: image.path,
+	          name: image.name,
+	          size: image.size
+	        };
 */
 type file struct {
 	Url  string `json:"url"`
