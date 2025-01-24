@@ -76,6 +76,7 @@ func main() {
 	port := flag.Int("p", 8433, "port to serve on")
 	secure := flag.Bool("s", false, "https/http")
 	global := flag.Bool("global", false, "serve to public ip")
+	readOnly := flag.Bool("r", false, "read only")
 	directory := flag.String("d", ".", "the root directory of data files")
 	web := flag.String("web", "", "use static web (default: embedded)")
 	flag.Parse()
@@ -86,7 +87,7 @@ func main() {
 		webFS = getFileSystem()
 	}
 	p := getPort(*port)
-	server := StartServer(*directory, webFS, p, *secure, *global)
+	server := StartServer(*directory, webFS, p, *secure, *global, *readOnly)
 	go open(generateURL(p, *secure))
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)

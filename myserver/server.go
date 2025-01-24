@@ -29,8 +29,7 @@ func getFS() http.FileSystem {
 	return http.FS(fsys)
 }
 
-// func startServer(port int, secure bool, global bool, root string, web string, cookie bool) iServer {
-func StartServer(root string, webFS http.FileSystem, port int, secure bool, global bool) IServer {
+func StartServer(root string, webFS http.FileSystem, port int, secure bool, global bool, readOnly bool) IServer {
 	CORS := []string{
 		"https://codepen.io",
 		"https://cdpn.io",
@@ -60,15 +59,20 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 
 	mux1 := http.NewServeMux()
 	mux1.HandleFunc("/", CreateLsHandleFunc(root))
-	// mux := http.NewServeMux()
-
-	mux2 := http.NewServeMux()
-	mux2.HandleFunc("/", CreateWriteHandleFunc(root))
-
-	mux3 := http.NewServeMux()
-	mux3.HandleFunc("/", CreateRemoveHandleFunc(root))
-
 	m := http.NewServeMux()
+
+	if !readOnly {
+		mux2 := http.NewServeMux()
+		mux2.HandleFunc("/", CreateWriteHandleFunc(root))
+		mux3 := http.NewServeMux()
+		mux3.HandleFunc("/", CreateRemoveHandleFunc(root))
+		m.Handle("/w/", http.StripPrefix("/w", mux2))
+		m.Handle("/rm/", http.StripPrefix("/rm", mux3))
+		m.HandleFunc("/cmd/uploadFile", CreateUploadFileHandleFunc(root))
+	} else {
+		log.Println("Read only mode.")
+	}
+
 	webmux := http.NewServeMux()
 
 	webmux.Handle("/", http.FileServer(webFS))
@@ -80,14 +84,7 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 	m.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(VERSION))
 	})
-	/*
-		m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// TODO With Front Page...
-			// w.Write([]byte("My Ome Server:" + VERSION))
-		})
-	*/
 	m.HandleFunc("/cmd/fetchUrl", FetchURLHandleFunc)
-	m.HandleFunc("/cmd/uploadFile", CreateUploadFileHandleFunc(root))
 	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
@@ -100,8 +97,6 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 	})
 	m.Handle("/f/", http.StripPrefix("/f", mux0))
 	m.Handle("/ls/", http.StripPrefix("/ls", mux1))
-	m.Handle("/w/", http.StripPrefix("/w", mux2))
-	m.Handle("/rm/", http.StripPrefix("/rm", mux3))
 	m.Handle("/", webmux)
 
 	handler := cors.New(corsOptions).Handler(m)
