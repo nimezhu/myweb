@@ -14,7 +14,7 @@ import (
 	"github.com/rs/cors"
 )
 
-var VERSION = "0.0.1"
+const VERSION = "0.0.1"
 
 type IServer interface {
 	Shutdown(ctx context.Context) error
@@ -52,13 +52,6 @@ func getFS() http.FileSystem {
 }
 
 // core := make(map[string]interface{})
-// TODO Settings Include CORS ...
-// service interface
-// name string
-// handle ...
-// core settings ...
-// core services ...
-// TODO Using Core ...
 func addServiceWrite(root string, m *http.ServeMux) {
 	mux2 := http.NewServeMux()
 	mux2.HandleFunc("/", CreateWriteHandleFunc(root))
@@ -95,22 +88,7 @@ func StartServer(core map[string]interface{}) IServer {
 	global, _ := core["global"].(bool)
 	readOnly, _ := core["readOnly"].(bool)
 	m, _ := core["mux"].(*http.ServeMux)
-	CORS := []string{
-		"https://codepen.io",
-		"https://cdpn.io",
-		"https://mycellome.com",
-		"https://*.mycellome.com",
-		"https://cellcycle.org",
-		"https://*.cellcycle.org",
-		"https://youdata.studio",
-		"https://*.youdata.studio",
-		"https://*.static.observableusercontent.com",
-		"http://127.0.0.1:*",
-		"https://127.0.0.1:*",
-		"http://localhost:*",
-		"https://localhost:*",
-		//TODO: MOON SHOT SHOULD BE Parameters
-	}
+	CORS, _ := core["cores"].([]string)
 	corsOptions := cors.Options{
 		AllowedOrigins:   CORS,
 		AllowCredentials: true,

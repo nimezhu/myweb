@@ -15,7 +15,7 @@ import (
 	"runtime"
 	"time"
 
-	. "myweb/myserver"
+	"myweb/myserver"
 )
 
 //go:embed all:web
@@ -95,10 +95,29 @@ func main() {
 	core["secure"] = *secure
 	core["global"] = *global
 	core["readOnly"] = *readOnly
+	core["CORS"] = []string{
+		"https://codepen.io",
+		"https://cdpn.io",
+		"https://mycellome.com",
+		"https://*.mycellome.com",
+		"https://cellcycle.org",
+		"https://*.cellcycle.org",
+		"https://youdata.studio",
+		"https://*.youdata.studio",
+		"https://*.static.observableusercontent.com",
+		"http://127.0.0.1:*",
+		"https://127.0.0.1:*",
+		"http://localhost:*",
+		"https://localhost:*",
+		//TODO: MOON SHOT SHOULD BE Parameters
+	}
+
 	m := http.NewServeMux() // TODO mv out ... ...
 	core["mux"] = m
-
-	server := StartServer(core)
+	// TODO Init Core and Plugins ...
+	// TODO Start Server Plugins Independent ...
+	// ... Add Plugins ...
+	server := myserver.StartServer(core)
 	go open(generateURL(p, *secure))
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
