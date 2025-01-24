@@ -7,4 +7,7 @@ require (
 	github.com/rs/cors v1.9.0
 )
 
-require golang.org/x/net v0.0.0-20200923182212-328152dc79b1 // indirect
+require (
+	github.com/gorilla/websocket v1.5.3 // indirect
+	golang.org/x/net v0.0.0-20200923182212-328152dc79b1 // indirect
+)

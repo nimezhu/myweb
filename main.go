@@ -72,6 +72,9 @@ func checkPort(port int) bool {
 		return true
 	}
 }
+
+/* TODO Add Services Plugins to Core, Include core["mux"] */
+/* Add Example */
 func main() {
 	port := flag.Int("p", 8433, "port to serve on")
 	secure := flag.Bool("s", false, "https/http")
@@ -80,6 +83,7 @@ func main() {
 	directory := flag.String("d", ".", "the root directory of data files")
 	web := flag.String("web", "", "use static web (default: embedded)")
 	flag.Parse()
+
 	var webFS http.FileSystem
 	if len(*web) > 0 {
 		webFS = http.Dir(*web)
@@ -109,19 +113,19 @@ func main() {
 		"https://127.0.0.1:*",
 		"http://localhost:*",
 		"https://localhost:*",
-		//TODO: MOON SHOT SHOULD BE Parameters
 	}
 
 	m := http.NewServeMux() // TODO mv out ... ...
 	core["mux"] = m
-	// TODO Init Core and Plugins ...
-	// TODO Start Server Plugins Independent ...
-	// ... Add Plugins ...
+	//go addWs()
+	addWs(m) // TODO Improve Websocket with not only echo but services ...
+	// ... Add Plugins TO Core ... ...
+	// ... CMDs Services Interface ... ....
+	// ... /cmd/getVersion ... example ...
 	server := myserver.StartServer(core)
 	go open(generateURL(p, *secure))
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
-	// TODO Add Cmd From Web Client ...
 	// Waiting for SIGINT (kill -2)
 	<-stop
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

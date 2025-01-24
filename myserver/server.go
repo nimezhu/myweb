@@ -81,12 +81,27 @@ func addServiceWeb(webFS http.FileSystem, m *http.ServeMux) {
 
 // func StartServer(root string, webFS http.FileSystem, port int, secure bool, global bool, readOnly bool) IServer {
 func StartServer(core map[string]interface{}) IServer {
-	root, _ := core["root"].(string)
+	root, ok := core["root"].(string)
+	if !ok {
+		root = "./"
+	}
 	webFS, _ := core["webfs"].(http.FileSystem)
-	port, _ := core["port"].(int)
-	secure, _ := core["secure"].(bool)
-	global, _ := core["global"].(bool)
-	readOnly, _ := core["readOnly"].(bool)
+	port, ok := core["port"].(int)
+	if !ok {
+		port = 8433
+	}
+	secure, ok := core["secure"].(bool)
+	if !ok {
+		secure = false
+	}
+	global, ok := core["global"].(bool)
+	if !ok {
+		global = false
+	}
+	readOnly, ok := core["readOnly"].(bool)
+	if !ok {
+		readOnly = false
+	}
 	m, _ := core["mux"].(*http.ServeMux)
 	CORS, _ := core["cores"].([]string)
 	corsOptions := cors.Options{
