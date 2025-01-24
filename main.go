@@ -95,6 +95,8 @@ func main() {
 	core["secure"] = *secure
 	core["global"] = *global
 	core["readOnly"] = *readOnly
+	m := http.NewServeMux() // TODO mv out ... ...
+	core["mux"] = m
 
 	server := StartServer(core)
 	go open(generateURL(p, *secure))

@@ -94,6 +94,7 @@ func StartServer(core map[string]interface{}) IServer {
 	secure, _ := core["secure"].(bool)
 	global, _ := core["global"].(bool)
 	readOnly, _ := core["readOnly"].(bool)
+	m, _ := core["mux"].(*http.ServeMux)
 	CORS := []string{
 		"https://codepen.io",
 		"https://cdpn.io",
@@ -119,8 +120,6 @@ func StartServer(core map[string]interface{}) IServer {
 	// TODO Add Simpler Version ?
 	// TODO Setting In Core ...
 
-	m := http.NewServeMux()
-	core["mux"] = m
 	addServiceFile(root, m)
 	if !readOnly {
 		addServiceWrite(root, m)
