@@ -1,0 +1,42 @@
+<html>
+
+<head>
+</head>
+
+<body>
+    <div id="container">
+    <input type="button" value="Stop Server" id="stopBtn"></input>
+    <div id="stopped" style="display:none">
+        <div>Server stopped. </div>
+        <div>Please close this tab.</div>
+    </div>
+    </div>
+</body>
+<script>
+    (() =>
+        {
+            var $ = document.getElementById.bind(document)
+            var h = document.createElement.bind(document)
+            var stopBtn = $("stopBtn")
+            stopBtn.onclick = (e) =>
+            {
+                fetch("/cmd/stopServer",
+                    {
+                        method: "POST",
+                        body: JSON.stringify(
+                        {}),
+                        headers:
+                        {
+                            "Content-type": "application/json; charset=UTF-8"
+                        }
+                    })
+                    .then((response) =>
+                    {
+                        stopBtn.remove()
+                        $("stopped").style.display = null
+                    })
+            }
+        })()
+</script>
+
+</html>

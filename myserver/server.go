@@ -2,6 +2,8 @@ package myserver
 
 import (
 	"context"
+	"embed"
+	"io/fs"
 	"log"
 	"net/http"
 	"strconv"
@@ -16,30 +18,34 @@ type IServer interface {
 	Shutdown(ctx context.Context) error
 }
 
+//go:embed all:ctrl
+var embededFiles embed.FS
+
+func getFS() http.FileSystem {
+	fsys, err := fs.Sub(embededFiles, "ctrl")
+	if err != nil {
+		panic(err)
+	}
+	return http.FS(fsys)
+}
+
 // func startServer(port int, secure bool, global bool, root string, web string, cookie bool) iServer {
 func StartServer(root string, webFS http.FileSystem, port int, secure bool, global bool) IServer {
 	CORS := []string{
 		"https://codepen.io",
 		"https://cdpn.io",
-		"https://app.mycellome.com",
 		"https://mycellome.com",
-		"https://app.cellcycle.org",
-		"https://han.cellcycle.org",
+		"https://*.mycellome.com",
 		"https://cellcycle.org",
+		"https://*.cellcycle.org",
 		"https://youdata.studio",
-		"https://app.youdata.studio",
+		"https://*.youdata.studio",
 		"https://*.static.observableusercontent.com",
 		"http://127.0.0.1:*",
 		"https://127.0.0.1:*",
 		"http://localhost:*",
 		"https://localhost:*",
-		"https://demo.mycellome.com",
 		//TODO: MOON SHOT SHOULD BE Parameters
-		"http://visportaldev.iotnmoonshot.org.s3-website-us-east-1.amazonaws.com/",
-		"https://visportaldev.iotnmoonshot.org.s3-website-us-east-1.amazonaws.com/",
-		"https://cellome.biomisc.org",
-		"https://*.iotnmoonshot.org",
-		"http://*.iotnmoonshot.org",
 	}
 	corsOptions := cors.Options{
 		AllowedOrigins:   CORS,
@@ -64,20 +70,12 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 
 	m := http.NewServeMux()
 	webmux := http.NewServeMux()
-	/*
-		if len(web) > 0 {
-			webmux := http.NewServeMux()
-			//webmux.Handle("/", http.FileServer(http.Dir(web)))
-			webmux.Handle("/", http.FileServer(http.Dir(web)))
-			m.Handle("/web/", http.StripPrefix("/web", webmux))
-		} else {
-			webmux := http.NewServeMux()
-			webmux.Handle("/", http.FileServer(getFileSystem()))
-			m.Handle("/web/", http.StripPrefix("/web", webmux))
-		}
-	*/
+
 	webmux.Handle("/", http.FileServer(webFS))
-	// m.Handle("/web/", http.StripPrefix("/web", webmux))
+
+	cmux := http.NewServeMux()
+	cmux.Handle("/", http.FileServer(getFS()))
+	m.Handle("/ctrl/", http.StripPrefix("/ctrl", cmux))
 
 	m.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(VERSION))
@@ -91,7 +89,14 @@ func StartServer(root string, webFS http.FileSystem, port int, secure bool, glob
 	m.HandleFunc("/cmd/fetchUrl", FetchURLHandleFunc)
 	m.HandleFunc("/cmd/uploadFile", CreateUploadFileHandleFunc(root))
 	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
-		syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+		switch r.Method {
+		case http.MethodPost:
+			syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+		case http.MethodGet:
+			w.Write([]byte("Post data only"))
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 	m.Handle("/f/", http.StripPrefix("/f", mux0))
 	m.Handle("/ls/", http.StripPrefix("/ls", mux1))

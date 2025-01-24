@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -52,6 +53,25 @@ func generateURL(port int, ssl bool) string {
 	}
 	return fmt.Sprintf("%s:%d", h, port)
 }
+func getPort(port int) int {
+	for !checkPort(port) {
+		port += 1
+	}
+	return port
+}
+
+func checkPort(port int) bool {
+	address := fmt.Sprintf("127.0.0.1:%d", port)
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		//fmt.Printf("Port %d is not available: %v\n", port, err)
+		return false
+	} else {
+		//fmt.Printf("Port %d is available\n", port)
+		listener.Close()
+		return true
+	}
+}
 func main() {
 	port := flag.Int("p", 8433, "port to serve on")
 	secure := flag.Bool("s", false, "https/http")
@@ -65,8 +85,9 @@ func main() {
 	} else {
 		webFS = getFileSystem()
 	}
-	server := StartServer(*directory, webFS, *port, *secure, *global)
-	go open(generateURL(*port, *secure))
+	p := getPort(*port)
+	server := StartServer(*directory, webFS, p, *secure, *global)
+	go open(generateURL(p, *secure))
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt)
 	// TODO Add Cmd From Web Client ...
