@@ -112,6 +112,13 @@ func (s *Server) routes() {
 	m.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(VERSION))
 	})
+	m.HandleFunc("/cmd/status", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success":  1,
+			"version":  VERSION,
+			"readOnly": s.ReadOnly(),
+		})
+	})
 	m.HandleFunc("/cmd/fetchUrl", FetchURLHandleFunc)
 	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

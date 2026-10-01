@@ -87,6 +87,7 @@ func main() {
 	noTUI := flag.Bool("no-tui", false, "plain log output instead of the interactive TUI")
 	noOpen := flag.Bool("no-open", false, "do not open the browser on start")
 	version := flag.Bool("version", false, "print version and exit")
+	flag.BoolVar(version, "v", false, "print version and exit (shorthand)")
 	flag.Parse()
 
 	if *version {

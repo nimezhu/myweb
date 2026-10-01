@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>myweb</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235a3fd8'/%3E%3Cpath d='M8 22V10l8 7 8-7v12' stroke='white' stroke-width='3' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #f7f7f9; --panel: #ffffff; --text: #1d1d22; --muted: #6b6b76;
+    --line: #e4e4ea; --accent: #5a3fd8; --accent-soft: #eeeafd;
+    --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121216; --panel: #1b1b21; --text: #e6e6ea; --muted: #8d8d99;
+      --line: #2c2c35; --accent: #a08cff; --accent-soft: #26213f;
+      --ok: #56d364; --warn: #e3b341; --err: #ff7b72;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .logo {
+    width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
+    display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 20px;
+  }
+  h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+  .pill {
+    font: 12px var(--mono); padding: 3px 9px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent);
+  }
+  .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .pill.err { color: var(--err); background: color-mix(in srgb, var(--err) 14%, transparent); }
+  .lead { color: var(--muted); margin: 10px 0 28px; max-width: 640px; }
+  section {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 20px; margin-bottom: 18px;
+  }
+  h2 { margin: 0 0 4px; font-size: 16px; }
+  .sub { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+  code, .mono { font-family: var(--mono); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: 0; }
+  .method { font: 600 11.5px var(--mono); color: var(--accent); }
+  .table-wrap { overflow-x: auto; }
+  .crumbs { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; margin-bottom: 8px; font-family: var(--mono); font-size: 13px; }
+  .crumbs a { color: var(--accent); text-decoration: none; padding: 2px 4px; border-radius: 4px; }
+  .crumbs a:hover { background: var(--accent-soft); }
+  .files td.name a { color: var(--text); text-decoration: none; }
+  .files td.name a:hover { color: var(--accent); text-decoration: underline; }
+  .files td.num { text-align: right; color: var(--muted); font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  .files .icon { display: inline-block; width: 1.4em; color: var(--muted); }
+  .empty { color: var(--muted); padding: 14px 8px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  input[type=text], textarea {
+    font: 13px var(--mono); color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
+  }
+  textarea { min-height: 84px; resize: vertical; }
+  input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button, .btn {
+    font: 600 13px system-ui, sans-serif; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); padding: 7px 14px; border-radius: 8px; cursor: pointer; text-decoration: none;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.link { border: 0; background: none; color: var(--err); padding: 2px 6px; font-weight: 500; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .grid section { margin-bottom: 0; }
+  .field { margin-bottom: 10px; }
+  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .msg { font-size: 13px; margin-top: 10px; min-height: 1.4em; word-break: break-all; }
+  .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
+  .drop {
+    display: block;
+    border: 1.5px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center;
+    color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="logo">m</div>
+    <h1>myweb</h1>
+    <span class="pill" id="version">v…</span>
+    <span class="pill" id="mode">checking…</span>
+  </header>
+  <p class="lead">
+    A tiny local web server for your data files. It serves the directory you start it in (<code>-d</code>),
+    lets pages list, read, write and upload files over a small HTTP API, and hosts a web app at <code>/</code>.
+    This page is the default app. Replace it with <code>-web &lt;dir&gt;</code>.
+  </p>
+
+  <section>
+    <h2>Files</h2>
+    <p class="sub">Live listing of the root directory via <code>GET /ls/</code>; files open via <code>/f/</code>.</p>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="table-wrap">
+      <table class="files">
+        <thead><tr><th>Name</th><th style="text-align:right">Size</th><th style="text-align:right">Modified</th><th></th></tr></thead>
+        <tbody id="files"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="grid">
+    <section>
+      <h2>Write a file</h2>
+      <p class="sub"><code>POST /w/&lt;path&gt;</code> with the content as the body.</p>
+      <div class="field">
+        <label for="wpath">Path (relative to the current folder)</label>
+        <input type="text" id="wpath" value="hello.txt">
+      </div>
+      <div class="field">
+        <label for="wbody">Content</label>
+        <textarea id="wbody">Hello from myweb!</textarea>
+      </div>
+      <button class="primary writable" id="wbtn">Save</button>
+      <div class="msg" id="wmsg"></div>
+    </section>
+
+    <section>
+      <h2>Upload</h2>
+      <p class="sub"><code>POST /cmd/uploadFile</code> (form field <code>myFile</code>, max 10 MB). Stored in <code>uploads/</code>.</p>
+      <label class="drop writable-drop" id="drop">
+        <input type="file" id="ufile" hidden>
+        Drop a file here or click to choose
+      </label>
+      <div class="msg" id="umsg"></div>
+    </section>
+  </div>
+
+  <section style="margin-top:18px">
+    <h2>API</h2>
+    <p class="sub">Every endpoint returns JSON. Errors look like <code>{"success":0,"error":"…"}</code> with a matching HTTP status.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td class="method">GET</td><td class="mono">/f/&lt;path&gt;</td><td>Read a file (or directory index)</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/ls/&lt;dir&gt;</td><td>List a directory as JSON</td></tr>
+          <tr><td class="method">POST</td><td class="mono">/w/&lt;path&gt;</td><td>Write the request body to a file (creates folders)</td></tr>
+          <tr><td class="method">POST</td><td class="mono">/rm/&lt;path&gt;</td><td>Remove a file</td></tr>
+          <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>Multipart upload into <code>uploads/</code></td></tr>
+          <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version and read-only state</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/version</td><td>Server version</td></tr>
+          <tr><td class="method">WS</td><td class="mono">/echo</td><td>WebSocket echo (<a href="/echotest">test page</a>)</td></tr>
+          <tr><td class="method">POST</td><td class="mono">/cmd/stopServer</td><td>Stop the server (same-origin only, <a href="/ctrl/">control page</a>)</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="sub" style="margin:14px 0 0">Write endpoints return <code>403</code> in read-only mode (<code>-r</code>, or press <code>r</code> in the terminal UI).</p>
+  </section>
+
+  <footer>myweb · <a href="/ctrl/">control</a></footer>
+</main>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let cwd = "/";
+  let readOnly = false;
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
+  const join = (a, b) => (a.endsWith("/") ? a : a + "/") + b.replace(/^\/+/, "");
+
+  function size(n) {
+    if (n < 1024) return n + " B";
+    const u = ["KB", "MB", "GB", "TB"]; let i = -1;
+    do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
+    return n.toFixed(1) + " " + u[i];
+  }
+  function when(t) {
+    const d = new Date(t);
+    return isNaN(d) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  }
+  function msg(el, text, ok) { el.textContent = text; el.className = "msg " + (ok ? "ok" : "err"); }
+  async function errText(r) {
+    try { const j = await r.json(); return j.error || r.statusText; } catch { return r.status + " " + r.statusText; }
+  }
+
+  function setMode(ro) {
+    readOnly = ro;
+    const m = $("mode");
+    m.textContent = ro ? "read-only" : "read-write";
+    m.className = "pill " + (ro ? "warn" : "ok");
+    document.querySelectorAll(".writable").forEach((b) => (b.disabled = ro));
+    $("drop").style.opacity = ro ? 0.45 : 1;
+  }
+
+  async function status() {
+    try {
+      const j = await (await fetch("/cmd/status")).json();
+      $("version").textContent = "v" + j.version;
+      setMode(j.readOnly);
+    } catch {
+      $("version").textContent = "offline"; $("version").className = "pill err";
+    }
+  }
+
+  function renderCrumbs() {
+    const parts = cwd.split("/").filter(Boolean);
+    let html = `<a href="#/" data-dir="/">root</a>`;
+    let acc = "";
+    for (const p of parts) {
+      acc += "/" + p;
+      html += `<span>/</span><a href="#${esc(acc)}" data-dir="${esc(acc)}">${esc(p)}</a>`;
+    }
+    $("crumbs").innerHTML = html;
+  }
+
+  async function load(dir) {
+    cwd = dir || "/";
+    renderCrumbs();
+    const body = $("files");
+    try {
+      const r = await fetch("/ls" + enc(cwd));
+      if (!r.ok) throw new Error(await errText(r));
+      const items = await r.json();
+      items.sort((a, b) => (b.isdir - a.isdir) || a.name.localeCompare(b.name));
+      if (!items.length) { body.innerHTML = `<tr><td colspan="4" class="empty">This folder is empty.</td></tr>`; return; }
+      body.innerHTML = items.map((f) => {
+        const p = join(cwd, f.name);
+        const link = f.isdir
+          ? `<a href="#${esc(p)}" data-dir="${esc(p)}"><span class="icon">▸</span>${esc(f.name)}/</a>`
+          : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener"><span class="icon">·</span>${esc(f.name)}</a>`;
+        const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${readOnly ? "disabled" : ""}>delete</button>`;
+        return `<tr><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${rm}</td></tr>`;
+      }).join("");
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="4" class="empty">Could not list ${esc(cwd)}: ${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  document.addEventListener("click", async (e) => {
+    const dir = e.target.closest("[data-dir]");
+    if (dir) { e.preventDefault(); location.hash = dir.dataset.dir; return; }
+    const rm = e.target.closest("[data-rm]");
+    if (rm) {
+      const r = await fetch("/rm" + enc(rm.dataset.rm), { method: "POST" });
+      if (!r.ok) { msg($("wmsg"), "Delete failed: " + await errText(r), false); if (r.status === 403) setMode(true); }
+      load(cwd);
+    }
+  });
+
+  window.addEventListener("hashchange", () => load(decodeURIComponent(location.hash.slice(1)) || "/"));
+
+  $("wbtn").onclick = async () => {
+    const path = $("wpath").value.trim();
+    if (!path) return msg($("wmsg"), "Enter a path.", false);
+    const r = await fetch("/w" + enc(join(cwd, path)), { method: "POST", body: $("wbody").value });
+    if (r.ok) {
+      const j = await r.json();
+      msg($("wmsg"), `Saved ${j.file.url} (${size(j.file.size)})`, true);
+      load(cwd);
+    } else {
+      msg($("wmsg"), "Save failed: " + await errText(r), false);
+      if (r.status === 403) setMode(true);
+    }
+  };
+
+  async function upload(file) {
+    if (readOnly) return msg($("umsg"), "Server is read-only.", false);
+    const fd = new FormData();
+    fd.append("myFile", file);
+    msg($("umsg"), "Uploading " + file.name + "…", true);
+    try {
+      const r = await fetch("/cmd/uploadFile", { method: "POST", body: fd });
+      if (!r.ok) { msg($("umsg"), "Upload failed: " + await errText(r), false); if (r.status === 403) setMode(true); return; }
+      const j = await r.json();
+      $("umsg").className = "msg ok";
+      $("umsg").innerHTML = `Uploaded <a href="${esc(j.file.url)}" target="_blank" rel="noopener">${esc(j.file.url)}</a>`;
+      load(cwd);
+    } catch (e) {
+      msg($("umsg"), "Upload failed: " + e.message, false);
+    }
+  }
+  const drop = $("drop");
+  $("ufile").onchange = (e) => e.target.files[0] && upload(e.target.files[0]);
+  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+  drop.addEventListener("drop", (e) => {
+    e.preventDefault(); drop.classList.remove("over");
+    if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
+  });
+
+  status();
+  // read-only can be toggled from the terminal UI; refresh when coming back
+  window.addEventListener("focus", status);
+  load(decodeURIComponent(location.hash.slice(1)) || "/");
+})();
+</script>
+</body>
+</html>
