@@ -1,9 +1,11 @@
 package myserver
 
 import (
-	"encoding/json"
-	"github.com/otiai10/opengraph/v2"
 	"net/http"
+	"net/url"
+	"time"
+
+	"github.com/otiai10/opengraph/v2"
 )
 
 type Info struct {
@@ -11,17 +13,22 @@ type Info struct {
 	Meta    *opengraph.OpenGraph `json:"meta"`
 }
 
+var fetchClient = &http.Client{Timeout: 15 * time.Second}
+
 func FetchURLHandleFunc(w http.ResponseWriter, r *http.Request) {
-	url := r.URL.Query().Get("url")
-	ogp, err := opengraph.Fetch(url)
-	if err == nil {
-		j, err2 := json.Marshal(Info{1, ogp})
-		if err2 == nil {
-			w.Write(j)
-		} else {
-			w.Write([]byte("{success:0, error:1}"))
-		}
-	} else {
-		w.Write([]byte("{success:0, error:2}"))
+	raw := r.URL.Query().Get("url")
+	u, err := url.Parse(raw)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		writeError(w, http.StatusBadRequest, "invalid url")
+		return
 	}
+	ogp, err := opengraph.Fetch(raw, opengraph.Intent{
+		Context:    r.Context(),
+		HTTPClient: fetchClient,
+	})
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "fetch failed: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, Info{1, ogp})
 }

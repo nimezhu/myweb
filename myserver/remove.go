@@ -1,29 +1,33 @@
 package myserver
 
 import (
+	"errors"
+	"io/fs"
+	"log"
 	"net/http"
 	"os"
 )
 
 func CreateRemoveHandleFunc(root string) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dir := r.URL.Path
-		switch r.Method {
-		case http.MethodPost:
-			p := root + dir
-			removeFile(p, w, r)
-		case http.MethodGet:
-			w.Write([]byte("Post data only"))
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		if r.Method != http.MethodPost {
+			http.Error(w, "Post data only", http.StatusMethodNotAllowed)
+			return
 		}
-
-	}
-}
-
-func removeFile(path string, w http.ResponseWriter, r *http.Request) {
-	err := os.Remove(path)
-	if err != nil {
-		w.Write([]byte("Error remove " + path))
+		p, _, err := safeJoin(root, r.URL.Path)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := os.Remove(p); err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, fs.ErrNotExist) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, "remove failed: "+r.URL.Path)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]int{"success": 1})
+		log.Printf("removed %s", r.URL.Path)
 	}
 }

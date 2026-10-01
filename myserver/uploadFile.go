@@ -2,97 +2,78 @@ package myserver
 
 import (
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"log"
 	"net/http"
-	"os"
+	"path/filepath"
 	"strings"
 )
 
+// MaxUploadSize limits files accepted by /cmd/uploadFile.
+var MaxUploadSize int64 = 10 << 20
+
 func CreateUploadFileHandleFunc(root string) func(w http.ResponseWriter, r *http.Request) {
-	var MaxFileSize int64 = 10 * 1024 * 1024
-	errMessage := errRet{
-		0,
-		"File Too Large (max 10Mb)",
-	}
-	em, _ := json.Marshal(errMessage)
-
 	return func(w http.ResponseWriter, r *http.Request) {
-
-		if r.ContentLength > MaxFileSize {
-			if flusher, ok := w.(http.Flusher); ok {
-				w.Header().Set("Connection", "close")
-				w.Header().Set("Content-Length", fmt.Sprintf("%d", len(em)))
-				w.WriteHeader(http.StatusExpectationFailed)
-				w.Write(em)
-				flusher.Flush()
-			}
-			//log.Println(r.ContentLength)
-			log.Println("file too large")
-			//r.Body.Close()
-			// w.Write(em)
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "post only")
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, MaxFileSize)
-
-		r.ParseMultipartForm(10 << 20)
-		// FormFile returns the first file for the given key `myFile`
-		// it also returns the FileHeader so we can get the Filename,
-		// the Header and the size of the file
-		file, handler, err := r.FormFile("myFile")
-		if err != nil {
-			log.Println("Error Retrieving the File")
-			log.Println(err)
+		tooLarge := fmt.Sprintf("File Too Large (max %dMb)", MaxUploadSize>>20)
+		if r.ContentLength > MaxUploadSize {
+			w.Header().Set("Connection", "close")
+			writeError(w, http.StatusExpectationFailed, tooLarge)
 			return
 		}
-		defer file.Close()
-		fileBytes, err := ioutil.ReadAll(file)
+		// allow some slack for multipart headers
+		r.Body = http.MaxBytesReader(w, r.Body, MaxUploadSize+1<<20)
+		if err := r.ParseMultipartForm(MaxUploadSize); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid upload: "+err.Error())
+			return
+		}
+		defer r.MultipartForm.RemoveAll()
+
+		f, handler, err := r.FormFile("myFile")
 		if err != nil {
-			log.Println(err)
+			writeError(w, http.StatusBadRequest, "missing form file 'myFile'")
+			return
 		}
-		b := md5.Sum(fileBytes)
-		md5Sum := fmt.Sprintf("%x", b)
-		id := md5Sum + "_" + handler.Filename //local file path
-		p := root + "/uploads/" + id
-		dir := "/uploads/" + id // relative path ..
+		defer f.Close()
+		if handler.Size > MaxUploadSize {
+			writeError(w, http.StatusExpectationFailed, tooLarge)
+			return
+		}
+		fileBytes, err := io.ReadAll(f)
 		if err != nil {
-			w.Write([]byte("{success:0}"))
-			log.Println(err)
+			writeError(w, http.StatusBadRequest, "read upload: "+err.Error())
+			return
 		}
-		switch r.Method {
-		case http.MethodPost:
-			upload(p, w, fileBytes, dir)
-		case http.MethodGet:
-			w.Write([]byte("{success:0, error:get}"))
-		default:
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+
+		name := sanitizeFilename(handler.Filename)
+		id := fmt.Sprintf("%x_%s", md5.Sum(fileBytes), name)
+		dir := "/uploads/" + id // relative url path
+		p := filepath.Join(root, "uploads", id)
+		if err := writeFileAtomic(p, fileBytes); err != nil {
+			log.Printf("upload %s: %v", p, err)
+			writeError(w, http.StatusInternalServerError, "create file fail")
+			return
 		}
+		// TODO Upload Using Cookie and Prefix ...
+		writeJSON(w, http.StatusOK, ret{1, file{"/f" + dir, id, len(fileBytes)}})
+		log.Printf("uploaded %s (%d bytes)", dir, len(fileBytes))
 	}
 }
 
-func upload(path string, w http.ResponseWriter, reqBody []byte, dir string) {
-	EnsureDir(path)
-	f, err := os.Create(path)
-	if err != nil {
-		log.Println(err)
-		w.Write([]byte("{success:0, error:'create file fail'}"))
+func sanitizeFilename(name string) string {
+	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == '/' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, name)
+	if name == "" || name == "." || name == ".." {
+		name = "file"
 	}
-	defer f.Close()
-	f.Write(reqBody)
-	d := strings.Split(dir, "/")
-	name := d[len(d)-1]
-	finfo := file{
-		"/f" + dir, // TODO Upload Using Cookie and Prefix ... ....
-		name,
-		len(reqBody),
-	}
-	j, err2 := json.Marshal(ret{1, finfo})
-	if err2 == nil {
-		w.Write(j)
-	} else {
-		w.Write([]byte("{success:0, error:'json fail'}"))
-	}
-	log.Printf("Writing %s\n", path)
+	return name
 }

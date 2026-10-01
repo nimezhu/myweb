@@ -1,21 +1,14 @@
 package myserver
 
 import (
-	"encoding/json"
-	"io/ioutil"
+	"errors"
+	"io/fs"
 	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"time"
 )
-
-func ls(dir string) []os.FileInfo {
-	files, err := ioutil.ReadDir(dir)
-	if err != nil {
-		return []os.FileInfo{}
-	}
-	return files
-}
 
 type FileInfo struct {
 	Name      string      `json:"name"`
@@ -28,27 +21,31 @@ type FileInfo struct {
 
 func CreateLsHandleFunc(root string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dir := r.URL.Path
-		fs := ls(path.Join(root, dir))
-		fn := []FileInfo{}
-		for _, entry := range fs {
-			issymlink := entry.Mode()&os.ModeSymlink == os.ModeSymlink
-			f := FileInfo{
-				Name:      entry.Name(),
-				Size:      entry.Size(),
-				Mode:      entry.Mode(),
-				ModTime:   entry.ModTime(),
-				IsDir:     entry.IsDir(),
-				IsSymlink: issymlink,
+		dir := filepath.Join(root, filepath.FromSlash(path.Clean("/"+r.URL.Path)))
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			status := http.StatusInternalServerError
+			if errors.Is(err, fs.ErrNotExist) {
+				status = http.StatusNotFound
 			}
-			fn = append(fn, f)
+			writeError(w, status, "cannot list "+r.URL.Path)
+			return
 		}
-		j, err := json.Marshal(fn)
-		if err == nil {
-			w.Write(j)
-		} else {
-			w.Write([]byte("error"))
+		fn := make([]FileInfo, 0, len(entries))
+		for _, entry := range entries {
+			info, err := entry.Info()
+			if err != nil {
+				continue // removed between ReadDir and Info
+			}
+			fn = append(fn, FileInfo{
+				Name:      entry.Name(),
+				Size:      info.Size(),
+				Mode:      info.Mode(),
+				ModTime:   info.ModTime(),
+				IsDir:     entry.IsDir(),
+				IsSymlink: info.Mode()&os.ModeSymlink != 0,
+			})
 		}
-
+		writeJSON(w, http.StatusOK, fn)
 	}
 }
