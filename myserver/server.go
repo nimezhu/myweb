@@ -77,13 +77,16 @@ type Config struct {
 
 // RequestEvent describes a completed request.
 type RequestEvent struct {
-	Time     time.Time
-	Method   string
-	Path     string
-	Remote   string
-	Status   int
-	Bytes    int64
-	Duration time.Duration
+	Time      time.Time
+	Method    string
+	Path      string
+	Remote    string
+	Status    int
+	Bytes     int64
+	Duration  time.Duration
+	Origin    string
+	UserAgent string
+	Error     string // start of the response body for status >= 400
 }
 
 // Server is a running myweb file server.
@@ -135,7 +138,7 @@ func (s *Server) routes() {
 	m := s.cfg.Mux
 	root := s.cfg.Root
 
-	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", http.FileServer(http.Dir(root)))))
+	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", revalidate(root, http.FileServer(http.Dir(root))))))
 	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(CreateLsHandleFunc(root)))))
 
 	// Write routes are always registered and gated at request time so that

@@ -2,11 +2,13 @@ package console
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/nimezhu/myweb/myserver"
 )
@@ -24,6 +26,7 @@ type stopMsg struct{} // a client asked the server to stop
 type flashMsg int     // clears the transient status line if still current
 
 type entry struct {
+	id   int // stable identity: indexes shift as old entries are dropped
 	req  *myserver.RequestEvent
 	log  string
 	time time.Time
@@ -38,8 +41,14 @@ type model struct {
 	height  int
 
 	entries    []entry
-	scroll     int // lines scrolled up from the bottom; 0 = follow
+	nextID     int
 	errorsOnly bool
+	filter     string
+	typing     bool // editing the filter
+	sel        int  // selected entry id; 0 = none, follow new requests
+	top        int  // first visible row while an entry is selected
+	detail     bool // show the selected entry in full
+	qr         bool // show a QR code of the URL
 
 	requests int
 	errors   int
@@ -62,21 +71,96 @@ func tick() tea.Cmd {
 func (m model) Init() tea.Cmd { return tick() }
 
 func (m *model) push(e entry) {
+	m.nextID++
+	e.id = m.nextID
 	m.entries = append(m.entries, e)
 	if len(m.entries) > maxEntries {
 		m.entries = append(m.entries[:0:0], m.entries[len(m.entries)-maxEntries:]...)
 	}
-	// keep the view anchored when the user has scrolled up
-	if m.scroll > 0 && m.visible(e) {
-		m.scroll++
-	}
+	m.settle()
 }
 
+// visible applies the errors-only toggle and the text filter.
 func (m model) visible(e entry) bool {
-	if !m.errorsOnly {
+	if m.errorsOnly && e.req != nil && e.req.Status < 400 {
+		return false
+	}
+	if m.filter == "" {
 		return true
 	}
-	return e.req == nil || e.req.Status >= 400
+	return strings.Contains(strings.ToLower(entryText(e)), strings.ToLower(m.filter))
+}
+
+func entryText(e entry) string {
+	if e.req == nil {
+		return e.log
+	}
+	return fmt.Sprintf("%s %d %s", e.req.Method, e.req.Status, e.req.Path)
+}
+
+func (m model) visibleEntries() []entry {
+	var v []entry
+	for _, e := range m.entries {
+		if m.visible(e) {
+			v = append(v, e)
+		}
+	}
+	return v
+}
+
+func indexOf(v []entry, id int) int {
+	for i, e := range v {
+		if e.id == id {
+			return i
+		}
+	}
+	return -1
+}
+
+// settle keeps the selection valid and on screen.
+func (m *model) settle() {
+	if m.sel == 0 {
+		m.detail = false
+		return
+	}
+	v := m.visibleEntries()
+	i := indexOf(v, m.sel)
+	if i < 0 { // dropped or filtered out: back to following
+		m.sel, m.detail = 0, false
+		return
+	}
+	h := m.logHeight()
+	if i < m.top {
+		m.top = i
+	}
+	if i >= m.top+h {
+		m.top = i - h + 1
+	}
+	m.top = min(max(m.top, 0), max(0, len(v)-h))
+}
+
+// move shifts the selection by delta rows; past the end returns to following.
+func (m *model) move(delta int) {
+	v := m.visibleEntries()
+	if len(v) == 0 {
+		return
+	}
+	i := indexOf(v, m.sel)
+	if i < 0 {
+		if delta > 0 {
+			return // already following
+		}
+		i = len(v) // start from just below the last row
+		m.top = max(0, len(v)-m.logHeight())
+	}
+	i += delta
+	if i >= len(v) {
+		m.sel = 0
+		m.settle()
+		return
+	}
+	m.sel = v[max(i, 0)].id
+	m.settle()
 }
 
 func (m *model) setFlash(s string) tea.Cmd {
@@ -90,7 +174,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.clampScroll()
+		m.settle()
 	case tickMsg:
 		m.now = time.Time(msg)
 		return m, tick()
@@ -112,17 +196,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			m.quitting = true
+			return m, tea.Quit
+		}
+		if m.typing {
+			return m.filterKey(msg)
+		}
 		return m.handleKey(msg)
 	}
+	return m, nil
+}
+
+func (m model) filterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.Type {
+	case tea.KeyEnter:
+		m.typing = false
+	case tea.KeyEsc:
+		m.typing, m.filter = false, ""
+	case tea.KeyBackspace:
+		if r := []rune(m.filter); len(r) > 0 {
+			m.filter = string(r[:len(r)-1])
+		}
+	case tea.KeyRunes, tea.KeySpace:
+		m.filter += string(msg.Runes)
+	}
+	m.settle()
 	return m, nil
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	page := max(1, m.logHeight()-1)
 	switch msg.String() {
-	case "q", "ctrl+c", "esc":
+	case "q":
 		m.quitting = true
 		return m, tea.Quit
+	case "esc": // step back out: detail → selection → filter
+		switch {
+		case m.qr:
+			m.qr = false
+		case m.detail:
+			m.detail = false
+		case m.sel != 0:
+			m.sel = 0
+		case m.filter != "" || m.errorsOnly:
+			m.filter, m.errorsOnly = "", false
+		}
 	case "o":
 		if err := OpenBrowser(m.opts.OpenURL); err != nil {
 			return m, m.setFlash("could not open browser: " + err.Error())
@@ -134,47 +253,40 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setFlash("now read-only: write, remove and upload are disabled")
 		}
 		return m, m.setFlash("now read-write")
+	case "u":
+		m.qr = !m.qr
+		m.detail = false
+	case "/":
+		m.typing, m.qr = true, false
 	case "e":
 		m.errorsOnly = !m.errorsOnly
-		m.scroll = 0
 	case "c":
 		m.entries = nil
-		m.scroll = 0
+		m.sel, m.detail = 0, false
 		m.requests, m.errors, m.bytesOut = 0, 0, 0
 		return m, m.setFlash("log cleared")
-	case "up", "k":
-		m.scroll++
-	case "down", "j":
-		m.scroll--
-	case "pgup", "ctrl+u":
-		m.scroll += page
-	case "pgdown", "ctrl+d", " ":
-		m.scroll -= page
-	case "home", "g":
-		m.scroll = len(m.entries)
-	case "end", "G", "f":
-		m.scroll = 0
-	}
-	m.clampScroll()
-	return m, nil
-}
-
-func (m *model) clampScroll() {
-	maxScroll := max(0, m.countVisible()-m.logHeight())
-	m.scroll = min(max(m.scroll, 0), maxScroll)
-}
-
-func (m model) countVisible() int {
-	if !m.errorsOnly {
-		return len(m.entries)
-	}
-	n := 0
-	for _, e := range m.entries {
-		if m.visible(e) {
-			n++
+	case "enter":
+		if m.sel != 0 {
+			m.detail = !m.detail
+			m.qr = false
 		}
+	case "up", "k":
+		m.move(-1)
+	case "down", "j":
+		m.move(1)
+	case "pgup", "ctrl+u":
+		m.move(-page)
+	case "pgdown", "ctrl+d", " ":
+		m.move(page)
+	case "home", "g":
+		if v := m.visibleEntries(); len(v) > 0 {
+			m.sel, m.top = v[0].id, 0
+		}
+	case "end", "G", "f":
+		m.sel = 0
 	}
-	return n
+	m.settle()
+	return m, nil
 }
 
 // ---- styles ----
@@ -273,9 +385,20 @@ func (m model) infoLines() []string {
 }
 
 func (m model) footerLines() []string {
-	keys := []struct{ k, d string }{
-		{"o", "open"}, {"r", "read-only"}, {"e", "errors"}, {"c", "clear"},
-		{"↑↓", "scroll"}, {"f", "follow"}, {"q", "quit"},
+	type key struct{ k, d string }
+	var keys []key
+	switch {
+	case m.typing:
+		keys = []key{{"⏎", "apply"}, {"esc", "clear"}}
+	case m.detail:
+		keys = []key{{"↑↓", "prev/next"}, {"esc", "back"}, {"q", "quit"}}
+	case m.qr:
+		keys = []key{{"u", "close"}, {"o", "open"}, {"q", "quit"}}
+	default:
+		keys = []key{
+			{"o", "open"}, {"r", "read-only"}, {"/", "filter"}, {"e", "errors"},
+			{"↑↓", "select"}, {"⏎", "details"}, {"u", "qr"}, {"c", "clear"}, {"q", "quit"},
+		}
 	}
 	var parts []string
 	for _, k := range keys {
@@ -283,7 +406,10 @@ func (m model) footerLines() []string {
 	}
 	help := " " + strings.Join(parts, dimStyle.Render(" · "))
 	status := " "
-	if m.flash != "" {
+	switch {
+	case m.typing:
+		status = " " + keyStyle.Render("/") + " " + valueStyle.Render(m.filter) + keyStyle.Render("█")
+	case m.flash != "":
 		status = " " + flashStyle.Render(m.flash)
 	}
 	return []string{status, help}
@@ -305,10 +431,10 @@ func (m model) rule(title string) string {
 func (m model) renderEntry(e entry) string {
 	ts := dimStyle.Render(e.time.Format("15:04:05"))
 	if e.req == nil {
-		return " " + ts + "  " + logStyle.Render(strings.TrimRight(e.log, "\n"))
+		return ts + "  " + logStyle.Render(strings.TrimRight(e.log, "\n"))
 	}
 	r := e.req
-	return fmt.Sprintf(" %s  %s %s %s %s  %s",
+	return fmt.Sprintf("%s  %s %s %s %s  %s",
 		ts,
 		methodStyle.Render(r.Method),
 		statusStyle(r.Status).Render(fmt.Sprintf("%3d", r.Status)),
@@ -316,6 +442,110 @@ func (m model) renderEntry(e entry) string {
 		dimStyle.Render(fmt.Sprintf("%8s", humanBytes(r.Bytes))),
 		valueStyle.Render(r.Path),
 	)
+}
+
+// listLines renders the request log, following the newest entries unless
+// one is selected.
+func (m model) listLines(v []entry, h int) (lines []string, newer int) {
+	if len(v) == 0 {
+		msg := "  waiting for requests…"
+		if m.filter != "" || m.errorsOnly {
+			msg = "  nothing matches (esc clears the filter)"
+		}
+		return []string{dimStyle.Render(msg)}, 0
+	}
+	start, end := max(0, len(v)-h), len(v)
+	if m.sel != 0 {
+		start = m.top
+		end = min(len(v), start+h)
+	}
+	for _, e := range v[start:end] {
+		marker := " "
+		if e.id == m.sel {
+			marker = keyStyle.Render("›")
+		}
+		lines = append(lines, marker+m.renderEntry(e))
+	}
+	return lines, len(v) - end
+}
+
+// detailLines shows one entry in full, wrapped to the width.
+func (m model) detailLines(e entry) []string {
+	w := max(20, m.width-12)
+	wrap := lipgloss.NewStyle().Width(w)
+	row := func(label, value string) []string {
+		if value == "" {
+			return nil
+		}
+		parts := strings.Split(wrap.Render(value), "\n")
+		out := []string{" " + lipgloss.NewStyle().Foreground(subtle).Width(10).Render(label) + parts[0]}
+		for _, p := range parts[1:] {
+			out = append(out, strings.Repeat(" ", 11)+p)
+		}
+		return out
+	}
+	var out []string
+	add := func(l []string) { out = append(out, l...) }
+	add(row("Time", e.time.Format("2006-01-02 15:04:05.000")))
+	if e.req == nil {
+		add(row("Log", e.log))
+		return out
+	}
+	r := e.req
+	add(row("Request", r.Method+" "+r.Path))
+	add([]string{" " + lipgloss.NewStyle().Foreground(subtle).Width(10).Render("Status") +
+		statusStyle(r.Status).Render(fmt.Sprintf("%d %s", r.Status, http.StatusText(r.Status)))})
+	add(row("Duration", humanDuration(r.Duration)))
+	add(row("Size", humanBytes(r.Bytes)))
+	add(row("Client", r.Remote))
+	add(row("Origin", r.Origin))
+	add(row("Agent", r.UserAgent))
+	add(row("Response", strings.TrimSpace(r.Error)))
+	return out
+}
+
+// qrLines draws the URL a phone would use as a QR code (two rows per line).
+func (m model) qrLines(h int) []string {
+	target, note := m.srv.URL(), "only reachable from this machine; start with -global to use it from a phone"
+	if lan := m.srv.LANURLs(); len(lan) > 0 {
+		target, note = lan[0], "scan to open on another device on this network"
+	}
+	if m.srv.AuthEnabled() {
+		target += "/?token=" + m.srv.Token()
+		note += " (signs it in)"
+	}
+	q, err := qrcode.New(target, qrcode.Low)
+	if err != nil {
+		return []string{dimStyle.Render("  cannot make a QR code: " + err.Error())}
+	}
+	q.DisableBorder = false
+	bits := q.Bitmap()
+	if (len(bits)+1)/2+2 > h || len(bits)+2 > m.width {
+		return []string{dimStyle.Render("  make the terminal larger to show the QR code"), "  " + urlStyle.Render(target)}
+	}
+	// explicit black-on-white, so it scans in dark and light terminals alike
+	cell := func(top, bottom bool) string {
+		fg, bg := "231", "231"
+		if top {
+			fg = "16"
+		}
+		if bottom {
+			bg = "16"
+		}
+		return "\x1b[38;5;" + fg + ";48;5;" + bg + "m▀"
+	}
+	var out []string
+	for y := 0; y < len(bits); y += 2 {
+		var b strings.Builder
+		b.WriteString("  ")
+		for x := range bits[y] {
+			bottom := y+1 < len(bits) && bits[y+1][x]
+			b.WriteString(cell(bits[y][x], bottom))
+		}
+		b.WriteString("\x1b[0m")
+		out = append(out, b.String())
+	}
+	return append(out, "  "+urlStyle.Render(target), "  "+dimStyle.Render(note))
 }
 
 func (m model) View() string {
@@ -343,36 +573,37 @@ func (m model) View() string {
 		line(l)
 	}
 
-	// request log
-	title := "Requests"
-	if m.errorsOnly {
-		title += " (errors only)"
-	}
-	if m.scroll > 0 {
-		title += fmt.Sprintf(" · paused, %d newer below", m.scroll)
+	h := m.logHeight()
+	v := m.visibleEntries()
+	var title string
+	var body []string
+	switch {
+	case m.qr:
+		title, body = "URL", m.qrLines(h)
+	case m.detail && indexOf(v, m.sel) >= 0:
+		title, body = "Request", m.detailLines(v[indexOf(v, m.sel)])
+	default:
+		var newer int
+		body, newer = m.listLines(v, h)
+		title = "Requests"
+		if m.errorsOnly {
+			title += " · errors only"
+		}
+		if m.filter != "" {
+			title += fmt.Sprintf(" · filter %q", m.filter)
+		}
+		if newer > 0 {
+			title += fmt.Sprintf(" · paused, %d newer below", newer)
+		}
 	}
 	line(m.rule(title))
-
-	h := m.logHeight()
-	var visible []entry
-	for _, e := range m.entries {
-		if m.visible(e) {
-			visible = append(visible, e)
-		}
+	if len(body) > h {
+		body = body[:h]
 	}
-	end := len(visible) - m.scroll
-	start := max(0, end-h)
-	shown := 0
-	if len(visible) == 0 {
-		line(dimStyle.Render("  waiting for requests…"))
-		shown = 1
-	} else {
-		for _, e := range visible[start:end] {
-			line(m.renderEntry(e))
-			shown++
-		}
+	for _, l := range body {
+		line(l)
 	}
-	for ; shown < h; shown++ {
+	for i := len(body); i < h; i++ {
 		b.WriteByte('\n')
 	}
 

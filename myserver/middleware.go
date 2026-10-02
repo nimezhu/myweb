@@ -16,7 +16,10 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status int
 	bytes  int64
+	errBuf []byte // start of an error response, for the request log
 }
+
+const maxErrBody = 300
 
 func (r *statusRecorder) WriteHeader(code int) {
 	if r.status == 0 {
@@ -31,6 +34,9 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	}
 	n, err := r.ResponseWriter.Write(b)
 	r.bytes += int64(n)
+	if r.status >= 400 && len(r.errBuf) < maxErrBody {
+		r.errBuf = append(r.errBuf, b[:min(n, maxErrBody-len(r.errBuf))]...)
+	}
 	return n, err
 }
 
@@ -65,13 +71,16 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			rec.status = http.StatusOK
 		}
 		s.cfg.OnRequest(RequestEvent{
-			Time:     start,
-			Method:   r.Method,
-			Path:     r.URL.RequestURI(),
-			Remote:   r.RemoteAddr,
-			Status:   rec.status,
-			Bytes:    rec.bytes,
-			Duration: time.Since(start),
+			Time:      start,
+			Method:    r.Method,
+			Path:      r.URL.RequestURI(),
+			Remote:    r.RemoteAddr,
+			Status:    rec.status,
+			Bytes:     rec.bytes,
+			Duration:  time.Since(start),
+			Origin:    r.Header.Get("Origin"),
+			UserAgent: r.UserAgent(),
+			Error:     string(rec.errBuf),
 		})
 	})
 }
