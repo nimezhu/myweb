@@ -29,6 +29,11 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 | `-d DIR` | `.` | folder to serve |
 | `-p PORT` | `8433` | port; the next free one is used if it is taken |
 | `-web DIR` | | serve your own web app at `/` (the file manager moves to `/_myweb/`) |
+| `-web-from URL` | | install the app at `/` from a signed manifest and keep it updated (see below) |
+| `-web-key KEY` | | public key that signs the `-web-from` manifest (required with it) |
+| `-web-version V` | | serve this installed version and don't update (rollback) |
+| `-no-update` | | with `-web-from`: serve what is installed, don't check |
+| `-web-check DUR` | `6h` | with `-web-from`: how often to check for updates |
 | `-no-manager` | | don't serve the built-in file manager |
 | `-r` | | read-only (toggle with `r` in the terminal UI) |
 | `-global` | | listen on all interfaces, i.e. visible to your network |
@@ -49,6 +54,7 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 |---|---|
 | `o` | open the browser (signed in when auth is on) |
 | `m` | open the file manager (when `-web` serves an app at `/`) |
+| `a` | check for an app update now (`-web-from`) |
 | `r` | toggle read-only |
 | `/` | filter the request log; `e` shows errors only |
 | `↑` `↓` | select a request; `⏎` shows its details (including the error response) |
@@ -65,6 +71,40 @@ source and never run), search names and contents, upload files and whole
 folders by dropping them on the list, rename, delete, browse and restore
 previous versions, and restore files from the trash. It updates live as files
 change, and lists and runs the plugin commands.
+
+## Install the app from a distribution server
+
+Instead of `-web DIR`, myweb can install your web app from a server you publish
+to, and keep it up to date:
+
+```sh
+# once: make a signing key (keep app.key secret, e.g. in CI secrets)
+go run github.com/nimezhu/myweb/cmd/myweb-publish keygen -out app.key
+
+# each release: zip the built app and write the signed manifest
+myweb-publish build -key app.key -name myapp -version 1.4.2 -dir ./dist -out ./release
+myweb-publish verify -pub <public key> -manifest release/stable.json
+# upload release/ (stable.json, stable.json.sig, myapp-1.4.2.zip) to any web server
+
+# users
+myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <public key>
+```
+
+- **First start** shows an "installing…" page that turns into the app as soon as
+  it is ready. **Later starts** serve the installed version immediately and check
+  for updates in the background (`-web-check`, or `a` in the terminal UI).
+- **Updates** are whole versions, switched in one step. Open pages receive
+  `{"type":"app-updated","name":…,"version":…}` on `/events` and can offer a reload.
+  The newest 3 versions are kept; `-web-version` serves an older one.
+- **Safety:** the app runs with full access to your files, so myweb installs it
+  only if the manifest's ed25519 signature matches `-web-key` and the zip matches
+  the signed SHA-256. There is no switch to skip this. It never moves to an older
+  version by itself, refuses zips with paths that leave the app folder, accepts
+  only https (http just for localhost), and keeps serving the installed version
+  when the server can't be reached. A manifest can require a myweb version with
+  `-requires-myweb`.
+- Apps are installed in the user's cache folder (`~/.cache/myweb/apps` on Linux),
+  not in the data folder. The file manager stays at `/_myweb/`.
 
 ## HTTP API
 

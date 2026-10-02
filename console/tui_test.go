@@ -162,3 +162,21 @@ func TestManagerKeyAndRow(t *testing.T) {
 		t.Fatal("no m key without a separate manager")
 	}
 }
+
+type fakeApp struct{ checks int }
+
+func (f *fakeApp) StatusLine() string { return "demo 1.1.0 · up to date" }
+func (f *fakeApp) CheckNow()          { f.checks++ }
+
+func TestAppRowAndKey(t *testing.T) {
+	m := testModel(t, 30)
+	app := &fakeApp{}
+	m.opts.App = app
+	if v := m.View(); !strings.Contains(v, "demo 1.1.0 · up to date") || !strings.Contains(v, "a: check now") {
+		t.Fatalf("app row:\n%s", v)
+	}
+	m = send(m, key("a"))
+	if app.checks != 1 || !strings.Contains(m.View(), "checking for an app update") {
+		t.Fatal("a should check now")
+	}
+}

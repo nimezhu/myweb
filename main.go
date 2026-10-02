@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/nimezhu/myweb/manager"
 	"github.com/nimezhu/myweb/myserver"
 	"github.com/nimezhu/myweb/plugins"
+	"github.com/nimezhu/myweb/webapp"
 )
 
 func main() {
@@ -32,6 +34,7 @@ func main() {
 	flag.Var(&cors, "cors", "extra browser origins allowed to call the API, comma-separated or repeated\n(e.g. https://app.example.com); also $MYWEB_CORS")
 	version := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(version, "v", false, "print version and exit (shorthand)")
+	webFlags := webapp.AddFlags(flag.CommandLine)
 	flag.Parse()
 
 	if *version {
@@ -43,6 +46,10 @@ func main() {
 		if err := cors.Set(env); err != nil {
 			console.Fatal("myweb", fmt.Errorf("MYWEB_CORS: %w", err))
 		}
+	}
+
+	if *web != "" && webFlags.From != "" {
+		console.Fatal("myweb", fmt.Errorf("use -web or -web-from, not both"))
 	}
 
 	root, err := filepath.Abs(*directory)
@@ -64,6 +71,18 @@ func main() {
 		managerFS = manager.FS()
 	}
 
+	// -web-from: install the app from a distribution server and keep it updated
+	var srv *myserver.Server
+	app, err := webFlags.Installer(myserver.VERSION, func(name, version string) {
+		srv.Broadcast(map[string]string{"type": "app-updated", "name": name, "version": version})
+	})
+	if err != nil {
+		console.Fatal("myweb", err)
+	}
+	if app != nil {
+		webFS = app.FS()
+	}
+
 	// Auth is off by default; -auth, -token or $MYWEB_TOKEN turn it on.
 	if *auth && *token == "" {
 		*token = myserver.NewToken()
@@ -75,7 +94,10 @@ func main() {
 			console.Fatal("myweb", fmt.Errorf("log: %w", err))
 		}
 	}
-	srv := myserver.New(myserver.Config{
+	if app != nil {
+		con.SetApp(app)
+	}
+	srv = myserver.New(myserver.Config{
 		Root:      root,
 		WebFS:     webFS,
 		Manager:   managerFS,
@@ -96,6 +118,9 @@ func main() {
 	plugins.RegisterFileOps(srv)
 	if err := srv.Start(); err != nil {
 		console.Fatal("myweb", err)
+	}
+	if app != nil {
+		app.Start(context.Background())
 	}
 	if srv.Port() != *port {
 		fmt.Fprintf(os.Stderr, "port %d is busy, using %d\n", *port, srv.Port())

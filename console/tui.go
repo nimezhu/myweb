@@ -251,6 +251,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setFlash("could not open browser: " + err.Error())
 		}
 		return m, m.setFlash("opened the file manager")
+	case "a":
+		if m.opts.App == nil {
+			return m, m.setFlash("no auto-updated app (start with -web-from)")
+		}
+		m.opts.App.CheckNow()
+		return m, m.setFlash("checking for an app update…")
 	case "o":
 		if m.opts.OpenURL == "" {
 			return m, m.setFlash("nothing is served at / (no -web, and -no-manager)")
@@ -358,6 +364,9 @@ func (m model) infoLines() []string {
 	}
 	if u := m.srv.ManagerURL(); u != "" && !m.srv.ManagerAtRoot() {
 		lines = append(lines, row("Files", urlStyle.Render(u)+dimStyle.Render("  file manager (m)")))
+	}
+	if m.opts.App != nil {
+		lines = append(lines, row("App", valueStyle.Render(m.opts.App.StatusLine())+dimStyle.Render("  (a: check now)")))
 	}
 	for _, r := range m.opts.Rows {
 		v := valueStyle.Render(r.Value)

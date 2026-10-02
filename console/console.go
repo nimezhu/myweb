@@ -42,7 +42,19 @@ type Options struct {
 	// Default: the server's LoginURL (signs the browser in when auth is on).
 	OpenURL string
 	Rows    []Row
+	// App, if set, is the installed web app (-web-from): shown in the TUI,
+	// where 'a' checks for an update.
+	App App
 }
+
+// App is what the console shows about an auto-updated web app.
+type App interface {
+	StatusLine() string
+	CheckNow()
+}
+
+// SetApp attaches an installed web app (call before Run).
+func (c *Console) SetApp(a App) { c.opts.App = a }
 
 // Console owns terminal output for one server.
 type Console struct {
@@ -169,6 +181,9 @@ func (c *Console) runPlain(srv *myserver.Server) error {
 	}
 	for _, r := range c.opts.Rows {
 		log.Printf("  %s: %s", strings.ToLower(r.Label), r.Value)
+	}
+	if c.opts.App != nil {
+		log.Printf("  app:   %s", c.opts.App.StatusLine())
 	}
 	if srv.AuthEnabled() {
 		log.Printf("  token: %s", srv.Token())

@@ -210,13 +210,15 @@ func (s *Server) routes() {
 		m.Handle("/io/", http.StripPrefix("/io", appHandler(s.cfg.AppServer)))
 	}
 	if s.cfg.Manager != nil {
-		m.Handle(ManagerPath, http.StripPrefix(strings.TrimSuffix(ManagerPath, "/"), http.FileServer(s.cfg.Manager)))
+		m.Handle(ManagerPath, noCache(http.StripPrefix(strings.TrimSuffix(ManagerPath, "/"), http.FileServer(s.cfg.Manager))))
 	}
+	// no-cache: after an app update (or an edit with -web) browsers must
+	// check before reusing a cached index.html or script
 	switch {
 	case s.cfg.WebFS != nil:
-		m.Handle("/", http.FileServer(s.cfg.WebFS))
+		m.Handle("/", noCache(http.FileServer(s.cfg.WebFS)))
 	case s.cfg.Manager != nil:
-		m.Handle("/", http.FileServer(s.cfg.Manager))
+		m.Handle("/", noCache(http.FileServer(s.cfg.Manager)))
 	}
 }
 
@@ -381,3 +383,14 @@ func (s *Server) ManagerLoginURL() string {
 
 // ServesRoot reports whether anything (a web app or the manager) is at "/".
 func (s *Server) ServesRoot() bool { return s.cfg.WebFS != nil || s.cfg.Manager != nil }
+
+// Broadcast sends a JSON message to every /events client, e.g.
+// {"type":"app-updated","version":"1.4.2"}.
+func (s *Server) Broadcast(v interface{}) { s.events.broadcast(v) }
+
+func noCache(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		h.ServeHTTP(w, r)
+	})
+}
