@@ -115,6 +115,7 @@
     <span class="pill" id="version">v…</span>
     <span class="pill" id="mode">checking…</span>
     <span class="pill" id="auth" hidden></span>
+    <span class="pill ok" id="live" hidden title="file changes arrive over /events">● live</span>
   </header>
   <p class="lead">
     A tiny local web server for your data files. It serves the directory you start it in (<code>-d</code>),
@@ -129,7 +130,7 @@
 
   <section>
     <h2>Files</h2>
-    <p class="sub">Live listing of the root directory via <code>GET /ls/</code>; files open via <code>/f/</code>.</p>
+    <p class="sub">Listing via <code>GET /ls/</code>, kept current by <code>/events</code>; files open via <code>/f/</code>.</p>
     <div class="crumbs" id="crumbs"></div>
     <div class="table-wrap">
       <table class="files">
@@ -183,6 +184,7 @@
           <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List plugin commands</td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/&lt;name&gt;</td><td>Run a plugin command (JSON body in, <code>{"success":1,"result":…}</code> out)</td></tr>
           <tr><td class="method">GET</td><td class="mono">/version</td><td>Server version</td></tr>
+          <tr><td class="method">WS</td><td class="mono">/events</td><td>File-change events: send <code>{"op":"watch","path":"/dir"}</code>, receive <code>{"type":"change",…}</code></td></tr>
           <tr><td class="method">WS</td><td class="mono">/echo</td><td>WebSocket echo (<a href="/echotest">test page</a>)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/stopServer</td><td>Stop the server (same-origin only, <a href="/ctrl/">control page</a>)</td></tr>
         </tbody>
@@ -300,6 +302,7 @@
 
   async function load(dir) {
     cwd = dir || "/";
+    watchCwd();
     renderCrumbs();
     const body = $("files");
     try {
@@ -415,7 +418,37 @@
   };
 
   status();
-  // read-only can be toggled from the terminal UI; refresh when coming back
+  // Live updates over /events: re-list when something in the current folder
+  // changes, and follow read-only toggles from the terminal UI.
+  let ws = null, watched = null, reloadTimer = null, retry = 1000;
+  function connect() {
+    try {
+      ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/events");
+    } catch { return; }
+    ws.onopen = () => { retry = 1000; watched = null; watchCwd(); };
+    ws.onmessage = (e) => {
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.type === "hello" || m.type === "status") setMode(m.readOnly);
+      if (m.type === "watching") $("live").hidden = false;
+      if (m.type === "change") {
+        clearTimeout(reloadTimer);
+        reloadTimer = setTimeout(() => load(cwd), 100);
+      }
+    };
+    ws.onclose = () => {
+      $("live").hidden = true;
+      setTimeout(connect, retry);
+      retry = Math.min(retry * 2, 30000);
+    };
+  }
+  function watchCwd() {
+    if (!ws || ws.readyState !== WebSocket.OPEN || watched === cwd) return;
+    if (watched) ws.send(JSON.stringify({ op: "unwatch", path: watched }));
+    ws.send(JSON.stringify({ op: "watch", path: cwd }));
+    watched = cwd;
+  }
+  connect();
+  // still useful when the socket is down
   window.addEventListener("focus", status);
   load(decodeURIComponent(location.hash.slice(1)) || "/");
 })();

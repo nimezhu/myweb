@@ -21,6 +21,23 @@ import (
 
 const VERSION = "0.1.0"
 
+// DefaultCORS lists the origins allowed to call the API from a browser.
+var DefaultCORS = []string{
+	"https://codepen.io",
+	"https://cdpn.io",
+	"https://mycellome.com",
+	"https://*.mycellome.com",
+	"https://cellcycle.org",
+	"https://*.cellcycle.org",
+	"https://youdata.studio",
+	"https://*.youdata.studio",
+	"https://*.static.observableusercontent.com",
+	"http://127.0.0.1:*",
+	"https://127.0.0.1:*",
+	"http://localhost:*",
+	"https://localhost:*",
+}
+
 // maxPortTries bounds the search for a free port starting at Config.Port.
 const maxPortTries = 100
 
@@ -37,12 +54,15 @@ func getFS() http.FileSystem {
 
 // Config describes how the server is set up.
 type Config struct {
-	Root     string          // root directory of data files
-	WebFS    http.FileSystem // static web app served at "/"
-	Port     int             // preferred port; the next free one is used if taken
-	Global   bool            // listen on all interfaces instead of 127.0.0.1
-	ReadOnly bool            // initial read-only state (can be toggled at runtime)
-	CORS     []string        // allowed origins
+	Root  string          // root directory of data files
+	WebFS http.FileSystem // optional static web app served at "/"
+	// AppServer, if set, enables /io/<app> pages that load the app's
+	// main.js and style.css from this base URL.
+	AppServer string
+	Port      int      // preferred port; the next free one is used if taken
+	Global    bool     // listen on all interfaces instead of 127.0.0.1
+	ReadOnly  bool     // initial read-only state (can be toggled at runtime)
+	CORS      []string // allowed origins
 
 	// Token, if set, is required (Bearer header or login cookie) for writes
 	// and /cmd/*, and also for reads when Global. Empty disables auth.
@@ -74,7 +94,9 @@ type Server struct {
 	port     int
 	readOnly atomic.Bool
 
-	cmds cmdRegistry
+	cmds   cmdRegistry
+	events *eventHub
+	cors   *cors.Cors
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -98,6 +120,13 @@ func New(cfg Config) *Server {
 		doneCh: make(chan error, 1),
 	}
 	s.readOnly.Store(cfg.ReadOnly)
+	s.events = newEventHub(s)
+	s.cors = cors.New(cors.Options{
+		AllowedOrigins:   cfg.CORS,
+		AllowCredentials: true,
+		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+	})
 	s.routes()
 	return s
 }
@@ -128,6 +157,9 @@ func (s *Server) routes() {
 			"authed":   s.Authorized(r),
 		})
 	})
+	m.HandleFunc("/events", s.serveEvents)
+	m.HandleFunc("/echo", s.echo)
+	m.HandleFunc("/echotest", echoHome)
 	m.Handle("/cmd/fetchUrl", s.authed(http.HandlerFunc(FetchURLHandleFunc)))
 	m.HandleFunc("/cmd/", s.serveCmd)
 	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
@@ -149,6 +181,9 @@ func (s *Server) routes() {
 		s.RequestStop()
 	})
 
+	if s.cfg.AppServer != "" {
+		m.Handle("/io/", http.StripPrefix("/io", appHandler(s.cfg.AppServer)))
+	}
 	if s.cfg.WebFS != nil {
 		m.Handle("/", http.FileServer(s.cfg.WebFS))
 	}
@@ -165,13 +200,7 @@ func (s *Server) writable(h http.HandlerFunc) http.Handler {
 }
 
 func (s *Server) handler() http.Handler {
-	c := cors.New(cors.Options{
-		AllowedOrigins:   s.cfg.CORS,
-		AllowCredentials: true,
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
-	})
-	return recoverer(c.Handler(s.logRequests(s.login(s.cfg.Mux))))
+	return recoverer(s.cors.Handler(s.logRequests(s.login(s.cfg.Mux))))
 }
 
 func (s *Server) host() string {
@@ -223,6 +252,7 @@ func (s *Server) Start() error {
 
 // Shutdown gracefully stops the server, waiting for in-flight requests.
 func (s *Server) Shutdown(ctx context.Context) error {
+	s.events.close() // WebSockets are hijacked: http.Server.Shutdown doesn't close them
 	if s.srv == nil {
 		return nil
 	}
@@ -242,7 +272,6 @@ func (s *Server) Port() int           { return s.port }
 func (s *Server) Root() string        { return s.cfg.Root }
 func (s *Server) Global() bool        { return s.cfg.Global }
 func (s *Server) ReadOnly() bool      { return s.readOnly.Load() }
-func (s *Server) SetReadOnly(v bool)  { s.readOnly.Store(v) }
 func (s *Server) Mux() *http.ServeMux { return s.cfg.Mux }
 func (s *Server) URL() string         { return s.urlFor("127.0.0.1") }
 func (s *Server) urlFor(h string) string {
@@ -288,4 +317,11 @@ func (s *Server) ResolvePath(urlPath string) string {
 		return filepath.Clean(s.cfg.Root)
 	}
 	return p
+}
+
+// SetReadOnly switches read-only mode and tells /events clients.
+func (s *Server) SetReadOnly(v bool) {
+	if s.readOnly.Swap(v) != v {
+		s.events.broadcast(map[string]interface{}{"type": "status", "readOnly": v})
+	}
 }

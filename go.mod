@@ -1,10 +1,11 @@
-module myweb
+module github.com/nimezhu/myweb
 
 go 1.24.0
 
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/otiai10/opengraph/v2 v2.1.0
 	github.com/rs/cors v1.9.0

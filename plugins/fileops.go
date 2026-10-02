@@ -1,4 +1,5 @@
-package main
+// Package plugins holds ready-made plugin commands for a myserver.Server.
+package plugins
 
 import (
 	"context"
@@ -11,12 +12,13 @@ import (
 	"strings"
 	"time"
 
-	"myweb/myserver"
+	"github.com/nimezhu/myweb/myserver"
 )
 
-// Example plugin commands, served at POST /cmd/<name> with a JSON body.
-// Add your own with srv.RegisterCmd; see myserver/cmd.go for the API.
-func registerPlugins(srv *myserver.Server) {
+// RegisterFileOps adds the stat, mkdir and find commands, served at
+// POST /cmd/<name> with a JSON body. They also serve as examples for writing
+// your own with srv.RegisterCmd; see myserver/cmd.go for the API.
+func RegisterFileOps(srv *myserver.Server) {
 	srv.RegisterCmd("stat", cmdStat,
 		myserver.Describe(`file info: {"path":"/a.txt"}`))
 	srv.RegisterCmd("mkdir", cmdMkdir, myserver.Writes(),

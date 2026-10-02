@@ -1,4 +1,4 @@
-package main
+package console
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"myweb/myserver"
+	"github.com/nimezhu/myweb/myserver"
 )
 
 const maxEntries = 2000
@@ -31,6 +31,7 @@ type entry struct {
 
 type model struct {
 	srv     *myserver.Server
+	opts    Options
 	started time.Time
 	now     time.Time
 	width   int
@@ -49,9 +50,9 @@ type model struct {
 	quitting bool
 }
 
-func newModel(srv *myserver.Server) model {
+func newModel(srv *myserver.Server, opts Options) model {
 	now := time.Now()
-	return model{srv: srv, started: now, now: now, width: 80, height: 24}
+	return model{srv: srv, opts: opts, started: now, now: now, width: 80, height: 24}
 }
 
 func tick() tea.Cmd {
@@ -123,10 +124,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "o":
-		if err := openBrowser(m.srv.LoginURL()); err != nil {
+		if err := OpenBrowser(m.opts.OpenURL); err != nil {
 			return m, m.setFlash("could not open browser: " + err.Error())
 		}
-		return m, m.setFlash("opened " + m.srv.URL() + " (logged in)")
+		return m, m.setFlash("opened " + m.opts.OpenURL)
 	case "r":
 		m.srv.SetReadOnly(!m.srv.ReadOnly())
 		if m.srv.ReadOnly() {
@@ -231,6 +232,13 @@ func (m model) infoLines() []string {
 	for _, u := range m.srv.LANURLs() {
 		lines = append(lines, row("LAN", urlStyle.Render(u)))
 	}
+	for _, r := range m.opts.Rows {
+		v := valueStyle.Render(r.Value)
+		if strings.Contains(r.Value, "://") {
+			v = urlStyle.Render(r.Value)
+		}
+		lines = append(lines, row(r.Label, v))
+	}
 	lines = append(lines, row("Root", valueStyle.Render(m.srv.Root())))
 	if m.srv.AuthEnabled() {
 		lines = append(lines, row("Token", valueStyle.Render(m.srv.Token())+
@@ -256,7 +264,7 @@ func (m model) infoLines() []string {
 	}
 	lines = append(lines, row("Stats",
 		valueStyle.Render(fmt.Sprintf("%d requests", m.requests))+sep+errs+sep+
-			valueStyle.Render(humanBytes(m.bytesOut)+" sent")))
+			valueStyle.Render(humanBytes(m.bytesOut)+" sent")+m.liveClients(sep)))
 
 	if m.srv.Global() && !m.srv.ReadOnly() && !m.srv.AuthEnabled() {
 		lines = append(lines, " "+badge("⚠ anyone on your network can modify files in Root (press r for read-only)", yellow))
@@ -325,7 +333,7 @@ func (m model) View() string {
 
 	// title bar
 	uptime := m.now.Sub(m.started).Truncate(time.Second)
-	left := titleStyle.Render("myweb") + " " + dimStyle.Render("v"+myserver.VERSION)
+	left := titleStyle.Render(m.opts.Name) + " " + dimStyle.Render("v"+m.opts.Version)
 	right := badge("● running", green) + "  " + dimStyle.Render("up "+uptime.String()) + " "
 	gap := max(1, w-lipgloss.Width(left)-lipgloss.Width(right))
 	line(left + strings.Repeat(" ", gap) + right)
@@ -404,4 +412,12 @@ func humanDuration(d time.Duration) string {
 	default:
 		return fmt.Sprintf("%.2fs", d.Seconds())
 	}
+}
+
+func (m model) liveClients(sep string) string {
+	n := m.srv.EventClients()
+	if n == 0 {
+		return ""
+	}
+	return sep + badge(fmt.Sprintf("%d live", n), cyan)
 }
