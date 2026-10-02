@@ -19,6 +19,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"hash/fnv"
 	"io"
@@ -202,7 +203,8 @@ func listVersions(dir string) []os.FileInfo {
 }
 
 // trashFile moves a file into the trash (or deletes it when trash is off).
-func (s *Server) trashFile(urlPath string) error {
+// by, if set, is recorded as who deleted it.
+func (s *Server) trashFile(urlPath, by string) error {
 	p := s.ResolvePath(urlPath)
 	if s.trashDays() == 0 {
 		return os.Remove(p)
@@ -218,6 +220,10 @@ func (s *Server) trashFile(urlPath string) error {
 		os.RemoveAll(s.metaPath("trash", id))
 		return err
 	}
+	if by != "" {
+		info, _ := json.Marshal(map[string]string{"by": by})
+		os.WriteFile(s.metaPath("trash", id+".json"), info, 0o644)
+	}
 	go s.pruneTrash()
 	return nil
 }
@@ -228,6 +234,7 @@ type trashItem struct {
 	Time time.Time `json:"time"`
 	Size int64     `json:"size"`
 	URL  string    `json:"url"`
+	By   string    `json:"by,omitempty"` // multi-user: who deleted it
 }
 
 func (s *Server) trashItems() []trashItem {
@@ -254,8 +261,12 @@ func (s *Server) trashItems() []trashItem {
 				size = fi.Size()
 			}
 			urlRel := "/" + filepath.ToSlash(rel)
+			var info struct{ By string }
+			if b, err := os.ReadFile(filepath.Join(base, id.Name()+".json")); err == nil {
+				json.Unmarshal(b, &info)
+			}
 			items = append(items, trashItem{id.Name(), urlRel, t, size,
-				"/f/" + metaDir + "/trash/" + id.Name() + urlRel})
+				"/f/" + metaDir + "/trash/" + id.Name() + urlRel, info.By})
 			return filepath.SkipAll // one file per trash entry
 		})
 	}
@@ -279,6 +290,7 @@ func (s *Server) pruneTrash() {
 		t, err := time.Parse(versionLayout, strings.SplitN(id.Name(), "-", 2)[0])
 		if err == nil && t.Before(cutoff) {
 			os.RemoveAll(filepath.Join(base, id.Name()))
+			os.Remove(filepath.Join(base, strings.TrimSuffix(id.Name(), ".json")+".json"))
 		}
 	}
 }
@@ -316,6 +328,9 @@ func (s *Server) cmdHistory(_ context.Context, req *CmdRequest) (interface{}, er
 	if clean == "/" || IsReserved(clean) {
 		return nil, Errorf(http.StatusBadRequest, "path must be a file")
 	}
+	if _, err := req.Path(ActRead, clean); err != nil {
+		return nil, err
+	}
 	out := []versionInfo{}
 	for _, fi := range listVersions(s.historyDir(clean)) {
 		t, _ := time.Parse(versionLayout, strings.SplitN(fi.Name(), "-", 2)[0])
@@ -336,6 +351,9 @@ func (s *Server) cmdRestore(_ context.Context, req *CmdRequest) (interface{}, er
 	clean := path.Clean("/" + p.Path)
 	if clean == "/" || IsReserved(clean) || p.Version == "" || strings.ContainsAny(p.Version, `/\`) || p.Version == ".." {
 		return nil, Errorf(http.StatusBadRequest, "path and version are required")
+	}
+	if _, err := req.Path(ActWrite, clean); err != nil {
+		return nil, err
 	}
 	src := filepath.Join(s.historyDir(clean), p.Version)
 	data, err := os.ReadFile(src)
@@ -360,9 +378,11 @@ func (s *Server) cmdRestore(_ context.Context, req *CmdRequest) (interface{}, er
 }
 
 func (s *Server) cmdTrash(_ context.Context, req *CmdRequest) (interface{}, error) {
-	items := s.trashItems()
-	if items == nil {
-		items = []trashItem{}
+	items := []trashItem{}
+	for _, it := range s.trashItems() {
+		if req.Can(ActRead, it.Path) { // multi-user: only what you may read
+			items = append(items, it)
+		}
 	}
 	return map[string]interface{}{"items": items, "days": s.trashDays()}, nil
 }
@@ -385,8 +405,11 @@ func (s *Server) cmdUntrash(_ context.Context, req *CmdRequest) (interface{}, er
 			item = &it
 		}
 	}
-	if item == nil {
+	if item == nil || !req.Can(ActRead, item.Path) {
 		return nil, Errorf(http.StatusNotFound, "not in trash: %s", p.ID)
+	}
+	if _, err := req.Path(ActWrite, item.Path); err != nil {
+		return nil, err
 	}
 	dst := s.ResolvePath(item.Path)
 	defer s.locks.lock(dst)()
@@ -404,10 +427,14 @@ func (s *Server) cmdUntrash(_ context.Context, req *CmdRequest) (interface{}, er
 		return nil, err
 	}
 	os.RemoveAll(s.metaPath("trash", p.ID))
+	os.Remove(s.metaPath("trash", p.ID+".json"))
 	return map[string]string{"path": item.Path}, nil
 }
 
 func (s *Server) cmdEmptyTrash(_ context.Context, req *CmdRequest) (interface{}, error) {
+	if _, err := req.Path(ActAdmin, "/"); err != nil {
+		return nil, err
+	}
 	n := len(s.trashItems())
 	if err := os.RemoveAll(s.metaPath("trash")); err != nil {
 		return nil, err

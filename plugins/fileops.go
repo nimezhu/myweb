@@ -49,7 +49,11 @@ func cmdStat(ctx context.Context, req *myserver.CmdRequest) (interface{}, error)
 	if err := req.Bind(&p); err != nil {
 		return nil, err
 	}
-	fi, err := os.Stat(req.Server.ResolvePath(p.Path))
+	fsPath, err := req.Path(myserver.ActRead, p.Path)
+	if err != nil {
+		return nil, err
+	}
+	fi, err := os.Stat(fsPath)
 	if errors.Is(err, fs.ErrNotExist) {
 		return statResult{Path: p.Path}, nil
 	}
@@ -70,7 +74,11 @@ func cmdMkdir(ctx context.Context, req *myserver.CmdRequest) (interface{}, error
 	if myserver.IsReserved(p.Path) {
 		return nil, myserver.Errorf(http.StatusForbidden, "%s is managed by the server", p.Path)
 	}
-	if err := os.MkdirAll(req.Server.ResolvePath(p.Path), 0o755); err != nil {
+	fsPath, err := req.Path(myserver.ActWrite, p.Path)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(fsPath, 0o755); err != nil {
 		return nil, myserver.Errorf(http.StatusConflict, "mkdir failed: %v", err)
 	}
 	return map[string]string{"path": path.Clean("/" + p.Path)}, nil
@@ -98,7 +106,14 @@ func cmdMv(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 	case myserver.IsReserved(from) || myserver.IsReserved(to):
 		return nil, myserver.Errorf(http.StatusForbidden, "the server's own folder cannot be moved into or out of")
 	}
-	src, dst := req.Server.ResolvePath(from), req.Server.ResolvePath(to)
+	src, err := req.Path(myserver.ActWrite, from) // moving it away changes from, too
+	if err != nil {
+		return nil, err
+	}
+	dst, err := req.Path(myserver.ActWrite, to)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := os.Lstat(src); err != nil {
 		return nil, myserver.Errorf(http.StatusNotFound, "not found: %s", from)
 	}
@@ -150,6 +165,9 @@ func cmdFind(ctx context.Context, req *myserver.CmdRequest) (interface{}, error)
 	}
 	root := req.Server.ResolvePath("/")
 	base := req.Server.ResolvePath(p.Dir)
+	if !req.Visible(p.Dir, true) {
+		return nil, myserver.Errorf(http.StatusNotFound, "not found: %s", p.Dir)
+	}
 	res := findResult{Files: []string{}}
 	err := filepath.WalkDir(base, func(fp string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -158,16 +176,16 @@ func cmdFind(ctx context.Context, req *myserver.CmdRequest) (interface{}, error)
 		if ctx.Err() != nil {
 			return ctx.Err() // client went away
 		}
-		if d.IsDir() && strings.HasPrefix(d.Name(), ".") && fp != base {
+		urlPath := urlOf(root, fp)
+		if d.IsDir() && fp != base && (strings.HasPrefix(d.Name(), ".") || !req.Visible(urlPath, true)) {
 			return filepath.SkipDir
 		}
-		if ok, _ := path.Match(p.Pattern, d.Name()); ok && !d.IsDir() {
+		if ok, _ := path.Match(p.Pattern, d.Name()); ok && !d.IsDir() && req.Can(myserver.ActRead, urlPath) {
 			if len(res.Files) >= p.Limit {
 				res.Truncated = true
 				return errFindLimit
 			}
-			rel, _ := filepath.Rel(root, fp)
-			res.Files = append(res.Files, "/"+filepath.ToSlash(rel))
+			res.Files = append(res.Files, urlPath)
 		}
 		return nil
 	})
@@ -175,4 +193,10 @@ func cmdFind(ctx context.Context, req *myserver.CmdRequest) (interface{}, error)
 		return nil, err
 	}
 	return res, nil
+}
+
+// urlOf turns a file-system path under root into its URL path.
+func urlOf(root, fp string) string {
+	rel, _ := filepath.Rel(root, fp)
+	return path.Clean("/" + filepath.ToSlash(rel))
 }

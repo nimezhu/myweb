@@ -18,15 +18,16 @@ func NewToken() string {
 	return hex.EncodeToString(b)
 }
 
-// AuthEnabled reports whether requests must carry the access token.
-func (s *Server) AuthEnabled() bool { return s.cfg.Token != "" }
+// AuthEnabled reports whether requests must carry a token: the server's
+// token, or (multi-user) a personal one.
+func (s *Server) AuthEnabled() bool { return s.cfg.Token != "" || s.cfg.Access != nil }
 
 // Token is the access token ("" when auth is disabled).
 func (s *Server) Token() string { return s.cfg.Token }
 
 // LoginURL opens the web app and hands the browser the token as a cookie.
 func (s *Server) LoginURL() string {
-	if !s.AuthEnabled() {
+	if s.cfg.Token == "" { // no token, or personal links (multi-user)
 		return s.URL()
 	}
 	return s.URL() + "/?token=" + s.cfg.Token
@@ -43,6 +44,9 @@ func (s *Server) tokenOK(t string) bool {
 // Authorized reports whether r carries the token via the
 // "Authorization: Bearer" header or the login cookie.
 func (s *Server) Authorized(r *http.Request) bool {
+	if s.cfg.Access != nil { // multi-user: signed in as someone
+		return UserFrom(r.Context()) != nil
+	}
 	if !s.AuthEnabled() {
 		return true
 	}
@@ -66,9 +70,10 @@ func (s *Server) authed(h http.Handler) http.Handler {
 	})
 }
 
-// authedReads protects read endpoints only when the server is network-visible.
+// authedReads protects read endpoints when the server is network-visible,
+// and always when multi-user.
 func (s *Server) authedReads(h http.Handler) http.Handler {
-	if !s.cfg.Global {
+	if !s.cfg.Global && s.cfg.Access == nil {
 		return h
 	}
 	return s.authed(h)
@@ -84,7 +89,11 @@ func (s *Server) login(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if !s.tokenOK(t) {
+		ok := s.tokenOK(t)
+		if s.cfg.Access != nil { // a personal sign-in link
+			ok = s.cfg.Access.Identify(r, t) != nil
+		}
+		if !ok {
 			writeError(w, http.StatusUnauthorized, "invalid token")
 			return
 		}

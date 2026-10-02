@@ -28,6 +28,10 @@ func (s *Server) handleWrite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errReserved.Error())
 		return
 	}
+	if !s.can(r, ActWrite, dir) {
+		writeForbidden(w, ActWrite, dir)
+		return
+	}
 	reqBody, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxWriteSize))
 	if err != nil {
 		var mbe *http.MaxBytesError

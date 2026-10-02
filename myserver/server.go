@@ -78,6 +78,9 @@ type Config struct {
 	MaxVersionSize int64
 	TrashDays      int
 
+	// Access, if set, makes the server multi-user (see access.go).
+	Access Access
+
 	// Token, if set, is required (Bearer header or login cookie) for writes
 	// and /cmd/*, and also for reads when Global. Empty disables auth.
 	Token string
@@ -101,6 +104,7 @@ type RequestEvent struct {
 	Origin    string
 	UserAgent string
 	Error     string // start of the response body for status >= 400
+	User      string // multi-user: who made the request
 }
 
 // Server is a running myweb file server.
@@ -156,8 +160,8 @@ func (s *Server) routes() {
 	m := s.cfg.Mux
 	root := s.cfg.Root
 
-	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", revalidate(root, http.FileServer(http.Dir(root))))))
-	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(CreateLsHandleFunc(root)))))
+	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", s.guardFiles(revalidate(root, http.HandlerFunc(s.serveFiles))))))
+	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(s.handleLs))))
 
 	// Write routes are always registered and gated at request time so that
 	// read-only mode can be toggled while running.
@@ -179,6 +183,8 @@ func (s *Server) routes() {
 			"trashDays": s.trashDays(),
 			"auth":      s.AuthEnabled(),
 			"authed":    s.Authorized(r),
+			"user":      UserFrom(r.Context()),
+			"multiUser": s.MultiUser(),
 		})
 	})
 	m.HandleFunc("/events", s.serveEvents)
@@ -199,6 +205,10 @@ func (s *Server) routes() {
 		}
 		if !s.Authorized(r) {
 			writeError(w, http.StatusUnauthorized, "missing or invalid token")
+			return
+		}
+		if !s.can(r, ActAdmin, "/") {
+			writeForbidden(w, ActAdmin, "/")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]int{"success": 1})
@@ -374,7 +384,7 @@ func (s *Server) ManagerAtRoot() bool { return s.cfg.Manager != nil && s.cfg.Web
 // ManagerLoginURL opens the file manager signed in (when auth is on).
 func (s *Server) ManagerLoginURL() string {
 	u := s.ManagerURL()
-	if u != "" && s.AuthEnabled() {
+	if u != "" && s.cfg.Token != "" {
 		u += "?token=" + s.cfg.Token
 	}
 	return u

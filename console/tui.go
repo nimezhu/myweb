@@ -319,7 +319,7 @@ var (
 	cyan      = lipgloss.AdaptiveColor{Light: "#0969DA", Dark: "#79C0FF"}
 
 	titleStyle  = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(accent).Padding(0, 1)
-	labelStyle  = lipgloss.NewStyle().Foreground(subtle).Width(7)
+	labelStyle  = lipgloss.NewStyle().Foreground(subtle).Width(9)
 	valueStyle  = lipgloss.NewStyle().Foreground(textColor)
 	urlStyle    = lipgloss.NewStyle().Foreground(cyan).Underline(true)
 	dimStyle    = lipgloss.NewStyle().Foreground(subtle)
@@ -369,14 +369,21 @@ func (m model) infoLines() []string {
 		lines = append(lines, row("App", valueStyle.Render(m.opts.App.StatusLine())+dimStyle.Render("  (a: check now)")))
 	}
 	for _, r := range m.opts.Rows {
-		v := valueStyle.Render(r.Value)
-		if strings.Contains(r.Value, "://") {
-			v = urlStyle.Render(r.Value)
+		val := r.Value
+		if r.Func != nil {
+			val = r.Func()
+		}
+		v := valueStyle.Render(val)
+		if strings.Contains(val, "://") {
+			v = urlStyle.Render(val)
 		}
 		lines = append(lines, row(r.Label, v))
 	}
 	lines = append(lines, row("Root", valueStyle.Render(m.srv.Root())))
-	if m.srv.AuthEnabled() {
+	if m.srv.MultiUser() {
+		lines = append(lines, row("Sign-in", valueStyle.Render("personal links")+
+			dimStyle.Render("  (myweb-team user add NAME)")))
+	} else if m.srv.AuthEnabled() {
 		lines = append(lines, row("Token", valueStyle.Render(m.srv.Token())+
 			dimStyle.Render("  send as Authorization: Bearer <token>")))
 	} else {
@@ -414,6 +421,9 @@ func (m model) infoLines() []string {
 
 	if m.srv.Global() && !m.srv.ReadOnly() && !m.srv.AuthEnabled() {
 		lines = append(lines, " "+badge("⚠ anyone on your network can modify files in Root (press r for read-only)", yellow))
+	}
+	if m.srv.Global() && m.srv.MultiUser() {
+		lines = append(lines, " "+badge("⚠ plain HTTP: sign-in links can be seen on the network; put HTTPS in front (see README)", yellow))
 	}
 	return lines
 }
@@ -478,8 +488,16 @@ func (m model) renderEntry(e entry) string {
 		statusStyle(r.Status).Render(fmt.Sprintf("%3d", r.Status)),
 		dimStyle.Render(fmt.Sprintf("%8s", humanDuration(r.Duration))),
 		dimStyle.Render(fmt.Sprintf("%8s", humanBytes(r.Bytes))),
-		valueStyle.Render(r.Path),
+		userTag(r.User)+valueStyle.Render(r.Path),
 	)
+}
+
+// userTag shows who made a request (multi-user only).
+func userTag(u string) string {
+	if u == "" {
+		return ""
+	}
+	return keyStyle.Render(u) + " "
 }
 
 // listLines renders the request log, following the newest entries unless
@@ -535,6 +553,7 @@ func (m model) detailLines(e entry) []string {
 		statusStyle(r.Status).Render(fmt.Sprintf("%d %s", r.Status, http.StatusText(r.Status)))})
 	add(row("Duration", humanDuration(r.Duration)))
 	add(row("Size", humanBytes(r.Bytes)))
+	add(row("User", r.User))
 	add(row("Client", r.Remote))
 	add(row("Origin", r.Origin))
 	add(row("Agent", r.UserAgent))

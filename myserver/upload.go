@@ -107,7 +107,16 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 			part.Close()
 			continue
 		}
-		dirFS := s.ResolvePath("/uploads")
+		// multi-user: into the user's own folder, e.g. /users/alice/uploads
+		folder := "/uploads"
+		if u := UserFrom(r.Context()); u != nil && u.Home != "" {
+			folder = path.Join(u.Home, "uploads")
+		}
+		if !s.can(r, ActWrite, folder+"/x") {
+			writeForbidden(w, ActWrite, folder)
+			return
+		}
+		dirFS := s.ResolvePath(folder)
 		h := md5.New()
 		tmp, size, err := receive(dirFS, part, max, h)
 		part.Close()
@@ -128,12 +137,12 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// TODO Upload Using Cookie and Prefix ...
-		f := file{"/f/uploads/" + id, id, int(size), ""}
+		f := file{"/f" + folder + "/" + id, id, int(size), ""}
 		if fi, err := os.Stat(dst); err == nil {
 			f.ETag = fileETag(fi)
 		}
 		writeJSON(w, http.StatusOK, ret{1, f})
-		log.Printf("uploaded /uploads/%s (%d bytes)", id, size)
+		log.Printf("uploaded %s/%s (%d bytes)", folder, id, size)
 		return
 	}
 }
@@ -194,7 +203,7 @@ func (s *Server) handleUp(w http.ResponseWriter, r *http.Request) {
 			fail(http.StatusRequestEntityTooLarge, fmt.Sprintf("at most %d files per request", maxUploadFiles))
 			return
 		}
-		res, status, err := s.storePart(folder, part, mode)
+		res, status, err := s.storePart(UserFrom(r.Context()), folder, part, mode)
 		part.Close()
 		if err != nil {
 			if errors.Is(err, errTooLarge) {
@@ -212,7 +221,7 @@ func (s *Server) handleUp(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{"success": 1, "files": done})
 }
 
-func (s *Server) storePart(folder string, part *multipart.Part, mode string) (uploaded, int, error) {
+func (s *Server) storePart(u *User, folder string, part *multipart.Part, mode string) (uploaded, int, error) {
 	// Browsers send only the base name, unless the page passes a relative
 	// path (folder uploads); clean every segment of it.
 	name := rawFileName(part)
@@ -230,6 +239,9 @@ func (s *Server) storePart(folder string, part *multipart.Part, mode string) (up
 	urlPath := path.Join(folder, rel)
 	if IsReserved(urlPath) {
 		return uploaded{}, http.StatusForbidden, errReserved
+	}
+	if !s.allowed(u, ActWrite, urlPath) {
+		return uploaded{}, http.StatusForbidden, fmt.Errorf("no write permission for %s", urlPath)
 	}
 	dst := s.ResolvePath(urlPath)
 	tmp, size, err := receive(filepath.Dir(dst), part, s.maxUpload(), nil)

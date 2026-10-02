@@ -63,6 +63,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rec := &statusRecorder{ResponseWriter: w}
+		r = s.identify(r) // multi-user: who is this, for every handler below
 		next.ServeHTTP(rec, r)
 		if s.cfg.OnRequest == nil {
 			return
@@ -81,6 +82,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			Origin:    r.Header.Get("Origin"),
 			UserAgent: r.UserAgent(),
 			Error:     string(rec.errBuf),
+			User:      userName(UserFrom(r.Context())),
 		})
 	})
 }
@@ -99,4 +101,11 @@ func recoverer(next http.Handler) http.Handler {
 		}()
 		next.ServeHTTP(w, r)
 	})
+}
+
+func userName(u *User) string {
+	if u == nil {
+		return ""
+	}
+	return u.Name
 }

@@ -30,6 +30,7 @@ import (
 type Row struct {
 	Label string
 	Value string
+	Func  func() string // if set, the value is recomputed on every redraw
 }
 
 // Options configures the console.
@@ -194,12 +195,18 @@ func (c *Console) runPlain(srv *myserver.Server) error {
 		log.Printf("  also at %s", u)
 	}
 	for _, r := range c.opts.Rows {
-		log.Printf("  %s: %s", strings.ToLower(r.Label), r.Value)
+		v := r.Value
+		if r.Func != nil {
+			v = r.Func()
+		}
+		log.Printf("  %s: %s", strings.ToLower(r.Label), v)
 	}
 	if c.opts.App != nil {
 		log.Printf("  app:   %s", c.opts.App.StatusLine())
 	}
-	if srv.AuthEnabled() {
+	if srv.MultiUser() {
+		log.Println("  sign-in: personal links (myweb-team user add NAME)")
+	} else if srv.AuthEnabled() {
 		log.Printf("  token: %s", srv.Token())
 	} else {
 		log.Println("  auth off (enable with -auth)")

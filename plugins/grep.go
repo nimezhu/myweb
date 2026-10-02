@@ -81,6 +81,9 @@ func cmdGrep(ctx context.Context, req *myserver.CmdRequest) (interface{}, error)
 	defer cancel()
 	root := req.Server.ResolvePath("/")
 	base := req.Server.ResolvePath(p.Dir)
+	if !req.Visible(p.Dir, true) {
+		return nil, myserver.Errorf(http.StatusNotFound, "not found: %s", p.Dir)
+	}
 	res := grepResult{Matches: []grepMatch{}}
 	err = filepath.WalkDir(base, func(fp string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -90,13 +93,14 @@ func cmdGrep(ctx context.Context, req *myserver.CmdRequest) (interface{}, error)
 			res.Truncated = true
 			return errGrepDone
 		}
+		urlPath := urlOf(root, fp)
 		if d.IsDir() {
-			if fp != base && strings.HasPrefix(d.Name(), ".") { // .git, .myweb, …
+			if fp != base && (strings.HasPrefix(d.Name(), ".") || !req.Visible(urlPath, true)) { // .git, .myweb, not yours
 				return filepath.SkipDir
 			}
 			return nil
 		}
-		if !d.Type().IsRegular() {
+		if !d.Type().IsRegular() || !req.Can(myserver.ActRead, urlPath) {
 			return nil
 		}
 		if p.Glob != "" {
@@ -109,8 +113,6 @@ func cmdGrep(ctx context.Context, req *myserver.CmdRequest) (interface{}, error)
 			res.Skipped++
 			return nil
 		}
-		rel, _ := filepath.Rel(root, fp)
-		urlPath := "/" + filepath.ToSlash(rel)
 		searched, err := grepFile(fp, urlPath, re, &res, p.Limit)
 		if searched {
 			res.Files++

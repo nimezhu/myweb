@@ -172,8 +172,8 @@
   </p>
 
   <div class="notice" id="signin">
-    <strong>Not signed in.</strong> Writing, uploading and commands need this server's access token.
-    Open the link printed in the terminal (or press <code>o</code> in the terminal UI) to sign in this browser.
+    <strong>Not signed in.</strong> <span id="signinHow">Writing, uploading and commands need this server's access token.
+    Open the link printed in the terminal (or press <code>o</code> in the terminal UI) to sign in this browser.</span>
   </div>
 
   <section>
@@ -353,11 +353,14 @@
     $("drop").style.opacity = noWrite ? 0.45 : 1;
   }
 
-  function setAuth(enabled, ok) {
+  function setAuth(enabled, ok, user, multiUser) {
     authed = !enabled || ok;
     const a = $("auth");
     a.hidden = !enabled;
-    a.textContent = ok ? "signed in" : "not signed in";
+    a.textContent = ok ? (user ? `${user.name} · ${user.role}` : "signed in") : "not signed in";
+    $("signinHow").textContent = multiUser
+      ? "Open your personal sign-in link (your admin creates it with myweb-team user add)."
+      : "Writing, uploading and commands need this server's access token. Open the link printed in the terminal (or press o in the terminal UI) to sign in this browser.";
     a.className = "pill " + (ok ? "ok" : "warn");
     $("signin").classList.toggle("show", !authed);
     applyLocks();
@@ -376,7 +379,7 @@
       keepsVersions = j.versions > 0;
       $("trashNote").textContent = j.trashDays > 0 ? `deleted files are kept ${j.trashDays} days` : "off: deletes are permanent";
       const wasAuthed = authed;
-      setAuth(j.auth, j.authed);
+      setAuth(j.auth, j.authed, j.user, j.multiUser);
       if (authed && (!wasAuthed || !$("cname").options.length)) loadCmds();
     } catch {
       $("version").textContent = "offline"; $("version").className = "pill err";

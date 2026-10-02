@@ -80,11 +80,12 @@ type logRequest struct {
 	Origin string    `json:"origin,omitempty"`
 	Agent  string    `json:"agent,omitempty"`
 	Error  string    `json:"error,omitempty"`
+	User   string    `json:"user,omitempty"`
 }
 
 func (a *accessLog) request(ev myserver.RequestEvent) {
 	a.write(logRequest{ev.Time, "request", ev.Method, ev.Path, ev.Status, ev.Bytes,
-		float64(ev.Duration.Microseconds()) / 1000, ev.Remote, ev.Origin, ev.UserAgent, strings.TrimSpace(ev.Error)})
+		float64(ev.Duration.Microseconds()) / 1000, ev.Remote, ev.Origin, ev.UserAgent, strings.TrimSpace(ev.Error), ev.User})
 }
 
 // the standard logger's own date prefix; the JSON line has a time already

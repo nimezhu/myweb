@@ -108,6 +108,37 @@ myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <p
   Windows), never in the data folder. Don't edit files there; they are replaced
   on update. The file manager stays at `/_myweb/`.
 
+## Several people: myweb-team
+
+`myweb-team` is myweb for a team or lab: everyone signs in with a personal link,
+has a private folder, and folders can be shared.
+
+```sh
+go build -o myweb-team ./cmd/myweb-team
+
+myweb-team user add ann -role admin -url http://lab-server:8433   # prints ann's sign-in link
+myweb-team user add bob                                           # member (default)
+myweb-team user add vic -role viewer
+myweb-team share /projects/x -read bob,vic -write ann             # * = everyone signed in
+myweb-team user list ; myweb-team folders
+myweb-team serve -global                                          # same flags as myweb
+```
+
+- **Roles:** `admin` may do everything; `member` has `/users/<name>` plus the
+  shared folders they are listed on; `viewer` is like member but never writes.
+- **Folder rules** apply to a folder and everything in it; the most specific rule
+  decides; writers can also read.
+- **Everything enforces it:** files, listings, the file manager, uploads, `mv`,
+  search (`find`, `grep`), live events, versions and the trash (which records who
+  deleted what). Files you may not see answer 404, so their names don't leak.
+- **Sign-in links** carry a personal token; only its SHA-256 is stored, in
+  `~/.myweb-team/team.json` (`$MYWEB_TEAM_HOME`). `user reset` replaces a link,
+  `user remove` revokes it. The running server picks up changes within a second,
+  also for connections already open. Requests are logged with the user's name.
+- **HTTPS:** over a network, links and cookies travel in clear text unless HTTPS
+  is in front, e.g. [Caddy](https://caddyserver.com) as a reverse proxy, or a
+  private network such as Tailscale.
+
 ## Folders
 
 Everything myweb keeps lives in `~/.myweb` (`C:\Users\<you>\.myweb` on Windows):
@@ -229,6 +260,11 @@ if err := srv.Start(); err != nil {
 }
 os.Exit(con.Run(srv)) // terminal UI until quit, then a graceful shutdown
 ```
+
+For several users, set `myserver.Config.Access` (see `myserver/access.go`; the
+`team` package is one implementation); commands then get `req.User`, and should
+resolve every path with `req.Path(myserver.ActRead|ActWrite, p)`. The `cli`
+package is the whole command line (`cli.Serve`), used by both programs.
 
 Command options: `myserver.Public()` (no token needed), `myserver.Writes()`
 (refused in read-only mode), `myserver.Describe(…)`. Use `srv.ResolvePath(p)` for

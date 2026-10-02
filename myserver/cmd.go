@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -22,6 +23,23 @@ type CmdRequest struct {
 	Params json.RawMessage // request body; nil when empty
 	HTTP   *http.Request
 	Server *Server
+	User   *User // multi-user: who is asking (nil when single-user)
+}
+
+// Can reports whether the user may do act on the URL path p (always true
+// when single-user).
+func (r *CmdRequest) Can(act Action, p string) bool { return r.Server.allowed(r.User, act, p) }
+
+// Visible reports whether the user may know that p exists.
+func (r *CmdRequest) Visible(p string, isDir bool) bool { return r.Server.visible(r.User, p, isDir) }
+
+// Path checks act on the URL path p and returns its file-system path; a
+// command should get every path it touches this way. Refused: a 403 error.
+func (r *CmdRequest) Path(act Action, p string) (string, error) {
+	if !r.Can(act, p) {
+		return "", Errorf(http.StatusForbidden, "no %s permission for %s", act, path.Clean("/"+p))
+	}
+	return r.Server.ResolvePath(p), nil
 }
 
 // Bind decodes Params into v. An empty body leaves v unchanged.
@@ -166,7 +184,7 @@ func (s *Server) serveCmd(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusRequestEntityTooLarge, "body too large")
 		return
 	}
-	req := &CmdRequest{Name: name, HTTP: r, Server: s}
+	req := &CmdRequest{Name: name, HTTP: r, Server: s, User: UserFrom(r.Context())}
 	if len(strings.TrimSpace(string(body))) > 0 {
 		if !json.Valid(body) {
 			writeError(w, http.StatusBadRequest, "body must be JSON")

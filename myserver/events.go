@@ -71,6 +71,8 @@ type wsClient struct {
 	send   chan []byte
 	subs   map[string]*subscription // by url path
 	authed bool
+	user   *User         // multi-user: who is watching; events are filtered for them
+	req    *http.Request // to identify a token sent later with {"op":"auth"}
 	once   sync.Once
 }
 
@@ -118,6 +120,9 @@ func (s *Server) upgrader() *websocket.Upgrader {
 
 // watchAllowed: reads of file names need the token only when reads do.
 func (s *Server) watchAllowed(c *wsClient) bool {
+	if s.cfg.Access != nil {
+		return c.user != nil
+	}
 	return c.authed || !(s.AuthEnabled() && s.cfg.Global)
 }
 
@@ -131,6 +136,8 @@ func (s *Server) serveEvents(w http.ResponseWriter, r *http.Request) {
 		send:   make(chan []byte, 256),
 		subs:   map[string]*subscription{},
 		authed: s.Authorized(r),
+		user:   UserFrom(r.Context()),
+		req:    r,
 	}
 	h := s.events
 	h.mu.Lock()
@@ -175,7 +182,16 @@ func (h *eventHub) readLoop(c *wsClient) {
 		}
 		switch msg.Op {
 		case "auth":
-			if !h.s.AuthEnabled() || h.s.tokenOK(msg.Token) {
+			if a := h.s.cfg.Access; a != nil { // a personal token
+				if u := a.Identify(c.req, msg.Token); u != nil {
+					h.mu.Lock()
+					c.user, c.authed = u, true
+					h.mu.Unlock()
+					h.sendTo(c, map[string]interface{}{"type": "authed", "user": u.Name})
+				} else {
+					h.sendError(c, "", "invalid token")
+				}
+			} else if !h.s.AuthEnabled() || h.s.tokenOK(msg.Token) {
 				c.authed = true
 				h.sendTo(c, map[string]interface{}{"type": "authed"})
 			} else {
@@ -269,6 +285,9 @@ func (h *eventHub) watch(c *wsClient, urlPath string, recursive bool) error {
 	urlPath = cleanURLPath(urlPath)
 	target := h.s.ResolvePath(urlPath)
 	fi, err := os.Stat(target)
+	if err == nil && !h.s.visible(c.user, urlPath, fi.IsDir()) {
+		err = fs.ErrNotExist // multi-user: don't reveal what you may not see
+	}
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return errors.New("not found")
@@ -446,8 +465,9 @@ func (h *eventHub) flush() {
 
 	root := h.s.ResolvePath("/")
 	type change struct {
-		fsPath string
-		msg    []byte
+		fsPath, urlPath string
+		isDir           bool
+		msg             []byte
 	}
 	var changes []change
 	for p := range pending {
@@ -460,13 +480,16 @@ func (h *eventHub) flush() {
 			"type": "change", "path": "/" + filepath.ToSlash(rel),
 			"exists": err == nil, "isdir": err == nil && fi.IsDir(),
 		})
-		changes = append(changes, change{p, data})
+		changes = append(changes, change{p, "/" + filepath.ToSlash(rel), err == nil && fi.IsDir(), data})
 	}
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for _, ch := range changes {
 		for c := range h.clients {
+			if !h.s.visible(c.user, ch.urlPath, ch.isDir) {
+				continue // multi-user: only what this client's user may see
+			}
 			for _, sub := range c.subs {
 				if sub.covers(ch.fsPath) {
 					h.queueLocked(c, ch.msg)

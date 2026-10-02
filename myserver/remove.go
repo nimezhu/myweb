@@ -24,6 +24,10 @@ func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errReserved.Error())
 		return
 	}
+	if !s.can(r, ActWrite, dir) {
+		writeForbidden(w, ActWrite, dir)
+		return
+	}
 	unlock := s.locks.lock(p)
 	defer unlock()
 	if msg := precondition(r, p); msg != "" {
@@ -32,7 +36,7 @@ func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	fi, err := os.Lstat(p)
 	if err == nil && fi.Mode().IsRegular() {
-		err = s.trashFile(dir)
+		err = s.trashFile(dir, userName(UserFrom(r.Context())))
 	} else if err == nil {
 		err = os.Remove(p) // empty directory or symlink
 	}

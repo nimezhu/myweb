@@ -30,7 +30,9 @@ func For(name string) (Dirs, error) {
 }
 
 // EnvVar is the variable that relocates the folder, e.g. MYWEB_HOME.
-func EnvVar(name string) string { return strings.ToUpper(name) + "_HOME" }
+func EnvVar(name string) string {
+	return strings.ToUpper(strings.ReplaceAll(name, "-", "_")) + "_HOME"
+}
 
 // Data is the default data folder.
 func (d Dirs) Data() string { return filepath.Join(d.Root, "data") }
