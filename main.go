@@ -27,6 +27,7 @@ func main() {
 	versions := flag.Int("versions", 20, "previous versions kept per file on overwrite (0: off)")
 	trashDays := flag.Int("trash-days", 30, "days deleted files stay in the trash (0: delete immediately)")
 	uploadMax := flag.Int64("upload-max", 100, "largest file accepted by an upload, in MiB")
+	logFile := flag.String("log", "", "also append requests and messages to this file (JSON lines)")
 	var cors myserver.OriginList
 	flag.Var(&cors, "cors", "extra browser origins allowed to call the API, comma-separated or repeated\n(e.g. https://app.example.com); also $MYWEB_CORS")
 	version := flag.Bool("version", false, "print version and exit")
@@ -69,6 +70,11 @@ func main() {
 	}
 
 	con := console.New(console.Options{Name: "myweb", NoTUI: *noTUI, NoOpen: *noOpen})
+	if *logFile != "" {
+		if err := con.OpenLog(*logFile); err != nil {
+			console.Fatal("myweb", fmt.Errorf("log: %w", err))
+		}
+	}
 	srv := myserver.New(myserver.Config{
 		Root:      root,
 		WebFS:     webFS,

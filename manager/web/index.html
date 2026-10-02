@@ -142,6 +142,15 @@
   .md blockquote { margin: 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
   .md img { max-width: 100%; }
   .md a { color: var(--accent); }
+  #search { margin: 4px 0 12px; }
+  #search input { flex: 1; min-width: 180px; }
+  #results .group { font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }
+  #results ul { list-style: none; margin: 0; padding: 0; }
+  #results li { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; overflow-wrap: anywhere; }
+  #results li a { color: var(--text); text-decoration: none; font-family: var(--mono); font-size: 12.5px; }
+  #results li a:hover { color: var(--accent); }
+  #results .ln { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
+  mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: inherit; border-radius: 2px; }
   footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
   footer a { color: var(--accent); }
 </style>
@@ -170,6 +179,14 @@
   <section>
     <h2>Files</h2>
     <p class="sub">Listing via <code>GET /ls/</code>, kept current by <code>/events</code>; files open via <code>/f/</code>.</p>
+    <form class="row" id="search">
+      <input type="text" id="q" placeholder="Search file names and contents in this folder" aria-label="Search">
+      <button>Search</button>
+    </form>
+    <div class="panel" id="results" hidden style="margin:0 0 14px">
+      <h3><span class="grow" id="resTitle"></span><button class="link plain" type="button" id="resClose">close</button></h3>
+      <div id="resBody"></div>
+    </div>
     <div class="crumbs" id="crumbs"></div>
     <div class="table-wrap">
       <table class="files">
@@ -244,7 +261,7 @@
           <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>One file (field <code>myFile</code>) into <code>uploads/&lt;md5&gt;_&lt;name&gt;</code>, e.g. for editor.js</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version, read-only and sign-in state</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List plugin commands (incl. <code>history</code>, <code>restore</code>, <code>trash</code>, <code>untrash</code>, <code>mv</code>)</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List commands (incl. <code>find</code>, <code>grep</code>, <code>mv</code>, <code>history</code>, <code>restore</code>, <code>trash</code>, <code>untrash</code>)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/&lt;name&gt;</td><td>Run a plugin command (JSON body in, <code>{"success":1,"result":…}</code> out)</td></tr>
           <tr><td class="method">GET</td><td class="mono">/version</td><td>Server version</td></tr>
           <tr><td class="method">WS</td><td class="mono">/events</td><td>File-change events: send <code>{"op":"watch","path":"/dir"}</code>, receive <code>{"type":"change",…}</code></td></tr>
@@ -496,6 +513,42 @@
     if (!r.ok) { msg($("wmsg"), "Empty trash failed: " + await errText(r), false); onFail(r); }
     loadTrash();
   };
+
+  // ---- search: names (find) and contents (grep) under the current folder ----
+  function highlight(text, q) {
+    const t = esc(text), needle = esc(q);
+    if (!needle) return t;
+    const re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    return t.replace(re, (m) => `<mark>${m}</mark>`);
+  }
+  $("search").onsubmit = async (e) => {
+    e.preventDefault();
+    const q = $("q").value.trim();
+    if (!q) return;
+    $("results").hidden = false;
+    $("resTitle").textContent = `Searching for "${q}" in ${cwd}…`;
+    $("resBody").innerHTML = "";
+    const glob = "*" + q.replace(/[*?[\]\\]/g, "") + "*";
+    const [names, hits] = await Promise.all([
+      post("/cmd/find", { dir: cwd, pattern: glob, limit: 200 }),
+      post("/cmd/grep", { dir: cwd, pattern: q, limit: 300 }),
+    ].map((p) => p.then(async (r) => (r.ok ? (await r.json()).result : (onFail(r), { error: await errText(r) })))));
+    const out = [];
+    if (names.error) out.push(note("Names: " + names.error));
+    else if (names.files.length) {
+      out.push(`<div class="group">Names (${names.files.length}${names.truncated ? "+" : ""})</div><ul>` +
+        names.files.map((p) => `<li><a href="/f${esc(enc(p))}" data-preview="${esc(p)}">${highlight(p, q)}</a></li>`).join("") + "</ul>");
+    }
+    if (hits.error) out.push(note("Contents: " + hits.error));
+    else if (hits.matches.length) {
+      out.push(`<div class="group">Contents (${hits.matches.length}${hits.truncated ? "+" : ""} in ${hits.files} files searched)</div><ul>` +
+        hits.matches.map((m) => `<li><a href="/f${esc(enc(m.path))}" data-preview="${esc(m.path)}">${esc(m.path)}</a>` +
+          ` <span class="ln">:${m.line}</span>${highlight(m.text, q)}</li>`).join("") + "</ul>");
+    }
+    $("resTitle").textContent = `"${q}" in ${cwd}`;
+    $("resBody").innerHTML = out.join("") || note("Nothing found.");
+  };
+  $("resClose").onclick = () => ($("results").hidden = true);
 
   window.addEventListener("hashchange", () => load(decodeURIComponent(location.hash.slice(1)) || "/"));
 

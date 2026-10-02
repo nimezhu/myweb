@@ -15,7 +15,7 @@ import (
 	"github.com/nimezhu/myweb/myserver"
 )
 
-// RegisterFileOps adds the stat, mkdir, mv and find commands, served at
+// RegisterFileOps adds the stat, mkdir, mv, find and grep commands, served at
 // POST /cmd/<name> with a JSON body. They also serve as examples for writing
 // your own with srv.RegisterCmd; see myserver/cmd.go for the API.
 func RegisterFileOps(srv *myserver.Server) {
@@ -25,6 +25,8 @@ func RegisterFileOps(srv *myserver.Server) {
 		myserver.Describe(`create a directory (and parents): {"path":"/a/b"}`))
 	srv.RegisterCmd("mv", cmdMv, myserver.Writes(),
 		myserver.Describe(`move or rename a file or directory: {"from":"/a.txt","to":"/b/a.txt","overwrite":false}`))
+	srv.RegisterCmd("grep", cmdGrep,
+		myserver.Describe(`search inside text files: {"pattern":"TP53","dir":"/","glob":"*.md","regex":false,"ignoreCase":true}`))
 	srv.RegisterCmd("find", cmdFind,
 		myserver.Describe(`find files by name: {"dir":"/","pattern":"*.csv","limit":200}`))
 }

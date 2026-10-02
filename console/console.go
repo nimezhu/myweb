@@ -10,6 +10,7 @@ package console
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -49,6 +50,8 @@ type Console struct {
 	useTUI bool
 	events *bridge
 	sig    chan os.Signal
+	alog   *accessLog
+	stderr *log.Logger // request lines in plain mode (not in the -log file twice)
 }
 
 // New decides between TUI and plain mode. Create it before the server so
@@ -65,6 +68,7 @@ func New(opts Options) *Console {
 		useTUI: !opts.NoTUI && isTerminal(os.Stdout) && isTerminal(os.Stdin),
 		events: newBridge(),
 		sig:    make(chan os.Signal, 1),
+		stderr: log.New(os.Stderr, "", log.LstdFlags),
 	}
 	// Listen from the start: a background process inherits SIGINT as ignored,
 	// so a signal arriving before Run would otherwise be lost.
@@ -81,13 +85,36 @@ func (c *Console) AddRow(label, value string) {
 	c.opts.Rows = append(c.opts.Rows, Row{Label: label, Value: value})
 }
 
+// OpenLog also appends requests and server messages to path, one JSON object
+// per line (see accesslog.go). Call before Run.
+func (c *Console) OpenLog(path string) error {
+	a, err := openAccessLog(path)
+	if err != nil {
+		return err
+	}
+	c.alog = a
+	c.AddRow("Log", path)
+	return nil
+}
+
 // OnRequest feeds the request log; use it as myserver.Config.OnRequest.
 func (c *Console) OnRequest(ev myserver.RequestEvent) {
+	if c.alog != nil {
+		c.alog.request(ev)
+	}
 	if c.useTUI {
 		c.events.send(reqMsg(ev))
 	} else {
-		log.Printf("%s %d %s %s %s", ev.Method, ev.Status, ev.Path, humanDuration(ev.Duration), ev.Remote)
+		c.stderr.Printf("%s %d %s %s %s", ev.Method, ev.Status, ev.Path, humanDuration(ev.Duration), ev.Remote)
 	}
+}
+
+// logOutput routes the standard logger to w, and to the -log file if any.
+func (c *Console) logOutput(w io.Writer) {
+	if c.alog != nil {
+		w = io.MultiWriter(w, &lineWriter{fn: c.alog.message})
+	}
+	log.SetOutput(w)
 }
 
 // Run opens the browser (unless NoOpen), shows the console until the user
@@ -104,6 +131,9 @@ func (c *Console) Run(srv *myserver.Server) int {
 	}
 
 	defer signal.Stop(c.sig)
+	if c.alog != nil {
+		defer c.alog.close()
+	}
 	var err error
 	if c.useTUI {
 		err = c.runTUI(srv)
@@ -131,6 +161,8 @@ func Fatal(name string, err error) {
 }
 
 func (c *Console) runPlain(srv *myserver.Server) error {
+	c.logOutput(os.Stderr)
+	defer log.SetOutput(os.Stderr)
 	log.Printf("%s %s serving %s at %s", c.opts.Name, c.opts.Version, srv.Root(), srv.URL())
 	for _, u := range srv.LANURLs() {
 		log.Printf("  also at %s", u)
@@ -169,7 +201,7 @@ func (c *Console) runTUI(srv *myserver.Server) error {
 	// Route all log output into the TUI so it never corrupts the screen.
 	flags := log.Flags()
 	log.SetFlags(0)
-	log.SetOutput(c.events)
+	c.logOutput(c.events)
 	defer func() { log.SetOutput(os.Stderr); log.SetFlags(flags) }()
 
 	c.events.start(p)
