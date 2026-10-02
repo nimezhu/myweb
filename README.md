@@ -180,8 +180,9 @@ is a hard link to the replaced file, so it costs no space until the file changes
   `Authorization: Bearer <token>`. Browsers sign in through the link the server
   opens (`/?token=…`), which sets a cookie for this server only.
 - **CORS.** Browsers may call the API only from the server's own pages, from
-  localhost, and from the built-in list of origins (see `myserver.DefaultCORS`),
-  plus any given with `-cors`. A bare `*` is refused. The same list is checked
+  localhost, from `https://mycellome.com`, `https://youdata.studio` and
+  `https://cellcycle.org` and their subdomains (`myserver.DefaultCORS`), plus any
+  given with `-cors`. A bare `*` is refused. The same list is checked
   for `/events`.
 - **Paths** cannot leave the served folder, and `.myweb` cannot be written.
 

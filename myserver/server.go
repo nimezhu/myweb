@@ -22,17 +22,16 @@ import (
 
 const VERSION = "0.1.0"
 
-// DefaultCORS lists the origins allowed to call the API from a browser.
+// DefaultCORS lists the origins allowed to call the API from a browser: the
+// mycellome, youdata and cellcycle sites (and their subdomains) and local
+// pages. Add others per install with -cors.
 var DefaultCORS = []string{
-	"https://codepen.io",
-	"https://cdpn.io",
 	"https://mycellome.com",
 	"https://*.mycellome.com",
 	"https://cellcycle.org",
 	"https://*.cellcycle.org",
 	"https://youdata.studio",
 	"https://*.youdata.studio",
-	"https://*.static.observableusercontent.com",
 	"http://127.0.0.1:*",
 	"https://127.0.0.1:*",
 	"http://localhost:*",
