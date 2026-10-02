@@ -33,6 +33,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/nimezhu/myweb/internal/fsx"
 )
 
 const (
@@ -212,7 +214,7 @@ func (s *Server) trashFile(urlPath string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	if err := os.Rename(p, dst); err != nil {
+	if err := fsx.Rename(p, dst); err != nil {
 		os.RemoveAll(s.metaPath("trash", id))
 		return err
 	}
@@ -398,7 +400,7 @@ func (s *Server) cmdUntrash(_ context.Context, req *CmdRequest) (interface{}, er
 		return nil, err
 	}
 	src := s.metaPath("trash", p.ID, filepath.FromSlash(strings.TrimPrefix(item.Path, "/")))
-	if err := os.Rename(src, dst); err != nil {
+	if err := fsx.Rename(src, dst); err != nil {
 		return nil, err
 	}
 	os.RemoveAll(s.metaPath("trash", p.ID))

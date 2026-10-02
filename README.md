@@ -103,8 +103,10 @@ myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <p
   only https (http just for localhost), and keeps serving the installed version
   when the server can't be reached. A manifest can require a myweb version with
   `-requires-myweb`.
-- Apps are installed in the user's cache folder (`~/.cache/myweb/apps` on Linux),
-  not in the data folder. The file manager stays at `/_myweb/`.
+- Apps are installed in the user's cache folder, never in the data folder:
+  `%LocalAppData%\myweb\apps` on Windows, `~/Library/Caches/myweb/apps` on macOS,
+  `~/.cache/myweb/apps` (or `$XDG_CACHE_HOME/myweb/apps`) on Linux. Don't edit
+  files there; they are replaced on update. The file manager stays at `/_myweb/`.
 
 ## HTTP API
 

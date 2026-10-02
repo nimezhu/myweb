@@ -24,6 +24,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/nimezhu/myweb/internal/fsx"
 )
 
 const (
@@ -106,6 +108,7 @@ func New(opts Options) (*Installer, error) {
 	sum := sha256.Sum256([]byte(opts.ManifestURL))
 	in := &Installer{opts: opts, home: filepath.Join(opts.Dir, hex.EncodeToString(sum[:6])), kick: make(chan struct{}, 1)}
 	in.loadState() // the folder is created on the first install
+	in.cleanLeftovers()
 	if opts.Pin != "" {
 		if !in.installed(opts.Pin) {
 			return nil, fmt.Errorf("version %s is not installed (installed: %s)", opts.Pin, strings.Join(in.state.Versions, ", "))
@@ -489,7 +492,7 @@ func (in *Installer) unpack(data []byte, version string, limit int64) error {
 			return fmt.Errorf("bundle unpacks to more than %d bytes", limit)
 		}
 	}
-	return os.Rename(tmp, filepath.Join(in.home, version))
+	return fsx.Rename(tmp, filepath.Join(in.home, version))
 }
 
 // prune keeps the newest Keep versions, and always the current one.
@@ -506,12 +509,35 @@ func (in *Installer) prune() {
 	for _, v := range in.state.Versions {
 		if keep[v] {
 			kept = append(kept, v)
-		} else {
-			os.RemoveAll(filepath.Join(in.home, v))
+			continue
 		}
+		// Move it aside first: on Windows a file still being served can't be
+		// deleted, and a half-deleted version must never be left installed.
+		// If the move fails, keep the version and try again next time.
+		aside := filepath.Join(in.home, ".old-"+v)
+		os.RemoveAll(aside)
+		if err := renameDir(filepath.Join(in.home, v), aside); err != nil {
+			kept = append(kept, v)
+			continue
+		}
+		os.RemoveAll(aside)
 	}
 	in.state.Versions = kept
 	in.saveStateLocked()
+	in.cleanLeftovers()
+}
+
+// renameDir is replaced in tests to simulate a version in use.
+var renameDir = fsx.Rename
+
+// cleanLeftovers removes what an interrupted unpack or prune left behind.
+func (in *Installer) cleanLeftovers() {
+	entries, _ := os.ReadDir(in.home)
+	for _, e := range entries {
+		if n := e.Name(); strings.HasPrefix(n, ".old-") || strings.HasPrefix(n, ".unpack-") {
+			os.RemoveAll(filepath.Join(in.home, n))
+		}
+	}
 }
 
 func (in *Installer) installed(version string) bool {
@@ -551,7 +577,7 @@ func (in *Installer) saveStateLocked() error {
 	if err := os.WriteFile(tmp, b, 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, filepath.Join(in.home, "state.json"))
+	return fsx.Rename(tmp, filepath.Join(in.home, "state.json"))
 }
 
 // Installed lists the installed versions, newest first.

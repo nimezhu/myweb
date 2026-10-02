@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+
+	"github.com/nimezhu/myweb/internal/fsx"
 )
 
 /*
@@ -80,5 +82,5 @@ func writeFileAtomic(p string, data []byte) error {
 	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp.Name(), p)
+	return fsx.Rename(tmp.Name(), p)
 }

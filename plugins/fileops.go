@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nimezhu/myweb/internal/fsx"
 	"github.com/nimezhu/myweb/myserver"
 )
 
@@ -114,7 +115,7 @@ func cmdMv(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 		return nil, myserver.Errorf(http.StatusConflict, "cannot create %s: %v", path.Dir(to), err)
 	}
 	kept := req.Server.KeepVersion(to) // overwriting: the replaced file stays in its history
-	if err := os.Rename(src, dst); err != nil {
+	if err := fsx.Rename(src, dst); err != nil {
 		if kept != "" {
 			os.Remove(kept)
 		}

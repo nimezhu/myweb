@@ -249,8 +249,10 @@ func OpenBrowser(url string) error {
 	var args []string
 	switch runtime.GOOS {
 	case "windows":
-		cmd = "cmd"
-		args = []string{"/c", "start"}
+		// not "cmd /c start": cmd treats & in the URL (…?server=…&token=…)
+		// as a command separator and opens a cut-off address
+		cmd = "rundll32"
+		args = []string{"url.dll,FileProtocolHandler"}
 	case "darwin":
 		cmd = "open"
 	default: // "linux", "freebsd", "openbsd", "netbsd"

@@ -23,6 +23,8 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+
+	"github.com/nimezhu/myweb/internal/fsx"
 )
 
 const (
@@ -120,7 +122,7 @@ func (s *Server) handleUploadFile(w http.ResponseWriter, r *http.Request) {
 		}
 		id := fmt.Sprintf("%x_%s", h.Sum(nil), sanitizeFilename(part.FileName()))
 		dst := filepath.Join(dirFS, id)
-		if err := os.Rename(tmp, dst); err != nil {
+		if err := fsx.Rename(tmp, dst); err != nil {
 			os.Remove(tmp)
 			writeError(w, http.StatusInternalServerError, "create file fail")
 			return
@@ -255,7 +257,7 @@ func (s *Server) storePart(folder string, part *multipart.Part, mode string) (up
 		}
 	}
 	kept := s.KeepVersion(urlPath) // overwrite: the replaced file stays in its history
-	if err := os.Rename(tmp, dst); err != nil {
+	if err := fsx.Rename(tmp, dst); err != nil {
 		if kept != "" {
 			os.Remove(kept)
 		}

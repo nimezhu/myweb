@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -304,5 +305,62 @@ func TestNoFolderUntilInstalled(t *testing.T) {
 	in.check(context.Background()) // nothing published: 404
 	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
 		t.Fatalf("created %v before installing anything", entries)
+	}
+}
+
+// On Windows an old version whose files are being served can't be moved or
+// deleted: it must stay installed and complete, and go on a later prune.
+func TestPruneWhenInUse(t *testing.T) {
+	r := newRelease(t)
+	in := r.installer(t, t.TempDir(), func(o *Options) { o.Keep = 1 })
+	r.publish(t, "1.0.0", map[string]string{"index.html": "one", "a.js": "a"}, nil)
+	in.check(context.Background())
+
+	defer func(f func(string, string) error) { renameDir = f }(renameDir)
+	renameDir = func(string, string) error { return errors.New("used by another process") }
+	r.publish(t, "2.0.0", map[string]string{"index.html": "two"}, nil)
+	in.check(context.Background())
+	if serve(t, in, "/") != "two" {
+		t.Fatal("the update itself must still happen")
+	}
+	if got := strings.Join(in.Installed(), ","); got != "2.0.0,1.0.0" {
+		t.Fatalf("1.0.0 is in use: it must stay listed, got %s", got)
+	}
+	if b, err := os.ReadFile(filepath.Join(in.home, "1.0.0", "a.js")); err != nil || string(b) != "a" {
+		t.Fatal("1.0.0 must stay complete")
+	}
+
+	renameDir = os.Rename // no longer in use
+	r.publish(t, "3.0.0", map[string]string{"index.html": "three"}, nil)
+	in.check(context.Background())
+	if got := strings.Join(in.Installed(), ","); got != "3.0.0" {
+		t.Fatalf("later prune: %s", got)
+	}
+	entries, _ := os.ReadDir(in.home)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			t.Fatalf("leftover %s", e.Name())
+		}
+	}
+}
+
+func TestLeftoversCleanedOnStart(t *testing.T) {
+	r := newRelease(t)
+	dir := t.TempDir()
+	in := r.installer(t, dir, nil)
+	r.publish(t, "1.0.0", map[string]string{"index.html": "one"}, nil)
+	in.check(context.Background())
+	for _, n := range []string{".old-0.9.0", ".unpack-123"} {
+		os.MkdirAll(filepath.Join(in.home, n, "x"), 0o755)
+	}
+	again := r.installer(t, dir, nil)
+	entries, _ := os.ReadDir(again.home)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".old-") || strings.HasPrefix(e.Name(), ".unpack-") {
+			t.Fatalf("leftover %s not cleaned", e.Name())
+		}
+	}
+	if serve(t, again, "/") != "one" {
+		t.Fatal("installed version must still serve")
 	}
 }
