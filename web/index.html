@@ -87,6 +87,22 @@
     color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
   }
   .drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  .notice {
+    display: none; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+    background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--text);
+    border-radius: 10px; padding: 12px 14px; margin: -10px 0 20px; font-size: 14px;
+  }
+  .notice.show { display: block; }
+  select {
+    font: 13px var(--mono); color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+  }
+  pre.out {
+    font: 12.5px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; max-height: 280px; overflow: auto;
+    white-space: pre-wrap; word-break: break-all;
+  }
+  .tag { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); margin-left: 4px; }
   footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
   footer a { color: var(--accent); }
 </style>
@@ -98,12 +114,18 @@
     <h1>myweb</h1>
     <span class="pill" id="version">v…</span>
     <span class="pill" id="mode">checking…</span>
+    <span class="pill" id="auth" hidden></span>
   </header>
   <p class="lead">
     A tiny local web server for your data files. It serves the directory you start it in (<code>-d</code>),
     lets pages list, read, write and upload files over a small HTTP API, and hosts a web app at <code>/</code>.
     This page is the default app. Replace it with <code>-web &lt;dir&gt;</code>.
   </p>
+
+  <div class="notice" id="signin">
+    <strong>Not signed in.</strong> Writing, uploading and commands need this server's access token.
+    Open the link printed in the terminal (or press <code>o</code> in the terminal UI) to sign in this browser.
+  </div>
 
   <section>
     <h2>Files</h2>
@@ -157,14 +179,40 @@
           <tr><td class="method">POST</td><td class="mono">/rm/&lt;path&gt;</td><td>Remove a file</td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>Multipart upload into <code>uploads/</code></td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version and read-only state</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version, read-only and sign-in state</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List plugin commands</td></tr>
+          <tr><td class="method">POST</td><td class="mono">/cmd/&lt;name&gt;</td><td>Run a plugin command (JSON body in, <code>{"success":1,"result":…}</code> out)</td></tr>
           <tr><td class="method">GET</td><td class="mono">/version</td><td>Server version</td></tr>
           <tr><td class="method">WS</td><td class="mono">/echo</td><td>WebSocket echo (<a href="/echotest">test page</a>)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/stopServer</td><td>Stop the server (same-origin only, <a href="/ctrl/">control page</a>)</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="sub" style="margin:14px 0 0">Write endpoints return <code>403</code> in read-only mode (<code>-r</code>, or press <code>r</code> in the terminal UI).</p>
+    <p class="sub" style="margin:14px 0 0">
+      Writes and commands need the access token: send <code>Authorization: Bearer &lt;token&gt;</code>, or sign in once via
+      <code>/?token=&lt;token&gt;</code> (sets a cookie). Missing token → <code>401</code>.
+      Read-only mode (<code>-r</code>, or <code>r</code> in the terminal UI) → <code>403</code>.
+    </p>
+  </section>
+
+  <section>
+    <h2>Plugin commands</h2>
+    <p class="sub">Registered in Go with <code>srv.RegisterCmd(name, fn, opts…)</code> and served at <code>POST /cmd/&lt;name&gt;</code>.</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Command</th><th>Description</th></tr></thead>
+        <tbody id="cmds"><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <select id="cname" aria-label="Command"></select>
+      <button class="primary authed" id="crun">Run</button>
+    </div>
+    <div class="field" style="margin-top:10px">
+      <label for="cparams">JSON params</label>
+      <textarea id="cparams" style="min-height:56px">{}</textarea>
+    </div>
+    <pre class="out" id="cout" hidden></pre>
   </section>
 
   <footer>myweb · <a href="/ctrl/">control</a></footer>
@@ -175,6 +223,7 @@
   const $ = (id) => document.getElementById(id);
   let cwd = "/";
   let readOnly = false;
+  let authed = true;
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
@@ -200,8 +249,29 @@
     const m = $("mode");
     m.textContent = ro ? "read-only" : "read-write";
     m.className = "pill " + (ro ? "warn" : "ok");
-    document.querySelectorAll(".writable").forEach((b) => (b.disabled = ro));
-    $("drop").style.opacity = ro ? 0.45 : 1;
+    applyLocks();
+  }
+
+  function applyLocks() {
+    const noWrite = readOnly || !authed;
+    document.querySelectorAll(".writable").forEach((b) => (b.disabled = noWrite));
+    document.querySelectorAll(".authed").forEach((b) => (b.disabled = !authed));
+    $("drop").style.opacity = noWrite ? 0.45 : 1;
+  }
+
+  function setAuth(enabled, ok) {
+    authed = !enabled || ok;
+    const a = $("auth");
+    a.hidden = !enabled;
+    a.textContent = ok ? "signed in" : "not signed in";
+    a.className = "pill " + (ok ? "ok" : "warn");
+    $("signin").classList.toggle("show", !authed);
+    applyLocks();
+  }
+
+  function onFail(r) {
+    onFail(r);
+    if (r.status === 401) setAuth(true, false);
   }
 
   async function status() {
@@ -209,6 +279,9 @@
       const j = await (await fetch("/cmd/status")).json();
       $("version").textContent = "v" + j.version;
       setMode(j.readOnly);
+      const wasAuthed = authed;
+      setAuth(j.auth, j.authed);
+      if (authed && (!wasAuthed || !$("cname").options.length)) loadCmds();
     } catch {
       $("version").textContent = "offline"; $("version").className = "pill err";
     }
@@ -240,9 +313,10 @@
         const link = f.isdir
           ? `<a href="#${esc(p)}" data-dir="${esc(p)}"><span class="icon">▸</span>${esc(f.name)}/</a>`
           : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener"><span class="icon">·</span>${esc(f.name)}</a>`;
-        const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${readOnly ? "disabled" : ""}>delete</button>`;
+        const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${readOnly || !authed ? "disabled" : ""}>delete</button>`;
         return `<tr><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${rm}</td></tr>`;
       }).join("");
+      applyLocks();
     } catch (e) {
       body.innerHTML = `<tr><td colspan="4" class="empty">Could not list ${esc(cwd)}: ${esc(e.message)}</td></tr>`;
     }
@@ -254,7 +328,7 @@
     const rm = e.target.closest("[data-rm]");
     if (rm) {
       const r = await fetch("/rm" + enc(rm.dataset.rm), { method: "POST" });
-      if (!r.ok) { msg($("wmsg"), "Delete failed: " + await errText(r), false); if (r.status === 403) setMode(true); }
+      if (!r.ok) { msg($("wmsg"), "Delete failed: " + await errText(r), false); onFail(r); }
       load(cwd);
     }
   });
@@ -271,7 +345,7 @@
       load(cwd);
     } else {
       msg($("wmsg"), "Save failed: " + await errText(r), false);
-      if (r.status === 403) setMode(true);
+      onFail(r);
     }
   };
 
@@ -282,7 +356,7 @@
     msg($("umsg"), "Uploading " + file.name + "…", true);
     try {
       const r = await fetch("/cmd/uploadFile", { method: "POST", body: fd });
-      if (!r.ok) { msg($("umsg"), "Upload failed: " + await errText(r), false); if (r.status === 403) setMode(true); return; }
+      if (!r.ok) { msg($("umsg"), "Upload failed: " + await errText(r), false); onFail(r); return; }
       const j = await r.json();
       $("umsg").className = "msg ok";
       $("umsg").innerHTML = `Uploaded <a href="${esc(j.file.url)}" target="_blank" rel="noopener">${esc(j.file.url)}</a>`;
@@ -299,6 +373,46 @@
     e.preventDefault(); drop.classList.remove("over");
     if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
   });
+
+  async function loadCmds() {
+    const body = $("cmds");
+    try {
+      const r = await fetch("/cmd/");
+      if (!r.ok) { onFail(r); throw new Error(await errText(r)); }
+      const list = (await r.json()).result || [];
+      if (!list.length) { body.innerHTML = `<tr><td colspan="2" class="empty">No commands registered.</td></tr>`; return; }
+      body.innerHTML = list.map((c) => `<tr><td class="mono">${esc(c.name)}${c.writes ? '<span class="tag">writes</span>' : ""}${c.public ? '<span class="tag">public</span>' : ""}</td><td>${esc(c.description || "")}</td></tr>`).join("");
+      $("cname").innerHTML = list.map((c) => `<option value="${esc(c.name)}" data-desc="${esc(c.description || "")}">${esc(c.name)}</option>`).join("");
+      fillExample();
+    } catch (e) {
+      body.innerHTML = `<tr><td colspan="2" class="empty">${esc(e.message)}</td></tr>`;
+    }
+  }
+
+  // Pre-fill params with the JSON example from the description, if any.
+  function fillExample() {
+    const opt = $("cname").selectedOptions[0];
+    const m = opt && /\{.*\}/.exec(opt.dataset.desc);
+    $("cparams").value = m ? m[0] : "{}";
+  }
+  $("cname").onchange = fillExample;
+
+  $("crun").onclick = async () => {
+    const out = $("cout");
+    out.hidden = false;
+    out.textContent = "…";
+    try {
+      const r = await fetch("/cmd/" + encodeURIComponent($("cname").value), {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: $("cparams").value,
+      });
+      const text = await r.text();
+      try { out.textContent = r.status + "\n" + JSON.stringify(JSON.parse(text), null, 2); }
+      catch { out.textContent = r.status + "\n" + text; }
+      if (!r.ok) onFail(r); else load(cwd);
+    } catch (e) {
+      out.textContent = e.message;
+    }
+  };
 
   status();
   // read-only can be toggled from the terminal UI; refresh when coming back

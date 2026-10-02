@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -43,6 +44,10 @@ type Config struct {
 	ReadOnly bool            // initial read-only state (can be toggled at runtime)
 	CORS     []string        // allowed origins
 
+	// Token, if set, is required (Bearer header or login cookie) for writes
+	// and /cmd/*, and also for reads when Global. Empty disables auth.
+	Token string
+
 	// Mux lets callers register extra handlers (plugins). Created if nil.
 	Mux *http.ServeMux
 
@@ -68,6 +73,8 @@ type Server struct {
 	ln       net.Listener
 	port     int
 	readOnly atomic.Bool
+
+	cmds cmdRegistry
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
@@ -99,8 +106,8 @@ func (s *Server) routes() {
 	m := s.cfg.Mux
 	root := s.cfg.Root
 
-	m.Handle("/f/", http.StripPrefix("/f", http.FileServer(http.Dir(root))))
-	m.Handle("/ls/", http.StripPrefix("/ls", http.HandlerFunc(CreateLsHandleFunc(root))))
+	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", http.FileServer(http.Dir(root)))))
+	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(CreateLsHandleFunc(root)))))
 
 	// Write routes are always registered and gated at request time so that
 	// read-only mode can be toggled while running.
@@ -117,9 +124,12 @@ func (s *Server) routes() {
 			"success":  1,
 			"version":  VERSION,
 			"readOnly": s.ReadOnly(),
+			"auth":     s.AuthEnabled(),
+			"authed":   s.Authorized(r),
 		})
 	})
-	m.HandleFunc("/cmd/fetchUrl", FetchURLHandleFunc)
+	m.Handle("/cmd/fetchUrl", s.authed(http.HandlerFunc(FetchURLHandleFunc)))
+	m.HandleFunc("/cmd/", s.serveCmd)
 	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "Post data only", http.StatusMethodNotAllowed)
@@ -129,6 +139,10 @@ func (s *Server) routes() {
 		// web page could shut the server down. Only the server's own pages may.
 		if !sameOrigin(r) {
 			writeError(w, http.StatusForbidden, "stopServer is only allowed from this server's own pages")
+			return
+		}
+		if !s.Authorized(r) {
+			writeError(w, http.StatusUnauthorized, "missing or invalid token")
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]int{"success": 1})
@@ -141,13 +155,13 @@ func (s *Server) routes() {
 }
 
 func (s *Server) writable(h http.HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return s.authed(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.readOnly.Load() {
 			writeError(w, http.StatusForbidden, "server is in read-only mode")
 			return
 		}
 		h(w, r)
-	})
+	}))
 }
 
 func (s *Server) handler() http.Handler {
@@ -157,7 +171,7 @@ func (s *Server) handler() http.Handler {
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type"},
 	})
-	return recoverer(c.Handler(s.logRequests(s.cfg.Mux)))
+	return recoverer(c.Handler(s.logRequests(s.login(s.cfg.Mux))))
 }
 
 func (s *Server) host() string {
@@ -264,4 +278,14 @@ func sameOrigin(r *http.Request) bool {
 	}
 	u, err := url.Parse(origin)
 	return err == nil && u.Host == r.Host
+}
+
+// ResolvePath maps a URL-style path ("/a/b.txt") to a filesystem path inside
+// Root. ".." cannot escape Root. Plugins should use this for every path.
+func (s *Server) ResolvePath(urlPath string) string {
+	p, _, err := safeJoin(s.cfg.Root, urlPath)
+	if err == errRootPath {
+		return filepath.Clean(s.cfg.Root)
+	}
+	return p
 }

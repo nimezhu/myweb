@@ -86,6 +86,8 @@ func main() {
 	web := flag.String("web", "", "use static web directory (default: embedded)")
 	noTUI := flag.Bool("no-tui", false, "plain log output instead of the interactive TUI")
 	noOpen := flag.Bool("no-open", false, "do not open the browser on start")
+	token := flag.String("token", os.Getenv("MYWEB_TOKEN"), "access token (default: $MYWEB_TOKEN, else random per start)")
+	noAuth := flag.Bool("no-auth", false, "disable the access token (anyone who can reach the port can write)")
 	version := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(version, "v", false, "print version and exit (shorthand)")
 	flag.Parse()
@@ -113,6 +115,12 @@ func main() {
 		webFS = getFileSystem()
 	}
 
+	if *noAuth {
+		*token = ""
+	} else if *token == "" {
+		*token = myserver.NewToken()
+	}
+
 	useTUI := !*noTUI && isTerminal(os.Stdout) && isTerminal(os.Stdin)
 	events := newBridge()
 
@@ -126,6 +134,7 @@ func main() {
 		Global:   *global,
 		ReadOnly: *readOnly,
 		CORS:     defaultCORS,
+		Token:    *token,
 		Mux:      m,
 		OnRequest: func(ev myserver.RequestEvent) {
 			if useTUI {
@@ -135,6 +144,7 @@ func main() {
 			}
 		},
 	})
+	registerPlugins(srv)
 	if err := srv.Start(); err != nil {
 		fatal(err)
 	}
@@ -142,7 +152,7 @@ func main() {
 		log.Printf("port %d is busy, using %d", *port, srv.Port())
 	}
 	if !*noOpen {
-		if err := openBrowser(srv.URL()); err != nil {
+		if err := openBrowser(srv.LoginURL()); err != nil {
 			log.Printf("could not open browser: %v", err)
 		}
 	}
@@ -171,6 +181,12 @@ func runPlain(srv *myserver.Server) {
 	log.Printf("myweb %s serving %s at %s", myserver.VERSION, srv.Root(), srv.URL())
 	for _, u := range srv.LANURLs() {
 		log.Printf("  also at %s", u)
+	}
+	if srv.AuthEnabled() {
+		log.Printf("  token: %s", srv.Token())
+		log.Printf("  open:  %s", srv.LoginURL())
+	} else {
+		log.Println("  auth disabled (-no-auth)")
 	}
 	if srv.ReadOnly() {
 		log.Println("Read only mode.")

@@ -123,11 +123,10 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.quitting = true
 		return m, tea.Quit
 	case "o":
-		url := m.srv.URL()
-		if err := openBrowser(url); err != nil {
+		if err := openBrowser(m.srv.LoginURL()); err != nil {
 			return m, m.setFlash("could not open browser: " + err.Error())
 		}
-		return m, m.setFlash("opened " + url)
+		return m, m.setFlash("opened " + m.srv.URL() + " (logged in)")
 	case "r":
 		m.srv.SetReadOnly(!m.srv.ReadOnly())
 		if m.srv.ReadOnly() {
@@ -233,6 +232,12 @@ func (m model) infoLines() []string {
 		lines = append(lines, row("LAN", urlStyle.Render(u)))
 	}
 	lines = append(lines, row("Root", valueStyle.Render(m.srv.Root())))
+	if m.srv.AuthEnabled() {
+		lines = append(lines, row("Token", valueStyle.Render(m.srv.Token())+
+			dimStyle.Render("  send as Authorization: Bearer <token>")))
+	} else {
+		lines = append(lines, row("Token", badge("disabled (-no-auth)", yellow)))
+	}
 
 	mode := badge("read-write", green)
 	if m.srv.ReadOnly() {
@@ -253,7 +258,7 @@ func (m model) infoLines() []string {
 		valueStyle.Render(fmt.Sprintf("%d requests", m.requests))+sep+errs+sep+
 			valueStyle.Render(humanBytes(m.bytesOut)+" sent")))
 
-	if m.srv.Global() && !m.srv.ReadOnly() {
+	if m.srv.Global() && !m.srv.ReadOnly() && !m.srv.AuthEnabled() {
 		lines = append(lines, " "+badge("⚠ anyone on your network can modify files in Root (press r for read-only)", yellow))
 	}
 	return lines
