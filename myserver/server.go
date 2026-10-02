@@ -66,6 +66,7 @@ type Config struct {
 
 	// Versions and trash (see versions.go). 0 means the default
 	// (20 versions, 64 MiB max file size, 30 days); negative turns it off.
+	MaxUpload      int64 // per uploaded file; 0 means 100 MiB
 	KeepVersions   int
 	MaxVersionSize int64
 	TrashDays      int
@@ -155,7 +156,8 @@ func (s *Server) routes() {
 	// read-only mode can be toggled while running.
 	m.Handle("/w/", http.StripPrefix("/w", s.writable(s.handleWrite)))
 	m.Handle("/rm/", http.StripPrefix("/rm", s.writable(s.handleRemove)))
-	m.Handle("/cmd/uploadFile", s.writable(CreateUploadFileHandleFunc(root)))
+	m.Handle("/cmd/uploadFile", s.writable(s.handleUploadFile))
+	m.Handle("/up/", http.StripPrefix("/up", s.writable(s.handleUp)))
 
 	m.Handle("/ctrl/", http.StripPrefix("/ctrl", http.FileServer(getFS())))
 	m.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {

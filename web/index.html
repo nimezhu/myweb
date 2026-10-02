@@ -109,6 +109,39 @@
   .panel h3 .grow { flex: 1; }
   details summary { cursor: pointer; font-weight: 600; font-size: 16px; }
   details summary .sub { font-weight: 400; margin-left: 6px; }
+  .check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  .progress { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 10px; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  section.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
+  dialog#pv {
+    width: min(1000px, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--panel); color: var(--text);
+  }
+  dialog#pv::backdrop { background: rgba(0, 0, 0, .45); }
+  .pv-head {
+    display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px;
+    border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel);
+  }
+  .pv-head strong { font-family: var(--mono); font-size: 13.5px; word-break: break-all; }
+  .pv-head .grow { flex: 1; }
+  .pv-head a { color: var(--accent); font-size: 13px; }
+  #pvBody { padding: 16px; overflow: auto; max-height: calc(88vh - 60px); }
+  #pvBody img, #pvBody video { max-width: 100%; max-height: 72vh; display: block; margin: 0 auto; }
+  #pvBody iframe { width: 100%; height: 72vh; border: 0; }
+  #pvBody pre { margin: 0; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
+  #pvBody table { font-size: 13px; }
+  #pvBody td, #pvBody th { border: 1px solid var(--line); padding: 4px 8px; white-space: nowrap; }
+  .pv-note { color: var(--muted); font-size: 12.5px; margin-bottom: 10px; }
+  .md { line-height: 1.6; max-width: 760px; }
+  .md > :first-child { margin-top: 0; }
+  .md h1, .md h2, .md h3 { line-height: 1.25; margin: 1.2em 0 .5em; }
+  .md h1 { font-size: 1.6em; } .md h2 { font-size: 1.3em; } .md h3 { font-size: 1.1em; }
+  .md code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+  .md pre { background: var(--bg); padding: 10px 12px; border-radius: 8px; overflow: auto; }
+  .md pre code { background: none; padding: 0; }
+  .md blockquote { margin: 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
+  .md img { max-width: 100%; }
+  .md a { color: var(--accent); }
   footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
   footer a { color: var(--accent); }
 </style>
@@ -182,11 +215,16 @@
 
     <section>
       <h2>Upload</h2>
-      <p class="sub"><code>POST /cmd/uploadFile</code> (form field <code>myFile</code>, max 10 MB). Stored in <code>uploads/</code>.</p>
+      <p class="sub">Into the current folder via <code>POST /up/&lt;folder&gt;</code>. You can also drop files or folders on the file list.</p>
       <label class="drop writable-drop" id="drop">
-        <input type="file" id="ufile" hidden>
-        Drop a file here or click to choose
+        <input type="file" id="ufile" multiple hidden>
+        Drop files or folders here, or click to choose files
       </label>
+      <div class="row" style="margin-top:10px">
+        <label class="btn"><input type="file" id="udir" webkitdirectory multiple hidden>Choose a folder…</label>
+        <label class="check"><input type="checkbox" id="uover"> replace existing files (the old one is kept as a version)</label>
+      </div>
+      <div class="progress" id="uprog" hidden><div></div></div>
       <div class="msg" id="umsg"></div>
     </section>
   </div>
@@ -202,7 +240,8 @@
           <tr><td class="method">GET</td><td class="mono">/ls/&lt;dir&gt;</td><td>List a directory as JSON</td></tr>
           <tr><td class="method">POST</td><td class="mono">/w/&lt;path&gt;</td><td>Write the request body to a file (creates folders)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/rm/&lt;path&gt;</td><td>Remove a file</td></tr>
-          <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>Multipart upload into <code>uploads/</code></td></tr>
+          <tr><td class="method">POST</td><td class="mono">/up/&lt;folder&gt;</td><td>Multipart upload of any number of files (names may contain sub-folders); <code>?onconflict=rename|overwrite|fail</code></td></tr>
+          <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>One file (field <code>myFile</code>) into <code>uploads/&lt;md5&gt;_&lt;name&gt;</code>, e.g. for editor.js</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version, read-only and sign-in state</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List plugin commands (incl. <code>history</code>, <code>restore</code>, <code>trash</code>, <code>untrash</code>, <code>mv</code>)</td></tr>
@@ -242,6 +281,15 @@
     </div>
     <pre class="out" id="cout" hidden></pre>
   </section>
+
+  <dialog id="pv">
+    <div class="pv-head">
+      <strong id="pvTitle"></strong><span class="sub" id="pvMeta"></span><span class="grow"></span>
+      <a id="pvRaw" target="_blank" rel="noopener">open raw</a><a id="pvDl" download>download</a>
+      <button class="link plain" id="pvClose" autofocus>close</button>
+    </div>
+    <div id="pvBody"></div>
+  </dialog>
 
   <footer>myweb · <a href="/ctrl/">control</a></footer>
 </main>
@@ -344,7 +392,7 @@
         const p = join(cwd, f.name);
         const link = f.isdir
           ? `<a href="#${esc(p)}" data-dir="${esc(p)}"><span class="icon">▸</span>${esc(f.name)}/</a>`
-          : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener"><span class="icon">·</span>${esc(f.name)}</a>`;
+          : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener" data-preview="${esc(p)}"><span class="icon">·</span>${esc(f.name)}</a>`;
         const off = readOnly || !authed ? "disabled" : "";
         const mv = `<button class="link plain writable" data-mv="${esc(p)}" ${off}>rename</button>`;
         const hist = f.isdir || !keepsVersions ? "" : `<button class="link plain" data-hist="${esc(p)}">history</button>`;
@@ -359,6 +407,12 @@
   }
 
   document.addEventListener("click", async (e) => {
+    const pvLink = e.target.closest("a[data-preview]");
+    if (pvLink && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button)) {
+      e.preventDefault(); // ctrl/cmd-click still opens the raw file
+      preview(pvLink.getAttribute("href"), pvLink.dataset.preview, pvLink.dataset.label);
+      return;
+    }
     const dir = e.target.closest("[data-dir]");
     if (dir) { e.preventDefault(); location.hash = dir.dataset.dir; return; }
     const hist = e.target.closest("[data-hist]");
@@ -415,7 +469,7 @@
     const vs = (await r.json()).result.versions;
     const off = readOnly || !authed ? "disabled" : "";
     rows.innerHTML = vs.length ? vs.map((v) => `<tr>
-        <td class="name"><a href="${esc(v.url)}" target="_blank" rel="noopener">${when(v.time, true)}</a></td>
+        <td class="name"><a href="${esc(v.url)}" target="_blank" rel="noopener" data-preview="${esc($("histPath").textContent)}" data-label="version of ${when(v.time, true)}">${when(v.time, true)}</a></td>
         <td class="num">${size(v.size)}</td>
         <td class="num"><button class="link plain writable" data-restore="${esc(v.version)}" ${off}>restore</button></td></tr>`).join("")
       : `<tr><td colspan="3" class="empty">No earlier versions yet: they are kept each time the file is overwritten.</td></tr>`;
@@ -430,7 +484,7 @@
     const items = (await r.json()).result.items;
     const off = readOnly || !authed ? "disabled" : "";
     rows.innerHTML = items.length ? items.map((it) => `<tr>
-        <td class="name"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.path)}</a></td>
+        <td class="name"><a href="${esc(it.url)}" target="_blank" rel="noopener" data-preview="${esc(it.path)}" data-label="in the trash">${esc(it.path)}</a></td>
         <td class="num">${when(it.time, true)}</td><td class="num">${size(it.size)}</td>
         <td class="num"><button class="link plain writable" data-untrash="${esc(it.id)}" ${off}>put back</button></td></tr>`).join("")
       : `<tr><td colspan="4" class="empty">The trash is empty.</td></tr>`;
@@ -459,30 +513,264 @@
     }
   };
 
-  async function upload(file) {
-    if (readOnly) return msg($("umsg"), "Server is read-only.", false);
-    const fd = new FormData();
-    fd.append("myFile", file);
-    msg($("umsg"), "Uploading " + file.name + "…", true);
-    try {
-      const r = await fetch("/cmd/uploadFile", { method: "POST", body: fd });
-      if (!r.ok) { msg($("umsg"), "Upload failed: " + await errText(r), false); onFail(r); return; }
-      const j = await r.json();
+  // ---- uploads: many files and folders, into the current folder, with progress ----
+  // Folders dropped on the page are walked with webkitGetAsEntry; each file keeps its
+  // relative path ("photos/2024/a.jpg"), which /up/ recreates under the current folder.
+  async function filesFromDrop(dt) {
+    const items = [...(dt.items || [])].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+    if (!items.length) return [...dt.files].map((f) => ({ file: f, path: f.name }));
+    const out = [];
+    const walk = async (entry, prefix) => {
+      if (entry.isFile) {
+        const file = await new Promise((res, rej) => entry.file(res, rej));
+        out.push({ file, path: prefix + entry.name });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        for (;;) { // readEntries returns at most ~100 entries per call
+          const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+          if (!batch.length) break;
+          for (const e of batch) await walk(e, prefix + entry.name + "/");
+        }
+      }
+    };
+    for (const e of items) await walk(e, "");
+    return out;
+  }
+
+  function sendBatch(list, mode) {
+    return new Promise((resolve) => {
+      const fd = new FormData();
+      for (const { file, path } of list) fd.append("file", file, path);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/up" + enc(cwd) + "?onconflict=" + mode);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) $("uprog").firstElementChild.style.width = (100 * e.loaded / e.total).toFixed(1) + "%";
+      };
+      xhr.onload = () => {
+        let j = {};
+        try { j = JSON.parse(xhr.responseText); } catch {}
+        resolve({ status: xhr.status, j });
+      };
+      xhr.onerror = () => resolve({ status: 0, j: { error: "network error" } });
+      xhr.send(fd);
+    });
+  }
+
+  async function upload(list) {
+    if (!list.length) return;
+    if (readOnly || !authed) return msg($("umsg"), readOnly ? "Server is read-only." : "Sign in to upload.", false);
+    const mode = $("uover").checked ? "overwrite" : "rename";
+    const total = list.reduce((n, x) => n + x.file.size, 0);
+    $("uprog").hidden = false;
+    let done = [], error = null;
+    for (let i = 0; i < list.length && !error; i += 200) { // the server takes up to 1000 per request
+      const batch = list.slice(i, i + 200);
+      msg($("umsg"), `Uploading ${list.length} file${list.length > 1 ? "s" : ""} (${size(total)}) into ${cwd}…`, true);
+      $("uprog").firstElementChild.style.width = "0";
+      const { status, j } = await sendBatch(batch, mode);
+      done = done.concat(j.files || []);
+      if (status !== 200) {
+        error = j.error || "HTTP " + status;
+        onFail({ status });
+      }
+    }
+    $("uprog").hidden = true;
+    const renamed = done.filter((f) => f.renamed).length;
+    const summary = `Uploaded ${done.length} of ${list.length}` + (renamed ? ` (${renamed} renamed, names were taken)` : "");
+    if (error) msg($("umsg"), summary + ". Failed: " + error, false);
+    else if (done.length === 1) {
       $("umsg").className = "msg ok";
-      $("umsg").innerHTML = `Uploaded <a href="${esc(j.file.url)}" target="_blank" rel="noopener">${esc(j.file.url)}</a>`;
-      load(cwd);
+      $("umsg").innerHTML = `Uploaded <a href="${esc(done[0].url)}" data-preview="${esc(done[0].path)}">${esc(done[0].path)}</a>` + (renamed ? " (renamed: the name was taken)" : "");
+    } else msg($("umsg"), summary, true);
+    load(cwd);
+  }
+
+  const drop = $("drop");
+  const picked = (input) => {
+    upload([...input.files].map((f) => ({ file: f, path: f.webkitRelativePath || f.name })));
+    input.value = "";
+  };
+  $("ufile").onchange = (e) => picked(e.target);
+  $("udir").onchange = (e) => picked(e.target);
+  // the upload box and the whole file list accept drops
+  const filesSection = $("files").closest("section");
+  for (const zone of [drop, filesSection]) {
+    const cls = zone === drop ? "over" : "dropping";
+    zone.addEventListener("dragover", (e) => {
+      if (![...(e.dataTransfer.types || [])].includes("Files")) return;
+      e.preventDefault();
+      zone.classList.add(cls);
+    });
+    zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove(cls); });
+    zone.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      zone.classList.remove(cls);
+      upload(await filesFromDrop(e.dataTransfer));
+    });
+  }
+
+  // ---- previews ----
+  const PREVIEW_BYTES = 512 * 1024;
+  const ext = (p) => (p.match(/\.([^./]+)$/) || [, ""])[1].toLowerCase();
+  const KIND = {};
+  for (const [kind, exts] of Object.entries({
+    image: "png jpg jpeg gif webp svg bmp ico avif",
+    video: "mp4 webm m4v mov ogv",
+    audio: "mp3 wav ogg oga flac m4a aac opus",
+    pdf: "pdf",
+    markdown: "md markdown mdown",
+    csv: "csv",
+    tsv: "tsv tab bed gff gtf",
+    json: "json geojson webmanifest",
+  })) for (const e of exts.split(" ")) KIND[e] = kind;
+
+  async function fetchText(url) {
+    const r = await fetch(url, { headers: { Range: "bytes=0-" + (PREVIEW_BYTES - 1) } });
+    if (!r.ok) throw new Error(await errText(r));
+    const buf = await r.arrayBuffer();
+    const range = r.headers.get("Content-Range");
+    const fullSize = range ? Number(range.split("/")[1]) : buf.byteLength;
+    const head = new Uint8Array(buf, 0, Math.min(buf.byteLength, 8000));
+    const binary = head.includes(0);
+    // a cut may split a multi-byte character: drop the broken tail
+    const text = new TextDecoder("utf-8", { fatal: false }).decode(buf).replace(/�+$/, "");
+    return { text, binary, fullSize, truncated: buf.byteLength < fullSize };
+  }
+
+  function note(t) { return `<div class="pv-note">${esc(t)}</div>`; }
+
+  function csvRows(text, sep, limit) {
+    const rows = [];
+    let row = [], cell = "", q = false;
+    for (let i = 0; i < text.length && rows.length < limit; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+        else if (c === '"') q = false;
+        else cell += c;
+      } else if (c === '"' && cell === "") q = true;
+      else if (c === sep) { row.push(cell); cell = ""; }
+      else if (c === "\n" || c === "\r") {
+        if (c === "\r" && text[i + 1] === "\n") i++;
+        row.push(cell); rows.push(row); row = []; cell = "";
+      } else cell += c;
+    }
+    if ((cell || row.length) && rows.length < limit) { row.push(cell); rows.push(row); }
+    return rows;
+  }
+
+  // Markdown: everything is escaped first; only the tags generated here are emitted.
+  function renderMarkdown(src, dir) {
+    const safeUrl = (u) => {
+      const raw = u.replace(/&amp;/g, "&");
+      if (/^(https?:|mailto:|#)/i.test(raw)) return u;
+      if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return "#"; // javascript:, data:, …
+      if (raw.startsWith("/")) return u;
+      return esc("/f" + enc(join(dir, raw.replace(/^\.\//, ""))));
+    };
+    const inline = (t) => {
+      const codes = [];
+      t = esc(t).replace(/`([^`]+)`/g, (m, c) => (codes.push(c), "\u0000" + (codes.length - 1) + "\u0000"));
+      t = t
+        // link targets may contain one level of parentheses: (https://x.org/a_(b))
+        .replace(/!\[([^\]]*)\]\(((?:[^()\s]|\([^()\s]*\))+)[^)]*\)/g, (m, alt, u) => `<img alt="${alt}" src="${safeUrl(u)}">`)
+        .replace(/\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)[^)]*\)/g, (m, txt, u) => `<a href="${safeUrl(u)}" target="_blank" rel="noopener">${txt}</a>`)
+        .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>')
+        .replace(/\*\*([^*]+)\*\*|__([^_]+)__/g, (m, a, b) => `<strong>${a || b}</strong>`)
+        .replace(/(^|[^*\w])\*([^*\s][^*]*?)\*(?!\w)/g, "$1<em>$2</em>")
+        .replace(/~~([^~]+)~~/g, "<del>$1</del>");
+      return t.replace(/\u0000(\d+)\u0000/g, (m, n) => `<code>${codes[n]}</code>`);
+    };
+    const lines = src.replace(/\r\n?/g, "\n").split("\n");
+    const out = [];
+    let para = [];
+    const flush = () => { if (para.length) out.push(`<p>${inline(para.join(" "))}</p>`); para = []; };
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i];
+      let m;
+      if ((m = l.match(/^\s*(```|~~~)/))) {
+        flush();
+        const code = [];
+        while (++i < lines.length && !lines[i].trim().startsWith(m[1])) code.push(lines[i]);
+        out.push(`<pre><code>${esc(code.join("\n"))}</code></pre>`);
+      } else if ((m = l.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/))) {
+        flush(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`);
+      } else if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(l)) {
+        flush(); out.push("<hr>");
+      } else if (/^\s*>/.test(l)) {
+        flush();
+        const q = [];
+        for (; i < lines.length && /^\s*>/.test(lines[i]); i++) q.push(lines[i].replace(/^\s*>\s?/, ""));
+        i--; out.push(`<blockquote>${inline(q.join(" "))}</blockquote>`);
+      } else if (/^\s*([-*+]|\d+[.)])\s+/.test(l)) {
+        flush();
+        const ordered = /^\s*\d/.test(l), items = [];
+        for (; i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i]); i++) {
+          items.push(`<li>${inline(lines[i].replace(/^\s*([-*+]|\d+[.)])\s+(\[[ xX]\]\s+)?/, (m, b, box) => box ? (/x/i.test(box) ? "☑ " : "☐ ") : ""))}</li>`);
+        }
+        i--; out.push(ordered ? `<ol>${items.join("")}</ol>` : `<ul>${items.join("")}</ul>`);
+      } else if (l.includes("|") && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/.test(lines[i + 1] || "")) {
+        flush();
+        const cells = (r) => r.trim().replace(/^\||\|$/g, "").split("|").map((c) => inline(c.trim()));
+        const head = cells(l);
+        i += 2;
+        const body = [];
+        for (; i < lines.length && lines[i].includes("|"); i++) body.push(cells(lines[i]));
+        i--;
+        out.push(`<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead><tbody>` +
+          body.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("") + "</tbody></table>");
+      } else if (!l.trim()) flush();
+      else para.push(l.trim());
+    }
+    flush();
+    return `<div class="md">${out.join("\n")}</div>`;
+  }
+
+  async function preview(url, filePath, label) {
+    const dlg = $("pv"), body = $("pvBody");
+    $("pvTitle").textContent = filePath;
+    $("pvMeta").textContent = label || "";
+    $("pvRaw").href = url;
+    $("pvDl").href = url;
+    $("pvDl").download = filePath.split("/").pop();
+    body.innerHTML = note("Loading…");
+    if (!dlg.open) dlg.showModal();
+    const kind = KIND[ext(filePath)] || "text";
+    const dir = filePath.slice(0, filePath.lastIndexOf("/")) || "/";
+    try {
+      if (kind === "image") body.innerHTML = `<img src="${esc(url)}" alt="">`;
+      else if (kind === "video") body.innerHTML = `<video src="${esc(url)}" controls></video>`;
+      else if (kind === "audio") body.innerHTML = `<audio src="${esc(url)}" controls style="width:100%"></audio>`;
+      else if (kind === "pdf") body.innerHTML = `<iframe src="${esc(url)}" title="PDF"></iframe>`;
+      else {
+        const t = await fetchText(url);
+        const cut = t.truncated ? note(`Showing the first ${size(PREVIEW_BYTES)} of ${size(t.fullSize)}.`) : "";
+        if (t.binary) {
+          body.innerHTML = note(`Binary file, ${size(t.fullSize)}: no preview. Use download or open raw.`);
+        } else if (kind === "markdown") {
+          body.innerHTML = cut + renderMarkdown(t.text, dir);
+        } else if (kind === "csv" || kind === "tsv") {
+          const rows = csvRows(t.text, kind === "csv" ? "," : "\t", 501);
+          const head = rows.shift() || [];
+          body.innerHTML = cut + (rows.length >= 500 ? note("Showing the first 500 rows.") : "") +
+            `<div class="table-wrap"><table><thead><tr>${head.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>` +
+            rows.map((r) => `<tr>${r.map((c) => `<td>${esc(c)}</td>`).join("")}</tr>`).join("") + "</tbody></table></div>";
+        } else if (kind === "json") {
+          let text = t.text;
+          try { text = JSON.stringify(JSON.parse(t.text), null, 2); } catch {}
+          body.innerHTML = cut + `<pre>${esc(text)}</pre>`;
+        } else {
+          // text and code, HTML included: shown as source, never run on this origin
+          body.innerHTML = cut + `<pre>${esc(t.text)}</pre>`;
+        }
+      }
     } catch (e) {
-      msg($("umsg"), "Upload failed: " + e.message, false);
+      body.innerHTML = note("Cannot preview: " + e.message);
     }
   }
-  const drop = $("drop");
-  $("ufile").onchange = (e) => e.target.files[0] && upload(e.target.files[0]);
-  drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
-  drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-  drop.addEventListener("drop", (e) => {
-    e.preventDefault(); drop.classList.remove("over");
-    if (e.dataTransfer.files[0]) upload(e.dataTransfer.files[0]);
-  });
+  $("pvClose").onclick = () => $("pv").close();
+  $("pv").addEventListener("click", (e) => { if (e.target === $("pv")) $("pv").close(); }); // backdrop
+  $("pv").addEventListener("close", () => ($("pvBody").innerHTML = "")); // stop media
 
   async function loadCmds() {
     const body = $("cmds");
