@@ -74,6 +74,7 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   button.link { border: 0; background: none; color: var(--err); padding: 2px 6px; font-weight: 500; }
+  button.link.plain { color: var(--accent); }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
   .grid section { margin-bottom: 0; }
@@ -316,8 +317,10 @@
         const link = f.isdir
           ? `<a href="#${esc(p)}" data-dir="${esc(p)}"><span class="icon">▸</span>${esc(f.name)}/</a>`
           : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener"><span class="icon">·</span>${esc(f.name)}</a>`;
-        const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${readOnly || !authed ? "disabled" : ""}>delete</button>`;
-        return `<tr><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${rm}</td></tr>`;
+        const off = readOnly || !authed ? "disabled" : "";
+        const mv = `<button class="link plain writable" data-mv="${esc(p)}" ${off}>rename</button>`;
+        const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${off}>delete</button>`;
+        return `<tr><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${mv}${rm}</td></tr>`;
       }).join("");
       applyLocks();
     } catch (e) {
@@ -328,6 +331,19 @@
   document.addEventListener("click", async (e) => {
     const dir = e.target.closest("[data-dir]");
     if (dir) { e.preventDefault(); location.hash = dir.dataset.dir; return; }
+    const mv = e.target.closest("[data-mv]");
+    if (mv) {
+      const from = mv.dataset.mv;
+      const to = prompt("Move or rename to:", from);
+      if (!to || to === from) return;
+      const r = await fetch("/cmd/mv", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ from, to: to.startsWith("/") ? to : join(cwd, to) }),
+      });
+      if (!r.ok) { msg($("wmsg"), "Rename failed: " + await errText(r), false); onFail(r); }
+      load(cwd);
+      return;
+    }
     const rm = e.target.closest("[data-rm]");
     if (rm) {
       const r = await fetch("/rm" + enc(rm.dataset.rm), { method: "POST" });

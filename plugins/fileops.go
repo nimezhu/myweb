@@ -15,7 +15,7 @@ import (
 	"github.com/nimezhu/myweb/myserver"
 )
 
-// RegisterFileOps adds the stat, mkdir and find commands, served at
+// RegisterFileOps adds the stat, mkdir, mv and find commands, served at
 // POST /cmd/<name> with a JSON body. They also serve as examples for writing
 // your own with srv.RegisterCmd; see myserver/cmd.go for the API.
 func RegisterFileOps(srv *myserver.Server) {
@@ -23,6 +23,8 @@ func RegisterFileOps(srv *myserver.Server) {
 		myserver.Describe(`file info: {"path":"/a.txt"}`))
 	srv.RegisterCmd("mkdir", cmdMkdir, myserver.Writes(),
 		myserver.Describe(`create a directory (and parents): {"path":"/a/b"}`))
+	srv.RegisterCmd("mv", cmdMv, myserver.Writes(),
+		myserver.Describe(`move or rename a file or directory: {"from":"/a.txt","to":"/b/a.txt","overwrite":false}`))
 	srv.RegisterCmd("find", cmdFind,
 		myserver.Describe(`find files by name: {"dir":"/","pattern":"*.csv","limit":200}`))
 }
@@ -66,6 +68,48 @@ func cmdMkdir(ctx context.Context, req *myserver.CmdRequest) (interface{}, error
 		return nil, myserver.Errorf(http.StatusConflict, "mkdir failed: %v", err)
 	}
 	return map[string]string{"path": path.Clean("/" + p.Path)}, nil
+}
+
+type mvParams struct {
+	From      string `json:"from"`
+	To        string `json:"to"`
+	Overwrite bool   `json:"overwrite"`
+}
+
+func cmdMv(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
+	var p mvParams
+	if err := req.Bind(&p); err != nil {
+		return nil, err
+	}
+	from, to := path.Clean("/"+p.From), path.Clean("/"+p.To)
+	switch {
+	case from == "/" || to == "/":
+		return nil, myserver.Errorf(http.StatusBadRequest, "from and to must not be the root")
+	case from == to:
+		return nil, myserver.Errorf(http.StatusBadRequest, "from and to are the same")
+	case strings.HasPrefix(to, from+"/"):
+		return nil, myserver.Errorf(http.StatusBadRequest, "cannot move a directory into itself")
+	}
+	src, dst := req.Server.ResolvePath(from), req.Server.ResolvePath(to)
+	if _, err := os.Lstat(src); err != nil {
+		return nil, myserver.Errorf(http.StatusNotFound, "not found: %s", from)
+	}
+	if fi, err := os.Lstat(dst); err == nil {
+		if !p.Overwrite {
+			return nil, myserver.Errorf(http.StatusConflict, "already exists: %s (set overwrite to replace it)", to)
+		}
+		if fi.IsDir() {
+			// os.Rename only replaces empty directories; refuse rather than half-merge
+			return nil, myserver.Errorf(http.StatusConflict, "will not overwrite directory %s", to)
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return nil, myserver.Errorf(http.StatusConflict, "cannot create %s: %v", path.Dir(to), err)
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return nil, myserver.Errorf(http.StatusConflict, "move failed: %v", errors.Unwrap(err))
+	}
+	return map[string]string{"from": from, "to": to}, nil
 }
 
 type findParams struct {
