@@ -236,7 +236,7 @@ func (m model) infoLines() []string {
 		lines = append(lines, row("Token", valueStyle.Render(m.srv.Token())+
 			dimStyle.Render("  send as Authorization: Bearer <token>")))
 	} else {
-		lines = append(lines, row("Token", badge("disabled (-no-auth)", yellow)))
+		lines = append(lines, row("Token", dimStyle.Render("off (enable with -auth)")))
 	}
 
 	mode := badge("read-write", green)

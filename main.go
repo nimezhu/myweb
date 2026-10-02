@@ -86,8 +86,8 @@ func main() {
 	web := flag.String("web", "", "use static web directory (default: embedded)")
 	noTUI := flag.Bool("no-tui", false, "plain log output instead of the interactive TUI")
 	noOpen := flag.Bool("no-open", false, "do not open the browser on start")
-	token := flag.String("token", os.Getenv("MYWEB_TOKEN"), "access token (default: $MYWEB_TOKEN, else random per start)")
-	noAuth := flag.Bool("no-auth", false, "disable the access token (anyone who can reach the port can write)")
+	auth := flag.Bool("auth", false, "require an access token for writes and commands (random per start unless -token is given)")
+	token := flag.String("token", os.Getenv("MYWEB_TOKEN"), "access token; setting it (or $MYWEB_TOKEN) turns on -auth")
 	version := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(version, "v", false, "print version and exit (shorthand)")
 	flag.Parse()
@@ -115,9 +115,8 @@ func main() {
 		webFS = getFileSystem()
 	}
 
-	if *noAuth {
-		*token = ""
-	} else if *token == "" {
+	// Auth is off by default; -auth, -token or $MYWEB_TOKEN turn it on.
+	if *auth && *token == "" {
 		*token = myserver.NewToken()
 	}
 
@@ -186,7 +185,7 @@ func runPlain(srv *myserver.Server) {
 		log.Printf("  token: %s", srv.Token())
 		log.Printf("  open:  %s", srv.LoginURL())
 	} else {
-		log.Println("  auth disabled (-no-auth)")
+		log.Println("  auth off (enable with -auth)")
 	}
 	if srv.ReadOnly() {
 		log.Println("Read only mode.")
