@@ -5,7 +5,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strconv"
 )
 
 // revalidate makes browsers check with the server before reusing a cached
@@ -19,7 +18,7 @@ func revalidate(root string, h http.Handler) http.Handler {
 		if fi, err := os.Stat(filepath.Join(root, filepath.FromSlash(path.Clean("/"+r.URL.Path)))); err == nil && fi.Mode().IsRegular() {
 			// size + mtime, like nginx; http.ServeContent then answers
 			// If-None-Match (304) and If-Range for us
-			w.Header().Set("ETag", `"`+strconv.FormatInt(fi.ModTime().UnixNano(), 36)+"-"+strconv.FormatInt(fi.Size(), 36)+`"`)
+			w.Header().Set("ETag", fileETag(fi))
 		}
 		h.ServeHTTP(w, r)
 	})

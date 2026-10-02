@@ -64,6 +64,12 @@ type Config struct {
 	ReadOnly  bool     // initial read-only state (can be toggled at runtime)
 	CORS      []string // allowed origins
 
+	// Versions and trash (see versions.go). 0 means the default
+	// (20 versions, 64 MiB max file size, 30 days); negative turns it off.
+	KeepVersions   int
+	MaxVersionSize int64
+	TrashDays      int
+
 	// Token, if set, is required (Bearer header or login cookie) for writes
 	// and /cmd/*, and also for reads when Global. Empty disables auth.
 	Token string
@@ -98,6 +104,7 @@ type Server struct {
 	readOnly atomic.Bool
 
 	cmds   cmdRegistry
+	locks  pathLocks
 	events *eventHub
 	cors   *cors.Cors
 
@@ -128,9 +135,12 @@ func New(cfg Config) *Server {
 		AllowedOrigins:   cfg.CORS,
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "If-Match", "If-None-Match"},
+		// let cross-origin apps read the ETag, for conditional writes
+		ExposedHeaders: []string{"ETag"},
 	})
 	s.routes()
+	s.registerSafetyCmds()
 	return s
 }
 
@@ -143,8 +153,8 @@ func (s *Server) routes() {
 
 	// Write routes are always registered and gated at request time so that
 	// read-only mode can be toggled while running.
-	m.Handle("/w/", http.StripPrefix("/w", s.writable(CreateWriteHandleFunc(root))))
-	m.Handle("/rm/", http.StripPrefix("/rm", s.writable(CreateRemoveHandleFunc(root))))
+	m.Handle("/w/", http.StripPrefix("/w", s.writable(s.handleWrite)))
+	m.Handle("/rm/", http.StripPrefix("/rm", s.writable(s.handleRemove)))
 	m.Handle("/cmd/uploadFile", s.writable(CreateUploadFileHandleFunc(root)))
 
 	m.Handle("/ctrl/", http.StripPrefix("/ctrl", http.FileServer(getFS())))
@@ -153,11 +163,13 @@ func (s *Server) routes() {
 	})
 	m.HandleFunc("/cmd/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]interface{}{
-			"success":  1,
-			"version":  VERSION,
-			"readOnly": s.ReadOnly(),
-			"auth":     s.AuthEnabled(),
-			"authed":   s.Authorized(r),
+			"success":   1,
+			"version":   VERSION,
+			"readOnly":  s.ReadOnly(),
+			"versions":  s.keepVersions(),
+			"trashDays": s.trashDays(),
+			"auth":      s.AuthEnabled(),
+			"authed":    s.Authorized(r),
 		})
 	})
 	m.HandleFunc("/events", s.serveEvents)
@@ -237,6 +249,7 @@ func (s *Server) Start() error {
 	}
 	s.ln = ln
 	s.port = port
+	go s.pruneTrash()
 	s.srv = &http.Server{
 		Handler:           s.handler(),
 		ReadHeaderTimeout: 10 * time.Second,

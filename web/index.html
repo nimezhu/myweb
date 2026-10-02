@@ -104,6 +104,11 @@
     white-space: pre-wrap; word-break: break-all;
   }
   .tag { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); margin-left: 4px; }
+  .panel { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
+  .panel h3 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  .panel h3 .grow { flex: 1; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 16px; }
+  details summary .sub { font-weight: 400; margin-left: 6px; }
   footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
   footer a { color: var(--accent); }
 </style>
@@ -139,6 +144,24 @@
         <tbody id="files"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
+    <div class="panel" id="hist" hidden>
+      <h3><span class="grow">Versions of <code id="histPath"></code></span><button class="link plain" id="histClose">close</button></h3>
+      <div class="table-wrap">
+        <table class="files"><thead><tr><th>Saved</th><th style="text-align:right">Size</th><th></th></tr></thead>
+        <tbody id="histRows"></tbody></table>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <details id="trashBox">
+      <summary>Trash <span class="sub" id="trashNote"></span></summary>
+      <div class="table-wrap" style="margin-top:10px">
+        <table class="files"><thead><tr><th>File</th><th style="text-align:right">Deleted</th><th style="text-align:right">Size</th><th></th></tr></thead>
+        <tbody id="trashRows"></tbody></table>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="writable" id="emptyTrash">Empty trash</button></div>
+    </details>
   </section>
 
   <div class="grid">
@@ -182,7 +205,7 @@
           <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>Multipart upload into <code>uploads/</code></td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version, read-only and sign-in state</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List plugin commands</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List plugin commands (incl. <code>history</code>, <code>restore</code>, <code>trash</code>, <code>untrash</code>, <code>mv</code>)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/&lt;name&gt;</td><td>Run a plugin command (JSON body in, <code>{"success":1,"result":…}</code> out)</td></tr>
           <tr><td class="method">GET</td><td class="mono">/version</td><td>Server version</td></tr>
           <tr><td class="method">WS</td><td class="mono">/events</td><td>File-change events: send <code>{"op":"watch","path":"/dir"}</code>, receive <code>{"type":"change",…}</code></td></tr>
@@ -195,6 +218,8 @@
       When the server runs with <code>-auth</code>, writes and commands need the access token: send <code>Authorization: Bearer &lt;token&gt;</code>, or sign in once via
       <code>/?token=&lt;token&gt;</code> (sets a cookie). Missing token → <code>401</code>.
       Read-only mode (<code>-r</code>, or <code>r</code> in the terminal UI) → <code>403</code>.
+      Writes and deletes take <code>If-Match: &lt;ETag from /f/&gt;</code> (or <code>If-None-Match: *</code> to only create);
+      a changed file → <code>412</code>. Overwritten files keep their previous versions, deleted ones go to the trash.
     </p>
   </section>
 
@@ -227,6 +252,7 @@
   let cwd = "/";
   let readOnly = false;
   let authed = true;
+  let keepsVersions = true;
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
@@ -238,9 +264,9 @@
     do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
     return n.toFixed(1) + " " + u[i];
   }
-  function when(t) {
+  function when(t, precise) {
     const d = new Date(t);
-    return isNaN(d) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+    return isNaN(d) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: precise ? "medium" : "short" });
   }
   function msg(el, text, ok) { el.textContent = text; el.className = "msg " + (ok ? "ok" : "err"); }
   async function errText(r) {
@@ -282,6 +308,8 @@
       const j = await (await fetch("/cmd/status")).json();
       $("version").textContent = "v" + j.version;
       setMode(j.readOnly);
+      keepsVersions = j.versions > 0;
+      $("trashNote").textContent = j.trashDays > 0 ? `deleted files are kept ${j.trashDays} days` : "off: deletes are permanent";
       const wasAuthed = authed;
       setAuth(j.auth, j.authed);
       if (authed && (!wasAuthed || !$("cname").options.length)) loadCmds();
@@ -319,10 +347,12 @@
           : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener"><span class="icon">·</span>${esc(f.name)}</a>`;
         const off = readOnly || !authed ? "disabled" : "";
         const mv = `<button class="link plain writable" data-mv="${esc(p)}" ${off}>rename</button>`;
+        const hist = f.isdir || !keepsVersions ? "" : `<button class="link plain" data-hist="${esc(p)}">history</button>`;
         const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${off}>delete</button>`;
-        return `<tr><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${mv}${rm}</td></tr>`;
+        return `<tr><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${hist}${mv}${rm}</td></tr>`;
       }).join("");
       applyLocks();
+      loadTrash();
     } catch (e) {
       body.innerHTML = `<tr><td colspan="4" class="empty">Could not list ${esc(cwd)}: ${esc(e.message)}</td></tr>`;
     }
@@ -331,6 +361,25 @@
   document.addEventListener("click", async (e) => {
     const dir = e.target.closest("[data-dir]");
     if (dir) { e.preventDefault(); location.hash = dir.dataset.dir; return; }
+    const hist = e.target.closest("[data-hist]");
+    if (hist) { showHistory(hist.dataset.hist); return; }
+    const rs = e.target.closest("[data-restore]");
+    if (rs) {
+      const r = await post("/cmd/restore", { path: $("histPath").textContent, version: rs.dataset.restore });
+      if (r.ok) { msg($("wmsg"), "Restored " + $("histPath").textContent, true); load(cwd); showHistory($("histPath").textContent); }
+      else { msg($("wmsg"), "Restore failed: " + await errText(r), false); onFail(r); }
+      return;
+    }
+    const ut = e.target.closest("[data-untrash]");
+    if (ut) {
+      let r = await post("/cmd/untrash", { id: ut.dataset.untrash });
+      if (r.status === 409 && confirm(await errText(r) + "\n\nReplace it? (the current file is kept as a version)")) {
+        r = await post("/cmd/untrash", { id: ut.dataset.untrash, overwrite: true });
+      }
+      if (!r.ok && r.status !== 409) { msg($("wmsg"), "Put back failed: " + await errText(r), false); onFail(r); }
+      loadTrash(); load(cwd);
+      return;
+    }
     const mv = e.target.closest("[data-mv]");
     if (mv) {
       const from = mv.dataset.mv;
@@ -351,6 +400,48 @@
       load(cwd);
     }
   });
+
+  const post = (url, body) => fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+
+  async function showHistory(p) {
+    $("hist").hidden = false;
+    $("histPath").textContent = p;
+    const rows = $("histRows");
+    rows.innerHTML = `<tr><td colspan="3" class="empty">Loading…</td></tr>`;
+    const r = await post("/cmd/history", { path: p });
+    if (!r.ok) { rows.innerHTML = `<tr><td colspan="3" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
+    const vs = (await r.json()).result.versions;
+    const off = readOnly || !authed ? "disabled" : "";
+    rows.innerHTML = vs.length ? vs.map((v) => `<tr>
+        <td class="name"><a href="${esc(v.url)}" target="_blank" rel="noopener">${when(v.time, true)}</a></td>
+        <td class="num">${size(v.size)}</td>
+        <td class="num"><button class="link plain writable" data-restore="${esc(v.version)}" ${off}>restore</button></td></tr>`).join("")
+      : `<tr><td colspan="3" class="empty">No earlier versions yet: they are kept each time the file is overwritten.</td></tr>`;
+  }
+  $("histClose").onclick = () => ($("hist").hidden = true);
+
+  async function loadTrash() {
+    if (!$("trashBox").open) return;
+    const rows = $("trashRows");
+    const r = await post("/cmd/trash", {});
+    if (!r.ok) { rows.innerHTML = `<tr><td colspan="4" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
+    const items = (await r.json()).result.items;
+    const off = readOnly || !authed ? "disabled" : "";
+    rows.innerHTML = items.length ? items.map((it) => `<tr>
+        <td class="name"><a href="${esc(it.url)}" target="_blank" rel="noopener">${esc(it.path)}</a></td>
+        <td class="num">${when(it.time, true)}</td><td class="num">${size(it.size)}</td>
+        <td class="num"><button class="link plain writable" data-untrash="${esc(it.id)}" ${off}>put back</button></td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">The trash is empty.</td></tr>`;
+  }
+  $("trashBox").addEventListener("toggle", loadTrash);
+  $("emptyTrash").onclick = async () => {
+    if (!confirm("Permanently delete everything in the trash?")) return;
+    const r = await post("/cmd/emptyTrash", {});
+    if (!r.ok) { msg($("wmsg"), "Empty trash failed: " + await errText(r), false); onFail(r); }
+    loadTrash();
+  };
 
   window.addEventListener("hashchange", () => load(decodeURIComponent(location.hash.slice(1)) || "/"));
 

@@ -137,8 +137,15 @@ func TestCmdRegistry(t *testing.T) {
 		t.Fatalf("panicking cmd: %d", r.StatusCode)
 	}
 	r, j := do(t, "GET", ts.URL+"/cmd/", "", bearer)
-	if list, _ := j["result"].([]interface{}); r.StatusCode != 200 || len(list) != 4 {
-		t.Fatalf("list: %d %v", r.StatusCode, j)
+	names := map[string]bool{}
+	list, _ := j["result"].([]interface{})
+	for _, c := range list {
+		names[c.(map[string]interface{})["name"].(string)] = true
+	}
+	for _, n := range []string{"echo", "ping", "touch", "boom", "history", "restore", "trash", "untrash", "emptyTrash"} {
+		if r.StatusCode != 200 || !names[n] {
+			t.Fatalf("list misses %s: %d %v", n, r.StatusCode, j)
+		}
 	}
 	// built-in routes still win over the registry
 	if r, _ := do(t, "GET", ts.URL+"/cmd/status", "", nil); r.StatusCode != 200 {

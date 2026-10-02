@@ -21,7 +21,8 @@ type FileInfo struct {
 
 func CreateLsHandleFunc(root string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		dir := filepath.Join(root, filepath.FromSlash(path.Clean("/"+r.URL.Path)))
+		clean := path.Clean("/" + r.URL.Path)
+		dir := filepath.Join(root, filepath.FromSlash(clean))
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			status := http.StatusInternalServerError
@@ -33,6 +34,9 @@ func CreateLsHandleFunc(root string) func(http.ResponseWriter, *http.Request) {
 		}
 		fn := make([]FileInfo, 0, len(entries))
 		for _, entry := range entries {
+			if clean == "/" && entry.Name() == metaDir {
+				continue // the server's own history and trash
+			}
 			info, err := entry.Info()
 			if err != nil {
 				continue // removed between ReadDir and Info

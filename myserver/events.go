@@ -452,7 +452,7 @@ func (h *eventHub) flush() {
 	var changes []change
 	for p := range pending {
 		rel, err := filepath.Rel(root, p)
-		if err != nil || strings.HasPrefix(rel, "..") {
+		if err != nil || strings.HasPrefix(rel, "..") || IsReserved(rel) {
 			continue
 		}
 		fi, err := os.Stat(p)

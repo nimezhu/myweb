@@ -368,7 +368,17 @@ func (m model) infoLines() []string {
 		access = badge("network-visible", yellow)
 	}
 	sep := dimStyle.Render("  │  ")
-	lines = append(lines, row("Mode", mode+sep+access))
+	safety := dimStyle.Render("no history")
+	versions, trash := m.srv.Safety()
+	if versions > 0 {
+		safety = valueStyle.Render(fmt.Sprintf("%d versions", versions))
+	}
+	if trash > 0 {
+		safety += dimStyle.Render(" · ") + valueStyle.Render(fmt.Sprintf("trash %dd", trash))
+	} else {
+		safety += dimStyle.Render(" · ") + badge("deletes are permanent", yellow)
+	}
+	lines = append(lines, row("Mode", mode+sep+access+sep+safety))
 
 	errs := dimStyle.Render("0 errors")
 	if m.errors > 0 {

@@ -64,6 +64,9 @@ func cmdMkdir(ctx context.Context, req *myserver.CmdRequest) (interface{}, error
 	if strings.Trim(p.Path, "/") == "" {
 		return nil, myserver.Errorf(http.StatusBadRequest, "path is required")
 	}
+	if myserver.IsReserved(p.Path) {
+		return nil, myserver.Errorf(http.StatusForbidden, "%s is managed by the server", p.Path)
+	}
 	if err := os.MkdirAll(req.Server.ResolvePath(p.Path), 0o755); err != nil {
 		return nil, myserver.Errorf(http.StatusConflict, "mkdir failed: %v", err)
 	}
@@ -89,6 +92,8 @@ func cmdMv(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 		return nil, myserver.Errorf(http.StatusBadRequest, "from and to are the same")
 	case strings.HasPrefix(to, from+"/"):
 		return nil, myserver.Errorf(http.StatusBadRequest, "cannot move a directory into itself")
+	case myserver.IsReserved(from) || myserver.IsReserved(to):
+		return nil, myserver.Errorf(http.StatusForbidden, "the server's own folder cannot be moved into or out of")
 	}
 	src, dst := req.Server.ResolvePath(from), req.Server.ResolvePath(to)
 	if _, err := os.Lstat(src); err != nil {
@@ -106,7 +111,11 @@ func cmdMv(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return nil, myserver.Errorf(http.StatusConflict, "cannot create %s: %v", path.Dir(to), err)
 	}
+	kept := req.Server.KeepVersion(to) // overwriting: the replaced file stays in its history
 	if err := os.Rename(src, dst); err != nil {
+		if kept != "" {
+			os.Remove(kept)
+		}
 		return nil, myserver.Errorf(http.StatusConflict, "move failed: %v", errors.Unwrap(err))
 	}
 	return map[string]string{"from": from, "to": to}, nil

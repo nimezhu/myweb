@@ -35,6 +35,10 @@ func main() {
 	noOpen := flag.Bool("no-open", false, "do not open the browser on start")
 	auth := flag.Bool("auth", false, "require an access token for writes and commands (random per start unless -token is given)")
 	token := flag.String("token", os.Getenv("MYWEB_TOKEN"), "access token; setting it (or $MYWEB_TOKEN) turns on -auth")
+	versions := flag.Int("versions", 20, "previous versions kept per file on overwrite (0: off)")
+	trashDays := flag.Int("trash-days", 30, "days deleted files stay in the trash (0: delete immediately)")
+	var cors myserver.OriginList
+	flag.Var(&cors, "cors", "extra browser origins allowed to call the API, comma-separated or repeated\n(e.g. https://app.example.com); also $MYWEB_CORS")
 	version := flag.Bool("version", false, "print version and exit")
 	flag.BoolVar(version, "v", false, "print version and exit (shorthand)")
 	flag.Parse()
@@ -42,6 +46,12 @@ func main() {
 	if *version {
 		fmt.Println("myweb", myserver.VERSION)
 		return
+	}
+
+	if env := os.Getenv("MYWEB_CORS"); env != "" {
+		if err := cors.Set(env); err != nil {
+			console.Fatal("myweb", fmt.Errorf("MYWEB_CORS: %w", err))
+		}
 	}
 
 	root, err := filepath.Abs(*directory)
@@ -74,10 +84,16 @@ func main() {
 		Port:      *port,
 		Global:    *global,
 		ReadOnly:  *readOnly,
-		CORS:      myserver.DefaultCORS,
+		CORS:      append(append([]string{}, myserver.DefaultCORS...), cors...),
 		Token:     *token,
 		OnRequest: con.OnRequest,
+		// the flags use 0 for "off"; Config uses 0 for "default"
+		KeepVersions: offIfZero(*versions),
+		TrashDays:    offIfZero(*trashDays),
 	})
+	if len(cors) > 0 {
+		con.AddRow("CORS", "+ "+cors.String())
+	}
 	plugins.RegisterFileOps(srv)
 	if err := srv.Start(); err != nil {
 		console.Fatal("myweb", err)
@@ -86,4 +102,11 @@ func main() {
 		fmt.Fprintf(os.Stderr, "port %d is busy, using %d\n", *port, srv.Port())
 	}
 	os.Exit(con.Run(srv))
+}
+
+func offIfZero(n int) int {
+	if n <= 0 {
+		return -1
+	}
+	return n
 }

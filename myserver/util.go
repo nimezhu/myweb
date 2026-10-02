@@ -21,6 +21,7 @@ type file struct {
 	Url  string `json:"url"`
 	Name string `json:"name"`
 	Size int    `json:"size"`
+	ETag string `json:"etag,omitempty"`
 }
 type ret struct {
 	Success int  `json:"success"`

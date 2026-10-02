@@ -59,7 +59,7 @@ func CreateUploadFileHandleFunc(root string) func(w http.ResponseWriter, r *http
 			return
 		}
 		// TODO Upload Using Cookie and Prefix ...
-		writeJSON(w, http.StatusOK, ret{1, file{"/f" + dir, id, len(fileBytes)}})
+		writeJSON(w, http.StatusOK, ret{1, file{"/f" + dir, id, len(fileBytes), ""}})
 		log.Printf("uploaded %s (%d bytes)", dir, len(fileBytes))
 	}
 }
