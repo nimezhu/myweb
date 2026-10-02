@@ -28,8 +28,8 @@ func AddFlags(fs *flag.FlagSet) *Flags {
 }
 
 // Installer builds the installer for these flags, or returns nil when
-// -web-from is not set.
-func (f *Flags) Installer(mywebVersion string, onUpdate func(name, version string)) (*Installer, error) {
+// -web-from is not set. Apps are installed under appsDir (e.g. ~/.myweb/apps).
+func (f *Flags) Installer(mywebVersion, appsDir string, onUpdate func(name, version string)) (*Installer, error) {
 	if f.From == "" {
 		if f.Key != "" || f.Version != "" {
 			return nil, errors.New("-web-key and -web-version need -web-from")
@@ -44,7 +44,7 @@ func (f *Flags) Installer(mywebVersion string, onUpdate func(name, version strin
 		return nil, err
 	}
 	return New(Options{
-		ManifestURL: f.From, PublicKey: pub, Pin: f.Version, NoUpdate: f.NoUpdate,
+		ManifestURL: f.From, PublicKey: pub, Pin: f.Version, NoUpdate: f.NoUpdate, Dir: appsDir,
 		Interval: f.Check, Myweb: mywebVersion, OnUpdate: onUpdate,
 	})
 }

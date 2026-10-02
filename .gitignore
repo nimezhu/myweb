@@ -1,3 +1,4 @@
 # built binary and release builds
 /myweb
 /dist/
+/cmd/myweb-publish/myweb-publish

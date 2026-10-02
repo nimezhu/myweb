@@ -63,6 +63,7 @@ type Console struct {
 	events *bridge
 	sig    chan os.Signal
 	alog   *accessLog
+	notes  []string    // shown once the console is running
 	stderr *log.Logger // request lines in plain mode (not in the -log file twice)
 }
 
@@ -107,6 +108,19 @@ func (c *Console) OpenLog(path string) error {
 	c.alog = a
 	c.AddRow("Log", path)
 	return nil
+}
+
+// Note queues a message for the log, shown once Run starts (before that the
+// terminal UI would hide it).
+func (c *Console) Note(format string, a ...interface{}) {
+	c.notes = append(c.notes, fmt.Sprintf(format, a...))
+}
+
+func (c *Console) flushNotes() {
+	for _, n := range c.notes {
+		log.Print(n)
+	}
+	c.notes = nil
 }
 
 // OnRequest feeds the request log; use it as myserver.Config.OnRequest.
@@ -199,6 +213,7 @@ func (c *Console) runPlain(srv *myserver.Server) error {
 	if srv.ReadOnly() {
 		log.Println("Read only mode.")
 	}
+	c.flushNotes()
 	select {
 	case s := <-c.sig:
 		log.Printf("received %s, shutting down", s)
@@ -217,6 +232,7 @@ func (c *Console) runTUI(srv *myserver.Server) error {
 	flags := log.Flags()
 	log.SetFlags(0)
 	c.logOutput(c.events)
+	c.flushNotes()
 	defer func() { log.SetOutput(os.Stderr); log.SetFlags(flags) }()
 
 	c.events.start(p)

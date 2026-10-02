@@ -16,7 +16,8 @@ manager and an interactive terminal UI.
 
 ```sh
 go build -o myweb .
-./myweb -d ~/data          # serve ~/data; opens the file manager in your browser
+./myweb                    # serve ~/.myweb/data (created on first start)
+./myweb -d ~/data          # serve another folder; -d . for the current one
 ```
 
 The terminal shows the address, the request log and the keys. Without a
@@ -26,7 +27,7 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 
 | Flag | Default | |
 |---|---|---|
-| `-d DIR` | `.` | folder to serve |
+| `-d DIR` | `~/.myweb/data` | folder to serve (created if it's the default); `-d .` for the current folder |
 | `-p PORT` | `8433` | port; the next free one is used if it is taken |
 | `-web DIR` | | serve your own web app at `/` (the file manager moves to `/_myweb/`) |
 | `-web-from URL` | | install the app at `/` from a signed manifest and keep it updated (see below) |
@@ -103,10 +104,17 @@ myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <p
   only https (http just for localhost), and keeps serving the installed version
   when the server can't be reached. A manifest can require a myweb version with
   `-requires-myweb`.
-- Apps are installed in the user's cache folder, never in the data folder:
-  `%LocalAppData%\myweb\apps` on Windows, `~/Library/Caches/myweb/apps` on macOS,
-  `~/.cache/myweb/apps` (or `$XDG_CACHE_HOME/myweb/apps`) on Linux. Don't edit
-  files there; they are replaced on update. The file manager stays at `/_myweb/`.
+- Apps are installed in `~/.myweb/apps` (`C:\Users\<you>\.myweb\apps` on
+  Windows), never in the data folder. Don't edit files there; they are replaced
+  on update. The file manager stays at `/_myweb/`.
+
+## Folders
+
+Everything myweb keeps lives in `~/.myweb` (`C:\Users\<you>\.myweb` on Windows):
+`data/` is the default data folder and `apps/` holds web apps installed with
+`-web-from`. Set `MYWEB_HOME` to keep it elsewhere (e.g. on another disk or a
+USB stick). Inside every served folder, versions and the trash are kept in its
+own `.myweb/` subfolder.
 
 ## HTTP API
 

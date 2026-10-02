@@ -25,6 +25,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nimezhu/myweb/home"
 	"github.com/nimezhu/myweb/internal/fsx"
 )
 
@@ -40,7 +41,7 @@ const (
 type Options struct {
 	ManifestURL string            // https://…/stable.json (http only for localhost)
 	PublicKey   ed25519.PublicKey // verifies the manifest signature
-	Dir         string            // where apps are installed; default <user cache>/myweb/apps
+	Dir         string            // where apps are installed; default ~/.myweb/apps
 	Pin         string            // serve this installed version and don't update
 	NoUpdate    bool              // serve what is installed; never download
 	Interval    time.Duration     // between update checks; default 6h
@@ -87,11 +88,11 @@ func New(opts Options) (*Installer, error) {
 		return nil, errors.New("a public key (-web-key) is required to verify the app")
 	}
 	if opts.Dir == "" {
-		cache, err := os.UserCacheDir()
+		d, err := home.For("myweb")
 		if err != nil {
 			return nil, err
 		}
-		opts.Dir = filepath.Join(cache, "myweb", "apps")
+		opts.Dir = d.Apps()
 	}
 	if opts.Interval <= 0 {
 		opts.Interval = defaultInterval

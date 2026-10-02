@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/nimezhu/myweb/console"
+	"github.com/nimezhu/myweb/home"
 	"github.com/nimezhu/myweb/manager"
 	"github.com/nimezhu/myweb/myserver"
 	"github.com/nimezhu/myweb/plugins"
@@ -19,7 +20,7 @@ func main() {
 	port := flag.Int("p", 8433, "port to serve on (next free port is used if taken)")
 	global := flag.Bool("global", false, "listen on all interfaces (visible to your network)")
 	readOnly := flag.Bool("r", false, "read only (can be toggled in the TUI with 'r')")
-	directory := flag.String("d", ".", "the root directory of data files")
+	directory := flag.String("d", "", "the folder of data files to serve (default ~/.myweb/data, or $MYWEB_HOME/data;\n-d . for the current folder)")
 	web := flag.String("web", "", "serve this web app at / (the file manager stays at "+myserver.ManagerPath+")")
 	noManager := flag.Bool("no-manager", false, "don't serve the built-in file manager")
 	noTUI := flag.Bool("no-tui", false, "plain log output instead of the interactive TUI")
@@ -52,6 +53,16 @@ func main() {
 		console.Fatal("myweb", fmt.Errorf("use -web or -web-from, not both"))
 	}
 
+	dirs, err := home.For("myweb")
+	if err != nil {
+		console.Fatal("myweb", err)
+	}
+	createdData := false
+	if *directory == "" {
+		if *directory, createdData, err = dirs.EnsureData(); err != nil {
+			console.Fatal("myweb", err)
+		}
+	}
 	root, err := filepath.Abs(*directory)
 	if err != nil {
 		console.Fatal("myweb", err)
@@ -73,7 +84,7 @@ func main() {
 
 	// -web-from: install the app from a distribution server and keep it updated
 	var srv *myserver.Server
-	app, err := webFlags.Installer(myserver.VERSION, func(name, version string) {
+	app, err := webFlags.Installer(myserver.VERSION, dirs.Apps(), func(name, version string) {
 		srv.Broadcast(map[string]string{"type": "app-updated", "name": name, "version": version})
 	})
 	if err != nil {
@@ -96,6 +107,9 @@ func main() {
 	}
 	if app != nil {
 		con.SetApp(app)
+	}
+	if createdData {
+		con.Note("created your data folder: %s (give -d to serve another folder)", root)
 	}
 	srv = myserver.New(myserver.Config{
 		Root:      root,
