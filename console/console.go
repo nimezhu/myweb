@@ -94,10 +94,10 @@ func (c *Console) OnRequest(ev myserver.RequestEvent) {
 // quits, a signal arrives, /cmd/stopServer is called or serving fails, then
 // shuts the server down. It returns the process exit code.
 func (c *Console) Run(srv *myserver.Server) int {
-	if c.opts.OpenURL == "" {
+	if c.opts.OpenURL == "" && srv.ServesRoot() {
 		c.opts.OpenURL = srv.LoginURL()
 	}
-	if !c.opts.NoOpen {
+	if !c.opts.NoOpen && c.opts.OpenURL != "" {
 		if err := OpenBrowser(c.opts.OpenURL); err != nil {
 			log.Printf("could not open browser: %v", err)
 		}
@@ -143,7 +143,12 @@ func (c *Console) runPlain(srv *myserver.Server) error {
 	} else {
 		log.Println("  auth off (enable with -auth)")
 	}
-	log.Printf("  open:  %s", c.opts.OpenURL)
+	if c.opts.OpenURL != "" {
+		log.Printf("  open:  %s", c.opts.OpenURL)
+	}
+	if u := srv.ManagerURL(); u != "" && !srv.ManagerAtRoot() {
+		log.Printf("  files: %s", u)
+	}
 	if srv.ReadOnly() {
 		log.Println("Read only mode.")
 	}

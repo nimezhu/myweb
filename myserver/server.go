@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,6 +39,10 @@ var DefaultCORS = []string{
 	"https://localhost:*",
 }
 
+// ManagerPath is where the file manager is always available, even when a
+// web app is served at "/".
+const ManagerPath = "/_myweb/"
+
 // maxPortTries bounds the search for a free port starting at Config.Port.
 const maxPortTries = 100
 
@@ -56,6 +61,9 @@ func getFS() http.FileSystem {
 type Config struct {
 	Root  string          // root directory of data files
 	WebFS http.FileSystem // optional static web app served at "/"
+	// Manager, if set, is the file manager page (see package manager),
+	// served at ManagerPath, and also at "/" when there is no WebFS.
+	Manager http.FileSystem
 	// AppServer, if set, enables /io/<app> pages that load the app's
 	// main.js and style.css from this base URL.
 	AppServer string
@@ -201,8 +209,14 @@ func (s *Server) routes() {
 	if s.cfg.AppServer != "" {
 		m.Handle("/io/", http.StripPrefix("/io", appHandler(s.cfg.AppServer)))
 	}
-	if s.cfg.WebFS != nil {
+	if s.cfg.Manager != nil {
+		m.Handle(ManagerPath, http.StripPrefix(strings.TrimSuffix(ManagerPath, "/"), http.FileServer(s.cfg.Manager)))
+	}
+	switch {
+	case s.cfg.WebFS != nil:
 		m.Handle("/", http.FileServer(s.cfg.WebFS))
+	case s.cfg.Manager != nil:
+		m.Handle("/", http.FileServer(s.cfg.Manager))
 	}
 }
 
@@ -343,3 +357,27 @@ func (s *Server) SetReadOnly(v bool) {
 		s.events.broadcast(map[string]interface{}{"type": "status", "readOnly": v})
 	}
 }
+
+// ManagerURL is the file manager's address ("" without one); it is the same
+// page as URL() when no web app is mounted at "/".
+func (s *Server) ManagerURL() string {
+	if s.cfg.Manager == nil {
+		return ""
+	}
+	return s.URL() + ManagerPath
+}
+
+// ManagerAtRoot reports whether "/" shows the file manager (no web app).
+func (s *Server) ManagerAtRoot() bool { return s.cfg.Manager != nil && s.cfg.WebFS == nil }
+
+// ManagerLoginURL opens the file manager signed in (when auth is on).
+func (s *Server) ManagerLoginURL() string {
+	u := s.ManagerURL()
+	if u != "" && s.AuthEnabled() {
+		u += "?token=" + s.cfg.Token
+	}
+	return u
+}
+
+// ServesRoot reports whether anything (a web app or the manager) is at "/".
+func (s *Server) ServesRoot() bool { return s.cfg.WebFS != nil || s.cfg.Manager != nil }

@@ -1,6 +1,7 @@
 package console
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -145,5 +146,19 @@ func TestQR(t *testing.T) {
 	m = send(m, key("u"))
 	if m.qr {
 		t.Fatal("u toggles qr off")
+	}
+}
+
+func TestManagerKeyAndRow(t *testing.T) {
+	d := t.TempDir()
+	app := myserver.New(myserver.Config{Root: d, WebFS: http.Dir(d), Manager: http.Dir(d)})
+	m := newModel(app, Options{Name: "myweb", Version: "test"})
+	m = send(m, tea.WindowSizeMsg{Width: 120, Height: 30})
+	if v := m.View(); !strings.Contains(v, "/_myweb/") || !strings.Contains(v, "m files") {
+		t.Fatalf("app + manager: Files row and m key expected:\n%s", v)
+	}
+	plain := testModel(t, 30) // no web app, no manager configured
+	if v := plain.View(); strings.Contains(v, "m files") {
+		t.Fatal("no m key without a separate manager")
 	}
 }

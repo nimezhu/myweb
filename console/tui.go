@@ -242,7 +242,19 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case m.filter != "" || m.errorsOnly:
 			m.filter, m.errorsOnly = "", false
 		}
+	case "m":
+		u := m.srv.ManagerLoginURL()
+		if u == "" {
+			return m, m.setFlash("the file manager is off (-no-manager)")
+		}
+		if err := OpenBrowser(u); err != nil {
+			return m, m.setFlash("could not open browser: " + err.Error())
+		}
+		return m, m.setFlash("opened the file manager")
 	case "o":
+		if m.opts.OpenURL == "" {
+			return m, m.setFlash("nothing is served at / (no -web, and -no-manager)")
+		}
 		if err := OpenBrowser(m.opts.OpenURL); err != nil {
 			return m, m.setFlash("could not open browser: " + err.Error())
 		}
@@ -344,6 +356,9 @@ func (m model) infoLines() []string {
 	for _, u := range m.srv.LANURLs() {
 		lines = append(lines, row("LAN", urlStyle.Render(u)))
 	}
+	if u := m.srv.ManagerURL(); u != "" && !m.srv.ManagerAtRoot() {
+		lines = append(lines, row("Files", urlStyle.Render(u)+dimStyle.Render("  file manager (m)")))
+	}
 	for _, r := range m.opts.Rows {
 		v := valueStyle.Render(r.Value)
 		if strings.Contains(r.Value, "://") {
@@ -405,10 +420,14 @@ func (m model) footerLines() []string {
 	case m.qr:
 		keys = []key{{"u", "close"}, {"o", "open"}, {"q", "quit"}}
 	default:
-		keys = []key{
-			{"o", "open"}, {"r", "read-only"}, {"/", "filter"}, {"e", "errors"},
-			{"↑↓", "select"}, {"⏎", "details"}, {"u", "qr"}, {"c", "clear"}, {"q", "quit"},
+		keys = []key{{"o", "open"}}
+		if m.srv.ManagerURL() != "" && !m.srv.ManagerAtRoot() {
+			keys = append(keys, key{"m", "files"})
 		}
+		keys = append(keys, []key{
+			{"r", "read-only"}, {"/", "filter"}, {"e", "errors"},
+			{"↑↓", "select"}, {"⏎", "details"}, {"u", "qr"}, {"c", "clear"}, {"q", "quit"},
+		}...)
 	}
 	var parts []string
 	for _, k := range keys {
