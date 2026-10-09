@@ -120,6 +120,8 @@ type Server struct {
 	events *eventHub
 	cors   *cors.Cors
 
+	proxyClient *http.Client
+
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	doneCh   chan error
@@ -143,13 +145,16 @@ func New(cfg Config) *Server {
 	}
 	s.readOnly.Store(cfg.ReadOnly)
 	s.events = newEventHub(s)
+	s.proxyClient = newProxyClient(publicOnly)
 	s.cors = cors.New(cors.Options{
 		AllowedOrigins:   cfg.CORS,
 		AllowCredentials: true,
-		AllowedMethods:   []string{"GET", "POST", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "If-Match", "If-None-Match"},
-		// let cross-origin apps read the ETag, for conditional writes
-		ExposedHeaders: []string{"ETag"},
+		AllowedMethods:   []string{"GET", "HEAD", "POST", "OPTIONS"},
+		AllowedHeaders: []string{"Authorization", "Content-Type", "If-Match", "If-None-Match",
+			"Range", "If-Range", "If-Modified-Since"},
+		// let cross-origin apps read the ETag, for conditional writes, and
+		// partial-read headers (/f/ and /proxy)
+		ExposedHeaders: []string{"ETag", "Content-Range", "Accept-Ranges", "X-Proxy-Final-URL"},
 	})
 	s.routes()
 	s.registerSafetyCmds()
@@ -191,6 +196,7 @@ func (s *Server) routes() {
 	m.HandleFunc("/echo", s.echo)
 	m.HandleFunc("/echotest", echoHome)
 	m.Handle("/cmd/fetchUrl", s.authed(http.HandlerFunc(FetchURLHandleFunc)))
+	m.Handle("/proxy", s.authed(http.HandlerFunc(s.handleProxy)))
 	m.HandleFunc("/cmd/", s.serveCmd)
 	m.HandleFunc("/cmd/stopServer", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

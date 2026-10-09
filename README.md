@@ -194,6 +194,27 @@ Also: `GET /cmd/fetchUrl?url=` (a page's OpenGraph metadata), `GET /cmd/status`
 (version, read-only and sign-in state), `POST /cmd/stopServer` (same-origin
 only), `GET /version`.
 
+### CORS proxy: `/proxy?url=`
+
+`GET` (or `HEAD`) `/proxy?url=<http or https URL>` fetches the URL and streams the answer back
+with this server's CORS headers, so a web app can read data from sites that don't allow it
+directly:
+
+```js
+const r = await fetch("http://127.0.0.1:8433/proxy?url=" + encodeURIComponent(remote),
+                      { headers: { Range: "bytes=0-65535" } })
+```
+
+- `Range`, `If-Range`, `If-None-Match`, `If-Modified-Since`, `Accept` and `Accept-Language`
+  are forwarded, so partial reads of large files work. The browser's cookies and token are not.
+- Status, `Content-Type`, `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag`,
+  `Last-Modified` and cache headers come back; `X-Proxy-Final-URL` is the URL after redirects.
+- Only public addresses are reachable: not this machine, the local network, or link-local
+  (cloud metadata) addresses, even through a redirect. The answer is `403`.
+- Needs the token when auth is on, like writes. Responses are sandboxed
+  (`Content-Security-Policy: sandbox`), so a proxied page can't run scripts on this server's origin.
+- `HTTP_PROXY`/`HTTPS_PROXY` are not used.
+
 ### Live changes: `/events` (WebSocket)
 
 ```js

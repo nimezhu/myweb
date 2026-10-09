@@ -32,7 +32,7 @@ func TestExtraOriginAndExposedETag(t *testing.T) {
 	req, _ := http.NewRequest("GET", ts.URL+"/version", nil)
 	req.Header.Set("Origin", "https://app.example.com")
 	resp, _ := http.DefaultClient.Do(req)
-	if resp.Header.Get("Access-Control-Allow-Origin") != "https://app.example.com" || resp.Header.Get("Access-Control-Expose-Headers") != "Etag" {
+	if resp.Header.Get("Access-Control-Allow-Origin") != "https://app.example.com" || !strings.Contains(resp.Header.Get("Access-Control-Expose-Headers"), "Etag") {
 		t.Fatalf("cors headers: %v", resp.Header)
 	}
 	// preflight for a conditional write

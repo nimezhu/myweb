@@ -260,6 +260,7 @@
           <tr><td class="method">POST</td><td class="mono">/up/&lt;folder&gt;</td><td>Multipart upload of any number of files (names may contain sub-folders); <code>?onconflict=rename|overwrite|fail</code></td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>One file (field <code>myFile</code>) into <code>uploads/&lt;md5&gt;_&lt;name&gt;</code>, e.g. for editor.js</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/proxy?url=…</td><td>CORS proxy: fetch a public URL (forwards <code>Range</code>) and return it as is</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version, read-only and sign-in state</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List commands (incl. <code>find</code>, <code>grep</code>, <code>mv</code>, <code>history</code>, <code>restore</code>, <code>trash</code>, <code>untrash</code>)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/&lt;name&gt;</td><td>Run a plugin command (JSON body in, <code>{"success":1,"result":…}</code> out)</td></tr>
