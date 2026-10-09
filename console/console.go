@@ -39,7 +39,7 @@ type Options struct {
 	Version string // default: myserver.VERSION
 	NoTUI   bool   // force plain log output
 	NoOpen  bool   // don't open the browser on start
-	// OpenURL is opened on start and by the 'o' key.
+	// OpenURL is opened on start and by 'o', and copied by 'y'.
 	// Default: the server's LoginURL (signs the browser in when auth is on).
 	OpenURL string
 	Rows    []Row
@@ -90,7 +90,7 @@ func New(opts Options) *Console {
 	return c
 }
 
-// SetOpenURL changes what is opened on start and by 'o' (call before Run);
+// SetOpenURL changes what is opened on start and by 'o', and copied by 'y' (call before Run);
 // useful when the URL depends on the server's port.
 func (c *Console) SetOpenURL(url string) { c.opts.OpenURL = url }
 

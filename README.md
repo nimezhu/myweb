@@ -54,6 +54,7 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 | Key | |
 |---|---|
 | `o` | open the browser (signed in when auth is on) |
+| `y` | copy the startup URL (includes the login token when auth is on) |
 | `m` | open the file manager (when `-web` serves an app at `/`) |
 | `a` | check for an app update now (`-web-from`) |
 | `r` | toggle read-only |
@@ -63,6 +64,9 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 | `c` | clear the log |
 | `esc` | step back (details → selection → filter) |
 | `q`, `ctrl+c` | quit |
+
+Copying uses the terminal's clipboard support (OSC 52), including over SSH; the terminal must allow clipboard
+writes. If it does not, `myweb -no-tui -no-open` prints the startup URL for manual copying.
 
 ## File manager
 

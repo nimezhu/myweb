@@ -2,10 +2,13 @@ package console
 
 import (
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/aymanbagabas/go-osc52/v2"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	qrcode "github.com/skip2/go-qrcode"
@@ -24,6 +27,16 @@ type logMsg struct {
 type tickMsg time.Time
 type stopMsg struct{} // a client asked the server to stop
 type flashMsg int     // clears the transient status line if still current
+type clipboardMsg struct{ err error }
+
+// Ask the terminal to copy the URL, including when the server runs over SSH.
+// OSC 52 has no acknowledgement: a successful write does not confirm a copy.
+func copyURL(url string, out io.Writer) tea.Cmd {
+	return func() tea.Msg {
+		_, err := osc52.New(url).WriteTo(out)
+		return clipboardMsg{err: err}
+	}
+}
 
 type entry struct {
 	id   int // stable identity: indexes shift as old entries are dropped
@@ -182,6 +195,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if int(msg) == m.flashID {
 			m.flash = ""
 		}
+	case clipboardMsg:
+		if msg.err != nil {
+			return m, m.setFlash("could not copy URL: " + msg.err.Error())
+		}
+		return m, m.setFlash("URL sent to terminal clipboard")
 	case reqMsg:
 		ev := myserver.RequestEvent(msg)
 		m.requests++
@@ -265,6 +283,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setFlash("could not open browser: " + err.Error())
 		}
 		return m, m.setFlash("opened " + m.opts.OpenURL)
+	case "y":
+		if m.opts.OpenURL == "" {
+			return m, m.setFlash("nothing is served at / (no -web, and -no-manager)")
+		}
+		return m, copyURL(m.opts.OpenURL, os.Stdout)
 	case "r":
 		m.srv.SetReadOnly(!m.srv.ReadOnly())
 		if m.srv.ReadOnly() {
@@ -357,7 +380,7 @@ func (m model) infoLines() []string {
 		return " " + labelStyle.Render(label) + value
 	}
 	lines := []string{
-		row("URL", urlStyle.Render(m.srv.URL())),
+		row("URL", urlStyle.Render(m.srv.URL())+dimStyle.Render("  (o open, y copy)")),
 	}
 	for _, u := range m.srv.LANURLs() {
 		lines = append(lines, row("LAN", urlStyle.Render(u)))
@@ -435,11 +458,11 @@ func (m model) footerLines() []string {
 	case m.typing:
 		keys = []key{{"⏎", "apply"}, {"esc", "clear"}}
 	case m.detail:
-		keys = []key{{"↑↓", "prev/next"}, {"esc", "back"}, {"q", "quit"}}
+		keys = []key{{"↑↓", "prev/next"}, {"y", "copy URL"}, {"esc", "back"}, {"q", "quit"}}
 	case m.qr:
-		keys = []key{{"u", "close"}, {"o", "open"}, {"q", "quit"}}
+		keys = []key{{"u", "close"}, {"o", "open"}, {"y", "copy URL"}, {"q", "quit"}}
 	default:
-		keys = []key{{"o", "open"}}
+		keys = []key{{"o", "open"}, {"y", "copy URL"}}
 		if m.srv.ManagerURL() != "" && !m.srv.ManagerAtRoot() {
 			keys = append(keys, key{"m", "files"})
 		}
