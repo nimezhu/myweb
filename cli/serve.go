@@ -163,8 +163,9 @@ func Serve(spec Spec) int {
 
 	// -web-from: install the app from a distribution server and keep it updated
 	var srv *myserver.Server
-	app, err := webFlags.Installer(myserver.VERSION, dirs.Apps(), func(n, v string) {
-		srv.Broadcast(map[string]string{"type": "app-updated", "name": n, "version": v})
+	var app *webapp.Installer
+	app, err = webFlags.Installer(myserver.VERSION, dirs.Apps(), func(n, v string) {
+		srv.Broadcast(map[string]string{"type": "app-updated", "name": n, "version": v, "notes": app.Status().Notes[v]})
 	})
 	if err != nil {
 		return fail(err)
@@ -226,6 +227,10 @@ func Serve(spec Spec) int {
 		con.Note("created your data folder: %s (give -d to serve another folder)", root)
 	}
 	instanceID := newInstanceID()
+	var webVersion func() string
+	if app != nil {
+		webVersion = app.Current
+	}
 	srv = myserver.New(myserver.Config{
 		Root:      root,
 		WebFS:     webFS,
@@ -242,11 +247,15 @@ func Serve(spec Spec) int {
 		TrashDays:    offIfZero(*trashDays),
 		MaxUpload:    *uploadMax << 20,
 		Instance:     instanceID,
+		WebVersion:   webVersion,
 	})
 	if len(f.cors) > 0 {
 		con.AddRow("CORS", "+ "+f.cors.String())
 	}
 	plugins.RegisterFileOps(srv)
+	if app != nil {
+		registerAppCmd(srv, app)
+	}
 	if err := srv.Start(); err != nil {
 		return fail(err)
 	}

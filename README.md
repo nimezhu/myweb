@@ -140,9 +140,20 @@ myweb app update                # update everything now, without serving
 - **First start** shows an "installing…" page that turns into the app as soon as
   it is ready. **Later starts** serve the installed version immediately and check
   for updates in the background (`-web-check`, or `a` in the terminal UI).
-- **Updates** are whole versions, switched in one step. Open pages receive
-  `{"type":"app-updated","name":…,"version":…}` on `/events` and can offer a reload.
-  The newest 3 versions are kept; `-web-version` serves an older one.
+- **Updates** are whole versions, switched in one step. The newest 3 versions
+  are kept; `-web-version` serves an older one.
+- **Reload prompt:** add `<script src="/_myweb/client.js"></script>` to the app
+  and open pages offer "myapp 1.4.3 is ready. Reload" with the release notes when
+  a new version is installed. For your own prompt, use
+  `data-banner="off"` and listen for the `myweb:app-updated` event on `window`
+  (`e.detail` is `{name, version, notes}`). Without the script, pages can watch
+  `/events` for `{"type":"app-updated","name":…,"version":…,"notes":…}`.
+- **Release notes** (`build -notes`) are shown by `myweb app update`,
+  `myweb app versions`, the file manager and the reload prompt.
+- **In the browser,** the file manager (`/_myweb/`) shows the app: version,
+  status, last check, notes, installed versions and a "Check for updates" button.
+  Pages and tools get the same as JSON from `POST /cmd/app` (`{"check":true}`
+  starts a check; admins only with myweb-team).
 - **Safety:** the app runs with full access to your files, so myweb installs it
   only if the manifest's ed25519 signature matches `-web-key` and the zip matches
   the signed SHA-256. There is no switch to skip this. It never moves to an older
@@ -234,7 +245,8 @@ changed.
 | `emptyTrash` | | delete the trash permanently |
 
 Also: `GET /cmd/fetchUrl?url=` (a page's OpenGraph metadata), `GET /cmd/status`
-(version, read-only and sign-in state), `POST /cmd/stopServer` (same-origin
+(version, read-only and sign-in state), `POST /cmd/app` (the installed web app,
+with `-web-from` or `-app`), `POST /cmd/stopServer` (same-origin
 only), `GET /version`.
 
 ### CORS proxy: `/proxy?url=`

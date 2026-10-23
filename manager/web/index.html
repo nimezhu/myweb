@@ -151,6 +151,14 @@
   #results li a:hover { color: var(--accent); }
   #results .ln { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
   mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: inherit; border-radius: 2px; }
+  #appBox .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+  #appBox .head h2 { margin: 0; }
+  #appBox .head .grow { flex: 1; }
+  #appBox .notes { white-space: pre-wrap; font-size: 13.5px; margin: 0 0 12px; }
+  #appBox .notes:empty { display: none; }
+  #appBox td.notes-cell { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+  #appNew { display: block; margin: 0 0 12px; }
+  #appNew[hidden] { display: none; }
   footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
   footer a { color: var(--accent); }
 </style>
@@ -175,6 +183,28 @@
     <strong>Not signed in.</strong> <span id="signinHow">Writing, uploading and commands need this server's access token.
     Open the link printed in the terminal (or press <code>o</code> in the terminal UI) to sign in this browser.</span>
   </div>
+
+  <section id="appBox" hidden>
+    <div class="head">
+      <h2 id="appName">App</h2>
+      <span class="pill" id="appVer"></span>
+      <span class="pill" id="appState"></span>
+      <span class="grow"></span>
+      <a class="btn" href="/" target="_blank" rel="noopener">Open the app</a>
+      <button class="authed" id="appCheck">Check for updates</button>
+    </div>
+    <p class="sub" id="appSub"></p>
+    <div class="notice" id="appNew" hidden></div>
+    <p class="notes" id="appNotes"></p>
+    <details id="appVersions">
+      <summary>Installed versions <span class="sub" id="appCount"></span></summary>
+      <div class="table-wrap" style="margin-top:10px">
+        <table class="files"><thead><tr><th>Version</th><th>Release notes</th></tr></thead>
+        <tbody id="appRows"></tbody></table>
+      </div>
+    </details>
+    <div class="msg" id="appMsg"></div>
+  </section>
 
   <section>
     <h2>Files</h2>
@@ -368,7 +398,6 @@
   }
 
   function onFail(r) {
-    onFail(r);
     if (r.status === 401) setAuth(true, false);
   }
 
@@ -386,6 +415,62 @@
       $("version").textContent = "offline"; $("version").className = "pill err";
     }
   }
+
+  // The web app at "/" when it is installed from a distribution server
+  // (-web-from or -app): POST /cmd/app reports it; no such command, no panel.
+  let appPoll = null;
+  async function loadApp(check) {
+    let r;
+    try {
+      r = await fetch("/cmd/app", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(check ? { check: true } : {}),
+      });
+    } catch { return; }
+    if (r.status === 404 || r.status === 401) { $("appBox").hidden = true; return; }
+    if (!r.ok) { msg($("appMsg"), "Check failed: " + await errText(r), false); return; }
+    const st = (await r.json()).result;
+    renderApp(st);
+    if (check) appPoll = { since: st.checked || "", from: st.current, until: Date.now() + 120000 };
+    // after "check", poll until the check has run (an update also arrives as an event)
+    if (appPoll && (st.checking || (st.checked || "") === appPoll.since) && Date.now() < appPoll.until) {
+      setTimeout(() => loadApp(false), 1500);
+    } else if (appPoll) {
+      const from = appPoll.from;
+      appPoll = null;
+      if (st.current !== from) msg($("appMsg"), `Updated to ${st.current}. Open pages of the app can reload now.`, true);
+      else msg($("appMsg"), st.status === "up to date" ? `Checked: ${st.current} is the latest.` : st.status, st.status === "up to date");
+    }
+  }
+
+  function renderApp(st) {
+    $("appBox").hidden = false;
+    $("appName").textContent = st.name || "App";
+    $("appVer").textContent = st.current ? "v" + st.current : "not installed";
+    const s = $("appState");
+    const busy = st.checking || /…$/.test(st.status);
+    s.textContent = !st.updates ? "updates off" : busy ? (st.checking ? "checking…" : st.status) : st.status === "up to date" ? "up to date" : "update problem";
+    s.className = "pill " + (!st.updates ? "" : busy ? "warn" : st.status === "up to date" ? "ok" : "err");
+    s.title = st.status;
+    let sub = `Served at <a href="/" target="_blank" rel="noopener">/</a>, installed from <code>${esc(st.manifest)}</code>.`;
+    if (st.checked) sub += ` Last checked ${esc(when(st.checked))}.`;
+    $("appSub").innerHTML = sub;
+    const notes = st.notes || {};
+    $("appNotes").textContent = notes[st.current] || "";
+    const n = $("appNew");
+    if (st.latest && st.latest !== st.current && !(st.installed || []).includes(st.latest) && !busy) {
+      n.innerHTML = `<strong>${esc(st.latest)} is published but not installed:</strong> ${esc(st.status)}` +
+        (st.latestNotes ? `<br><span class="sub">${esc(st.latestNotes)}</span>` : "");
+      n.hidden = false;
+    } else n.hidden = true;
+    $("appCheck").hidden = !st.updates;
+    $("appCheck").disabled = !authed || busy;
+    const vs = st.installed || [];
+    $("appCount").textContent = vs.length + (vs.length === 1 ? " version" : " versions") + " kept";
+    $("appRows").innerHTML = vs.map((v) =>
+      `<tr><td class="mono">${esc(v)}${v === st.current ? '<span class="tag">serving</span>' : ""}</td>` +
+      `<td class="notes-cell">${esc(notes[v] || "")}</td></tr>`).join("");
+  }
+  $("appCheck").onclick = () => { $("appMsg").textContent = ""; loadApp(true); };
 
   function renderCrumbs() {
     const parts = cwd.split("/").filter(Boolean);
@@ -870,6 +955,7 @@
   };
 
   status();
+  loadApp(false);
   // Live updates over /events: re-list when something in the current folder
   // changes, and follow read-only toggles from the terminal UI.
   let ws = null, watched = null, reloadTimer = null, retry = 1000;
@@ -882,6 +968,7 @@
       let m; try { m = JSON.parse(e.data); } catch { return; }
       if (m.type === "hello" || m.type === "status") setMode(m.readOnly);
       if (m.type === "watching") $("live").hidden = false;
+      if (m.type === "app-updated") { loadApp(false); msg($("appMsg"), `Updated to ${m.version}. Open pages of the app can reload now.`, true); }
       if (m.type === "change") {
         clearTimeout(reloadTimer);
         reloadTimer = setTimeout(() => load(cwd), 100);
@@ -902,6 +989,7 @@
   connect();
   // still useful when the socket is down
   window.addEventListener("focus", status);
+  window.addEventListener("focus", () => loadApp(false));
   load(decodeURIComponent(location.hash.slice(1)) || "/");
 })();
 </script>

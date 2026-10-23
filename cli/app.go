@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -15,6 +16,26 @@ import (
 	"github.com/nimezhu/myweb/myserver"
 	"github.com/nimezhu/myweb/webapp"
 )
+
+// registerAppCmd serves the app's status at POST /cmd/app; {"check":true}
+// also starts a check for an update (admins only, when multi-user).
+func registerAppCmd(srv *myserver.Server, app *webapp.Installer) {
+	srv.RegisterCmd("app", func(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
+		var p struct {
+			Check bool `json:"check"`
+		}
+		if err := req.Bind(&p); err != nil {
+			return nil, err
+		}
+		if p.Check {
+			if req.User != nil && req.User.Role != "admin" {
+				return nil, myserver.Errorf(http.StatusForbidden, "only admins can check for updates")
+			}
+			app.CheckNow()
+		}
+		return app.Status(), nil
+	}, myserver.Describe(`the web app at /: name, versions, release notes, update status; {"check":true} checks for an update now`))
+}
 
 // appCmd runs "app …": managing the web apps installed with -web-from.
 func appCmd(spec Spec, args []string) int {
@@ -219,8 +240,17 @@ func update(name, appsDir string, fl *webapp.Flags) error {
 		fmt.Printf("%s %s → %s (a running %s switches at its next check, or press a)\n", a.Name, before, a.Current, name)
 	default:
 		fmt.Printf("%s %s is up to date\n", a.Name, a.Current)
+		return nil
 	}
+	printNotes(a.Notes[a.Current])
 	return nil
+}
+
+// printNotes indents release notes under the line they belong to.
+func printNotes(notes string) {
+	if notes = strings.TrimSpace(notes); notes != "" {
+		fmt.Println("    " + strings.ReplaceAll(notes, "\n", "\n    "))
+	}
 }
 
 func appVersions(name string, args []string) error {
@@ -235,6 +265,7 @@ func appVersions(name string, args []string) error {
 			mark = "*"
 		}
 		fmt.Printf("%s %s\n", mark, v)
+		printNotes(a.Notes[v])
 	}
 	return nil
 }

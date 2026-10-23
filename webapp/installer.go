@@ -66,16 +66,18 @@ type Installer struct {
 	status   string
 	checked  time.Time
 	latest   string
+	notes    string // the latest version's release notes
 	checking bool
 }
 
 // state.json in the app's folder.
 type state struct {
-	Name     string   `json:"name"`
-	Manifest string   `json:"manifest"`
-	Key      string   `json:"key,omitempty"` // the public key, so -app can start it again
-	Current  string   `json:"current"`
-	Versions []string `json:"versions"`
+	Name     string            `json:"name"`
+	Manifest string            `json:"manifest"`
+	Key      string            `json:"key,omitempty"` // the public key, so -app can start it again
+	Current  string            `json:"current"`
+	Versions []string          `json:"versions"`
+	Notes    map[string]string `json:"notes,omitempty"` // release notes by version
 }
 
 // New prepares an installer and, if a version is installed, serves it right
@@ -177,6 +179,41 @@ func (in *Installer) Current() string {
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	return in.state.Current
+}
+
+// Status is a snapshot of the app for pages and tools (e.g. /cmd/app).
+type Status struct {
+	Name        string            `json:"name"`
+	Manifest    string            `json:"manifest"`
+	Current     string            `json:"current"`          // "" while nothing is installed
+	Latest      string            `json:"latest,omitempty"` // newest version the server offers, once checked
+	LatestNotes string            `json:"latestNotes,omitempty"`
+	Status      string            `json:"status"` // e.g. "up to date", "downloading 1.2.0…", an error
+	Checking    bool              `json:"checking"`
+	Checked     *time.Time        `json:"checked,omitempty"` // last check
+	Updates     bool              `json:"updates"`           // false when pinned (-web-version) or -no-update
+	Installed   []string          `json:"installed"`         // newest first
+	Notes       map[string]string `json:"notes,omitempty"`   // release notes of installed versions
+}
+
+// Status reports the app's state.
+func (in *Installer) Status() Status {
+	installed := in.Installed()
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	st := Status{
+		Name: in.state.Name, Manifest: in.opts.ManifestURL, Current: in.state.Current,
+		Latest: in.latest, LatestNotes: in.notes, Status: in.status, Checking: in.checking,
+		Updates: in.opts.Pin == "" && !in.opts.NoUpdate, Installed: installed, Notes: map[string]string{},
+	}
+	if !in.checked.IsZero() {
+		t := in.checked
+		st.Checked = &t
+	}
+	for v, n := range in.state.Notes {
+		st.Notes[v] = n
+	}
+	return st
 }
 
 // StatusLine summarizes the app for the terminal UI.
@@ -312,7 +349,7 @@ func (in *Installer) check(ctx context.Context) error {
 		return in.fail("cannot check for updates: %v", err)
 	}
 	in.mu.Lock()
-	in.latest = m.Version
+	in.latest, in.notes = m.Version, m.Notes
 	current := in.state.Current
 	if in.state.Name != "" && in.state.Name != m.Name {
 		in.mu.Unlock()
@@ -432,6 +469,12 @@ func (in *Installer) install(ctx context.Context, m *Manifest, base *url.URL) er
 	in.state.Manifest = in.opts.ManifestURL
 	in.state.Key = EncodePublicKey(in.opts.PublicKey)
 	in.state.Current = m.Version
+	if m.Notes != "" {
+		if in.state.Notes == nil {
+			in.state.Notes = map[string]string{}
+		}
+		in.state.Notes[m.Version] = m.Notes
+	}
 	if !contains(in.state.Versions, m.Version) {
 		in.state.Versions = append(in.state.Versions, m.Version)
 	}
@@ -537,6 +580,11 @@ func (in *Installer) prune() {
 		os.RemoveAll(aside)
 	}
 	in.state.Versions = kept
+	for v := range in.state.Notes {
+		if !contains(kept, v) {
+			delete(in.state.Notes, v)
+		}
+	}
 	in.saveStateLocked()
 	in.cleanLeftovers()
 }

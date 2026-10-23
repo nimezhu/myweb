@@ -136,3 +136,29 @@ func TestPanicIsRecovered(t *testing.T) {
 		t.Fatal("server died after panic")
 	}
 }
+
+func TestWebVersionAndClient(t *testing.T) {
+	web := t.TempDir()
+	os.WriteFile(filepath.Join(web, "index.html"), []byte("app"), 0o644)
+	s := New(Config{Root: t.TempDir(), WebFS: http.Dir(web), WebVersion: func() string { return "1.2.0" }})
+	ts := httptest.NewServer(s.handler())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if got := resp.Header.Get("Server-Timing"); got != `myweb-app;desc="1.2.0"` {
+		t.Fatalf("Server-Timing: %q", got)
+	}
+	resp, err = http.Get(ts.URL + ClientPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/javascript") || !bytes.Contains(b, []byte("myweb:app-updated")) {
+		t.Fatalf("client.js: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+}

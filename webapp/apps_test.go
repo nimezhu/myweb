@@ -72,3 +72,37 @@ func (a App) dirName(t *testing.T, dir string) string {
 	t.Fatal("app folder not found")
 	return ""
 }
+
+func TestStatusAndNotes(t *testing.T) {
+	r := newRelease(t)
+	dir := t.TempDir()
+	in := r.installer(t, dir, nil)
+	if st := in.Status(); st.Current != "" || st.Checked != nil || !st.Updates {
+		t.Fatalf("before install: %+v", st)
+	}
+	notes := func(n string) func(*Manifest) { return func(m *Manifest) { m.Notes = n } }
+	r.publish(t, "1.0.0", map[string]string{"index.html": "v1"}, notes("first"))
+	in.check(context.Background())
+	r.publish(t, "1.1.0", map[string]string{"index.html": "v1.1"}, notes("faster"))
+	in.check(context.Background())
+	st := in.Status()
+	if st.Name != "demo" || st.Current != "1.1.0" || st.Latest != "1.1.0" || st.LatestNotes != "faster" ||
+		st.Notes["1.0.0"] != "first" || st.Notes["1.1.0"] != "faster" || st.Checked == nil ||
+		strings.Join(st.Installed, ",") != "1.1.0,1.0.0" {
+		t.Fatalf("status: %+v", st)
+	}
+	if a, _ := FindApp(dir, "demo"); a.Notes["1.1.0"] != "faster" {
+		t.Fatalf("app notes: %v", a.Notes)
+	}
+	// notes go with the versions that are pruned
+	for _, v := range []string{"1.2.0", "1.3.0", "1.4.0"} {
+		r.publish(t, v, map[string]string{"index.html": v}, notes("n"+v))
+		in.check(context.Background())
+	}
+	if st := in.Status(); st.Notes["1.0.0"] != "" || st.Notes["1.4.0"] != "n1.4.0" {
+		t.Fatalf("pruned notes: %v", st.Notes)
+	}
+	if st := r.installer(t, dir, func(o *Options) { o.NoUpdate = true }).Status(); st.Updates {
+		t.Fatal("-no-update should report updates off")
+	}
+}

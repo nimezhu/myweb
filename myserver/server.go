@@ -48,6 +48,13 @@ const maxPortTries = 100
 //go:embed all:ctrl
 var embededFiles embed.FS
 
+// ClientPath serves client.js: web apps include it to offer a reload when
+// myweb installs a new version of them.
+const ClientPath = ManagerPath + "client.js"
+
+//go:embed client.js
+var clientJS []byte
+
 func getFS() http.FileSystem {
 	fsys, err := fs.Sub(embededFiles, "ctrl")
 	if err != nil {
@@ -90,6 +97,11 @@ type Config struct {
 
 	// OnRequest, if set, is called after every request completes.
 	OnRequest func(RequestEvent)
+
+	// WebVersion, if set, names the version of WebFS being served; it is sent
+	// with each page as Server-Timing "myweb-app", so client.js knows which
+	// version a page was loaded from.
+	WebVersion func() string
 
 	// Instance, if set, is reported by /cmd/status so a later start can tell
 	// that this server is the copy it recorded.
@@ -180,6 +192,11 @@ func (s *Server) routes() {
 	m.Handle("/up/", http.StripPrefix("/up", s.writable(s.handleUp)))
 
 	m.Handle("/ctrl/", http.StripPrefix("/ctrl", http.FileServer(getFS())))
+	m.HandleFunc(ClientPath, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Write(clientJS)
+	})
 	m.HandleFunc("/version", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(VERSION))
 	})
@@ -236,7 +253,7 @@ func (s *Server) routes() {
 	// check before reusing a cached index.html or script
 	switch {
 	case s.cfg.WebFS != nil:
-		m.Handle("/", noCache(http.FileServer(s.cfg.WebFS)))
+		m.Handle("/", noCache(s.webVersion(http.FileServer(s.cfg.WebFS))))
 	case s.cfg.Manager != nil:
 		m.Handle("/", noCache(http.FileServer(s.cfg.Manager)))
 	}
@@ -407,6 +424,18 @@ func (s *Server) ServesRoot() bool { return s.cfg.WebFS != nil || s.cfg.Manager 
 // Broadcast sends a JSON message to every /events client, e.g.
 // {"type":"app-updated","version":"1.4.2"}.
 func (s *Server) Broadcast(v interface{}) { s.events.broadcast(v) }
+
+func (s *Server) webVersion(h http.Handler) http.Handler {
+	if s.cfg.WebVersion == nil {
+		return h
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if v := s.cfg.WebVersion(); v != "" {
+			w.Header().Set("Server-Timing", `myweb-app;desc="`+strings.Trim(strconv.Quote(v), `"`)+`"`)
+		}
+		h.ServeHTTP(w, r)
+	})
+}
 
 func noCache(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
