@@ -76,6 +76,7 @@ type state struct {
 	Manifest string            `json:"manifest"`
 	Key      string            `json:"key,omitempty"` // the public key, so -app can start it again
 	Current  string            `json:"current"`
+	Pin      string            `json:"pin,omitempty"` // chosen with Use: serve it, don't update
 	Versions []string          `json:"versions"`
 	Notes    map[string]string `json:"notes,omitempty"` // release notes by version
 }
@@ -118,6 +119,8 @@ func New(opts Options) (*Installer, error) {
 			return nil, fmt.Errorf("version %s is not installed (installed: %s)", opts.Pin, strings.Join(in.state.Versions, ", "))
 		}
 		in.state.Current = opts.Pin
+	} else if in.state.Pin != "" {
+		in.state.Current = in.state.Pin
 	}
 	if in.state.Current != "" {
 		in.use(in.state.Current)
@@ -191,7 +194,8 @@ type Status struct {
 	Status      string            `json:"status"` // e.g. "up to date", "downloading 1.2.0…", an error
 	Checking    bool              `json:"checking"`
 	Checked     *time.Time        `json:"checked,omitempty"` // last check
-	Updates     bool              `json:"updates"`           // false when pinned (-web-version) or -no-update
+	Updates     bool              `json:"updates"`           // false when pinned or -no-update
+	Pinned      string            `json:"pinned,omitempty"`  // the version chosen with Use or -web-version
 	Installed   []string          `json:"installed"`         // newest first
 	Notes       map[string]string `json:"notes,omitempty"`   // release notes of installed versions
 }
@@ -204,7 +208,11 @@ func (in *Installer) Status() Status {
 	st := Status{
 		Name: in.state.Name, Manifest: in.opts.ManifestURL, Current: in.state.Current,
 		Latest: in.latest, LatestNotes: in.notes, Status: in.status, Checking: in.checking,
-		Updates: in.opts.Pin == "" && !in.opts.NoUpdate, Installed: installed, Notes: map[string]string{},
+		Updates: in.opts.Pin == "" && !in.opts.NoUpdate && in.state.Pin == "", Installed: installed, Notes: map[string]string{},
+		Pinned: in.state.Pin,
+	}
+	if in.opts.Pin != "" {
+		st.Pinned = in.opts.Pin
 	}
 	if !in.checked.IsZero() {
 		t := in.checked
@@ -344,6 +352,7 @@ func (in *Installer) check(ctx context.Context) error {
 		in.mu.Unlock()
 	}()
 
+	in.refresh()
 	m, base, err := in.fetchManifest(ctx)
 	if err != nil {
 		return in.fail("cannot check for updates: %v", err)
@@ -359,7 +368,12 @@ func (in *Installer) check(ctx context.Context) error {
 		in.state.Key = key // installed before keys were saved: the manifest just verified with this one
 		in.saveStateLocked()
 	}
+	pin := in.state.Pin
 	in.mu.Unlock()
+	if pin != "" {
+		in.setStatus("pinned to " + pin)
+		return nil
+	}
 	if !satisfies(in.opts.Myweb, m.Requires.Myweb) {
 		return in.fail("%s %s needs myweb %s (this is %s)", m.Name, m.Version, m.Requires.Myweb, in.opts.Myweb)
 	}
@@ -387,6 +401,123 @@ func (in *Installer) fail(format string, a ...interface{}) error {
 	log.Printf("app: %s", msg)
 	in.setStatus(msg)
 	return errors.New(msg)
+}
+
+// Refresh picks up what another process (e.g. "myweb app use") saved for
+// this app, and serves its current version.
+func (in *Installer) Refresh() { in.refresh() }
+
+func (in *Installer) refresh() {
+	if in.opts.Pin != "" {
+		return
+	}
+	in.mu.Lock()
+	before := in.state.Current
+	in.loadState()
+	cur, name := in.state.Current, in.state.Name
+	in.mu.Unlock()
+	if cur != "" && cur != before {
+		in.use(cur)
+		if before != "" && in.opts.OnUpdate != nil {
+			in.opts.OnUpdate(name, cur)
+		}
+	}
+}
+
+// Available fetches the signed list of every published version, newest
+// first (the publisher's <channel>.versions.json).
+func (in *Installer) Available(ctx context.Context) (*Versions, error) {
+	u := VersionsURL(in.opts.ManifestURL)
+	raw, err := in.get(ctx, u, maxManifest*16)
+	if err != nil {
+		return nil, fmt.Errorf("%v (published with an older myweb-publish? the next build adds the list)", err)
+	}
+	sig, err := in.get(ctx, u+".sig", 1024)
+	if err != nil {
+		return nil, err
+	}
+	if err := Verify(in.opts.PublicKey, raw, sig); err != nil {
+		return nil, fmt.Errorf("version list: %v", err)
+	}
+	var vs Versions
+	if err := json.Unmarshal(raw, &vs); err != nil {
+		return nil, fmt.Errorf("version list: %v", err)
+	}
+	in.mu.Lock()
+	name := in.state.Name
+	in.mu.Unlock()
+	if name != "" && vs.Name != name {
+		return nil, fmt.Errorf("the version list is for %q, not %q", vs.Name, name)
+	}
+	for i := range vs.Versions {
+		if err := vs.Versions[i].Validate(); err != nil {
+			return nil, err
+		}
+		if vs.Versions[i].Name != vs.Name {
+			return nil, fmt.Errorf("version list: %s is for %q", vs.Versions[i].Version, vs.Versions[i].Name)
+		}
+	}
+	vs.Sort()
+	return &vs, nil
+}
+
+// Use serves the given version from now on and stops updating, installing it
+// first if needed (verified like any update). "latest" follows updates again.
+func (in *Installer) Use(ctx context.Context, version string) error {
+	if in.opts.Pin != "" {
+		return fmt.Errorf("this run serves %s (-web-version); start without it to choose a version", in.opts.Pin)
+	}
+	in.refresh()
+	if version == "latest" {
+		in.mu.Lock()
+		in.state.Pin = ""
+		err := in.saveStateLocked()
+		in.mu.Unlock()
+		if err != nil {
+			return err
+		}
+		return in.check(ctx)
+	}
+	in.mu.Lock()
+	before := in.state.Current
+	in.mu.Unlock()
+	if !in.installed(version) {
+		vs, err := in.Available(ctx)
+		if err != nil {
+			return err
+		}
+		m, ok := vs.Find(version)
+		if !ok {
+			return fmt.Errorf("version %s is not published", version)
+		}
+		if !satisfies(in.opts.Myweb, m.Requires.Myweb) {
+			return fmt.Errorf("%s %s needs myweb %s (this is %s)", m.Name, m.Version, m.Requires.Myweb, in.opts.Myweb)
+		}
+		base, _ := url.Parse(VersionsURL(in.opts.ManifestURL))
+		in.mu.Lock()
+		in.state.Pin = version // so that the install's prune keeps it
+		in.mu.Unlock()
+		if err := in.install(ctx, m, base); err != nil {
+			in.mu.Lock()
+			in.state.Pin = ""
+			in.mu.Unlock()
+			return err
+		}
+	}
+	in.mu.Lock()
+	in.state.Current, in.state.Pin = version, version
+	err := in.saveStateLocked()
+	name := in.state.Name
+	in.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	in.use(version)
+	in.setStatus("pinned to " + version)
+	if version != before && in.opts.OnUpdate != nil {
+		in.opts.OnUpdate(name, version)
+	}
+	return nil
 }
 
 // Update checks for a new version now and installs it, waiting until done;
@@ -558,7 +689,7 @@ func (in *Installer) prune() {
 	defer in.mu.Unlock()
 	vs := append([]string(nil), in.state.Versions...)
 	sort.Slice(vs, func(i, j int) bool { return CompareVersions(vs[i], vs[j]) > 0 })
-	keep := map[string]bool{in.state.Current: true}
+	keep := map[string]bool{in.state.Current: true, in.state.Pin: true}
 	for i := 0; i < len(vs) && i < in.opts.Keep; i++ {
 		keep[vs[i]] = true
 	}
@@ -629,6 +760,9 @@ func (in *Installer) loadState() {
 	st.Versions = vs
 	if !contains(vs, st.Current) {
 		st.Current = ""
+	}
+	if !contains(vs, st.Pin) {
+		st.Pin = ""
 	}
 	in.state = st
 }

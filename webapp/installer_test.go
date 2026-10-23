@@ -27,6 +27,7 @@ type release struct {
 	priv  ed25519.PrivateKey
 	pub   ed25519.PublicKey
 	ts    *httptest.Server
+	list  Versions // what publish has put up, signed as stable.versions.json
 	down  bool
 }
 
@@ -76,6 +77,12 @@ func (r *release) publish(t *testing.T, version string, files map[string]string,
 	r.files["demo-"+version+".zip"] = bundle
 	r.files["stable.json"] = raw
 	r.files["stable.json.sig"] = Sign(r.priv, raw)
+	r.list.Name = m.Name
+	r.list.Versions = append(r.list.Versions, m)
+	r.list.Sort()
+	list, _ := r.list.Encode()
+	r.files["stable.versions.json"] = list
+	r.files["stable.versions.json.sig"] = Sign(r.priv, list)
 }
 
 func (r *release) installer(t *testing.T, dir string, mod func(*Options)) *Installer {

@@ -15,6 +15,7 @@ type App struct {
 	Manifest string
 	Key      string // "" if installed before keys were saved
 	Current  string
+	Pin      string            // the version chosen with "app use", which stops updates
 	Versions []string          // newest first
 	Notes    map[string]string // release notes by version, when published
 }
@@ -39,7 +40,7 @@ func InstalledApps(dir string) ([]App, error) {
 			continue
 		}
 		apps = append(apps, App{Name: in.state.Name, Dir: in.home, Manifest: in.state.Manifest, Key: in.state.Key,
-			Current: in.state.Current, Versions: in.Installed(), Notes: in.state.Notes})
+			Current: in.state.Current, Pin: in.state.Pin, Versions: in.Installed(), Notes: in.state.Notes})
 	}
 	sort.Slice(apps, func(i, j int) bool {
 		if apps[i].Name != apps[j].Name {

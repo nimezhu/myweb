@@ -9,8 +9,12 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nimezhu/myweb/home"
 	"github.com/nimezhu/myweb/myserver"
@@ -22,19 +26,41 @@ import (
 func registerAppCmd(srv *myserver.Server, app *webapp.Installer) {
 	srv.RegisterCmd("app", func(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 		var p struct {
-			Check bool `json:"check"`
+			Check     bool   `json:"check"`     // check for an update now
+			Refresh   bool   `json:"refresh"`   // pick up a change "myweb app use" saved
+			Use       string `json:"use"`       // a version, or "latest"
+			Available bool   `json:"available"` // include every published version
 		}
 		if err := req.Bind(&p); err != nil {
 			return nil, err
 		}
+		if (p.Check || p.Refresh || p.Use != "") && req.User != nil && req.User.Role != "admin" {
+			return nil, myserver.Errorf(http.StatusForbidden, "only admins can change the app")
+		}
+		if p.Refresh {
+			app.Refresh()
+		}
 		if p.Check {
-			if req.User != nil && req.User.Role != "admin" {
-				return nil, myserver.Errorf(http.StatusForbidden, "only admins can check for updates")
-			}
 			app.CheckNow()
 		}
-		return app.Status(), nil
-	}, myserver.Describe(`the web app at /: name, versions, release notes, update status; {"check":true} checks for an update now`))
+		if p.Use != "" {
+			if err := app.Use(ctx, p.Use); err != nil {
+				return nil, myserver.Errorf(http.StatusBadRequest, "%v", err)
+			}
+		}
+		res := struct {
+			webapp.Status
+			Available []webapp.Manifest `json:"available,omitempty"`
+		}{Status: app.Status()}
+		if p.Available {
+			vs, err := app.Available(ctx)
+			if err != nil {
+				return nil, myserver.Errorf(http.StatusBadGateway, "%v", err)
+			}
+			res.Available = vs.Versions
+		}
+		return res, nil
+	}, myserver.Describe(`the web app at /: versions, release notes, update status. {"check":true} checks for an update now; {"use":"1.2.0"} serves that version and stops updates ("latest" follows them again); {"available":true} adds every published version`))
 }
 
 // appCmd runs "app …": managing the web apps installed with -web-from.
@@ -53,6 +79,7 @@ func appCmd(spec Spec, args []string) int {
 		"versions": appVersions,
 		"remove":   appRemove, "rm": appRemove,
 		"default": appDefault,
+		"use":     appUse,
 	}
 	if sub == "help" {
 		usage(os.Stdout, spec.Name)
@@ -254,20 +281,131 @@ func printNotes(notes string) {
 }
 
 func appVersions(name string, args []string) error {
-	a, err := newAppFlags(name, "versions").oneApp(args)
+	f := newAppFlags(name, "versions")
+	all := f.Bool("all", false, "also list the versions published but not installed (asks the server)")
+	a, err := f.oneApp(args)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("%s from %s\n", a.Name, a.Manifest)
-	for _, v := range a.Versions {
-		mark := " "
-		if v == a.Current {
-			mark = "*"
+	head := fmt.Sprintf("%s from %s", a.Name, a.Manifest)
+	if a.Pin != "" {
+		head += fmt.Sprintf(" (pinned to %s; %s app use %s latest follows updates)", a.Pin, name, a.Name)
+	}
+	fmt.Println(head)
+	if !*all {
+		for _, v := range a.Versions {
+			fmt.Printf("%s %s\n", mark(v == a.Current), v)
+			printNotes(a.Notes[v])
 		}
-		fmt.Printf("%s %s\n", mark, v)
-		printNotes(a.Notes[v])
+		fmt.Printf("(%s app versions %s -all lists every published version)\n", name, a.Name)
+		return nil
+	}
+	in, err := (&webapp.Flags{From: a.Manifest, Key: a.Key}).Installer(myserver.VERSION, filepath.Dir(a.Dir), nil)
+	if err != nil {
+		return err
+	}
+	vs, err := in.Available(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, m := range vs.Versions {
+		where := "published " + m.Published.Format("2006-01-02")
+		if contains(a.Versions, m.Version) {
+			where = "installed"
+		}
+		fmt.Printf("%s %-12s %s\n", mark(m.Version == a.Current), m.Version, where)
+		printNotes(m.Notes)
 	}
 	return nil
+}
+
+func mark(current bool) string {
+	if current {
+		return "*"
+	}
+	return " "
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// appUse is "app use NAME VERSION|latest": serve that version from now on
+// (installing it if needed) and stop updating, or follow updates again.
+func appUse(name string, args []string) error {
+	f := newAppFlags(name, "use")
+	words, err := f.parse(args)
+	if err != nil {
+		return err
+	}
+	if len(words) != 2 {
+		return fmt.Errorf("usage: %s app use NAME VERSION|latest", name)
+	}
+	dirs, err := homeFor(name, *f.home)
+	if err != nil {
+		return err
+	}
+	a, err := webapp.FindApp(dirs.Apps(), words[0])
+	if err != nil {
+		return err
+	}
+	if a.Key == "" {
+		return fmt.Errorf("%s was installed before its key was saved; run once:\n  %s app install -from %s -key KEY", a.Name, name, a.Manifest)
+	}
+	in, err := (&webapp.Flags{From: a.Manifest, Key: a.Key}).Installer(myserver.VERSION, dirs.Apps(), nil)
+	if err != nil {
+		return err
+	}
+	log.SetOutput(io.Discard) // the installer logs for the server; here the result is printed
+	err = in.Use(context.Background(), words[1])
+	log.SetOutput(os.Stderr)
+	if err != nil {
+		return err
+	}
+	st := in.Status()
+	if st.Pinned != "" {
+		fmt.Printf("%s now serves %s and won't update (%s app use %s latest follows updates again)\n", st.Name, st.Current, name, st.Name)
+	} else {
+		fmt.Printf("%s follows updates again; serving %s\n", st.Name, st.Current)
+	}
+	printNotes(st.Notes[st.Current])
+	if n := tellRunning(dirs, a.Manifest); n > 0 {
+		fmt.Printf("told the running %s to switch\n", name)
+	}
+	return nil
+}
+
+// tellRunning asks the running copies that serve this app to pick up a change
+// right away (otherwise they do at their next check); it returns how many did.
+func tellRunning(dirs home.Dirs, manifest string) int {
+	files, _ := filepath.Glob(filepath.Join(dirs.Root, "run", "*.json"))
+	n := 0
+	for _, file := range files {
+		in := running(file)
+		if in == nil || in.Source != "app:"+manifest {
+			continue
+		}
+		req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(in.Port)+"/cmd/app", strings.NewReader(`{"refresh":true}`))
+		if err != nil {
+			continue
+		}
+		if u, err := url.Parse(in.URL); err == nil && u.Query().Get("token") != "" {
+			req.Header.Set("Authorization", "Bearer "+u.Query().Get("token"))
+		}
+		c := http.Client{Timeout: 5 * time.Second}
+		if resp, err := c.Do(req); err == nil {
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				n++
+			}
+		}
+	}
+	return n
 }
 
 func appRemove(name string, args []string) error {

@@ -1,5 +1,8 @@
 // myweb-publish prepares web app releases that myweb installs with -web-from.
 //
+//	myweb-publish init -name myapp -dir dist
+//	    writes myweb-publish.json (and app.key + app.key.pub if missing), so
+//	    that releases need no more than: myweb-publish build -bump patch
 //	myweb-publish keygen -out app.key
 //	    writes a private key to app.key (keep it secret, e.g. in CI secrets)
 //	    and its public key to app.key.pub, to give to myweb with -web-key
@@ -7,7 +10,10 @@
 //	    prints the public key of a private key (if app.key.pub was lost)
 //	myweb-publish build -key app.key -name cellome -version 1.4.2 -dir ./dist -out ./release
 //	    zips ./dist into release/cellome-1.4.2.zip and writes the signed
-//	    manifest release/stable.json + stable.json.sig; upload release/ as is
+//	    manifest release/stable.json and the signed list of every version,
+//	    release/stable.versions.json; upload release/ as is
+//	myweb-publish versions
+//	    lists what the output folder publishes
 //	myweb-publish verify -pub app.key.pub -manifest release/stable.json
 //	    checks the signature and the bundle before uploading
 package main
@@ -42,8 +48,12 @@ func main() {
 		err = keygen(os.Args[2:])
 	case "pubkey":
 		err = pubkey(os.Args[2:])
+	case "init":
+		err = initCmd(os.Args[2:])
 	case "build":
 		err = build(os.Args[2:])
+	case "versions":
+		err = versionsCmd(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
 	case "-h", "-help", "--help", "help":
@@ -60,10 +70,16 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
+  myweb-publish init -name NAME -dir DIR [-out release] [-key app.key]
+                                           writes myweb-publish.json, and the key if missing
+  myweb-publish build -version V | -bump patch|minor|major [-notes TEXT] [-keep N]
+                                           with myweb-publish.json; without it also give
+                                           -key app.key -name NAME -dir DIR -out OUTDIR
+                                           [-channel stable] [-requires-myweb 0.1.0]
+  myweb-publish versions                   what the output folder publishes
+  myweb-publish verify -pub app.key.pub|KEY -manifest OUTDIR/stable.json   (or -key app.key)
   myweb-publish keygen -out app.key        writes app.key (secret) and app.key.pub
   myweb-publish pubkey -key app.key        prints the public key of app.key
-  myweb-publish build  -key app.key -name NAME -version V -dir DIR -out OUTDIR [-channel stable] [-requires-myweb 0.1.0] [-notes TEXT]
-  myweb-publish verify -pub app.key.pub|KEY -manifest OUTDIR/stable.json   (or -key app.key)
 `)
 	os.Exit(2)
 }
@@ -75,25 +91,35 @@ func keygen(args []string) error {
 	if *out == "" {
 		return fmt.Errorf("-out is required")
 	}
-	pubFile := *out + ".pub"
-	for _, p := range []string{*out, pubFile} {
+	pub, err := makeKey(*out)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("private key: %s (keep it secret)\npublic key:  %s  (also in %s.pub)\n\nstart myweb with:  -web-from <URL>/stable.json -web-key %s\n", *out, pub, *out, pub)
+	return nil
+}
+
+// makeKey writes a new private key to path and its public key to path.pub,
+// never overwriting either.
+func makeKey(path string) (pub string, err error) {
+	pubFile := path + ".pub"
+	for _, p := range []string{path, pubFile} {
 		if _, err := os.Lstat(p); err == nil {
-			return fmt.Errorf("%s exists (keygen never overwrites a key)", p)
+			return "", fmt.Errorf("%s exists (a key is never overwritten)", p)
 		}
 	}
 	pub, priv, err := webapp.GenerateKey()
 	if err != nil {
-		return err
+		return "", err
 	}
-	if err := writeNew(*out, priv+"\n", 0o600); err != nil {
-		return err
+	if err := writeNew(path, priv+"\n", 0o600); err != nil {
+		return "", err
 	}
 	if err := writeNew(pubFile, pub+"\n", 0o644); err != nil {
-		os.Remove(*out) // a private key without its public key is no use
-		return err
+		os.Remove(path) // a private key without its public key is no use
+		return "", err
 	}
-	fmt.Printf("private key: %s (keep it secret)\npublic key:  %s  (also in %s)\n\nstart myweb with:  -web-from <URL>/stable.json -web-key %s\n", *out, pub, pubFile, pub)
-	return nil
+	return pub, nil
 }
 
 // writeNew writes a file that must not exist yet.
@@ -143,17 +169,26 @@ func loadPrivateKey(path string) (ed25519.PrivateKey, error) {
 
 func build(args []string) error {
 	fs := flag.NewFlagSet("build", flag.ExitOnError)
+	config := fs.String("config", projectFile, "project settings written by init; flags given here win")
 	keyFile := fs.String("key", "", "private key file from keygen")
 	name := fs.String("name", "", "app name")
 	version := fs.String("version", "", "version, e.g. 1.4.2")
+	bump := fs.String("bump", "", "or: the published version plus one: patch, minor or major")
 	dir := fs.String("dir", "", "folder with the built app (index.html at its top)")
 	out := fs.String("out", "", "output folder to upload")
 	channel := fs.String("channel", "stable", "manifest name: <channel>.json")
 	requires := fs.String("requires-myweb", "", "lowest myweb version the app needs, e.g. 0.1.0")
 	notes := fs.String("notes", "", "release notes")
+	keep := fs.Int("keep", 0, "keep only the newest N versions in the folder and the version list (0: all)")
 	fs.Parse(args)
-	if *keyFile == "" || *name == "" || *version == "" || *dir == "" || *out == "" {
-		return fmt.Errorf("-key, -name, -version, -dir and -out are required")
+	if err := loadProject(fs, *config); err != nil {
+		return err
+	}
+	if *keyFile == "" || *name == "" || *dir == "" || *out == "" {
+		return fmt.Errorf("-key, -name, -dir and -out are required (or run myweb-publish init once)")
+	}
+	if (*version == "") == (*bump == "") {
+		return fmt.Errorf("give -version V or -bump patch|minor|major")
 	}
 	priv, err := loadPrivateKey(*keyFile)
 	if err != nil {
@@ -170,10 +205,39 @@ func build(args []string) error {
 		return fmt.Errorf("%s has no index.html at its top", *dir)
 	}
 	manifestPath := filepath.Join(*out, *channel+".json")
+	listPath := filepath.Join(*out, *channel+".versions.json")
+	var prev *webapp.Manifest
 	if old, err := os.ReadFile(manifestPath); err == nil {
-		var prev webapp.Manifest
-		if json.Unmarshal(old, &prev) == nil && webapp.CompareVersions(*version, prev.Version) <= 0 {
-			return fmt.Errorf("version %s is not newer than the published %s (myweb never installs an older version)", *version, prev.Version)
+		prev = &webapp.Manifest{}
+		if err := json.Unmarshal(old, prev); err != nil {
+			return fmt.Errorf("%s: %v", manifestPath, err)
+		}
+		if prev.Name != *name {
+			return fmt.Errorf("%s is for %q, not %q", manifestPath, prev.Name, *name)
+		}
+	}
+	if *bump != "" {
+		if prev == nil {
+			return fmt.Errorf("nothing published in %s yet: give the first version with -version", *out)
+		}
+		if *version, err = bumpVersion(prev.Version, *bump); err != nil {
+			return err
+		}
+	}
+	if prev != nil && webapp.CompareVersions(*version, prev.Version) <= 0 {
+		return fmt.Errorf("version %s is not newer than the published %s (myweb never installs an older version by itself)", *version, prev.Version)
+	}
+
+	// the list of every published version, so myweb can install any of them;
+	// a folder published before the list existed starts it with its latest
+	var list webapp.Versions
+	if old, err := os.ReadFile(listPath); err == nil {
+		if err := json.Unmarshal(old, &list); err != nil {
+			return fmt.Errorf("%s: %v", listPath, err)
+		}
+	} else if prev != nil {
+		if _, err := os.Stat(filepath.Join(*out, filepath.FromSlash(prev.URL))); err == nil || strings.Contains(prev.URL, "://") {
+			list.Versions = []webapp.Manifest{*prev}
 		}
 	}
 
@@ -195,21 +259,50 @@ func build(args []string) error {
 		Requires:  webapp.Requires{Myweb: *requires},
 		Published: time.Now().UTC().Truncate(time.Second), Notes: *notes,
 	}
+	if err := m.Validate(); err != nil {
+		return err
+	}
+	list.Name = *name
+	list.Versions = append(list.Versions, m)
+	list.Sort()
+	var dropped []webapp.Manifest
+	if *keep > 0 && len(list.Versions) > *keep {
+		list.Versions, dropped = list.Versions[:*keep], list.Versions[*keep:]
+	}
+
 	raw, err := m.Encode()
 	if err != nil {
 		return err
 	}
-	// write the signature first: a manifest is never published unsigned
-	if err := os.WriteFile(manifestPath+".sig", webapp.Sign(priv, raw), 0o644); err != nil {
+	listRaw, err := list.Encode()
+	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(manifestPath, raw, 0o644); err != nil {
-		return err
+	// signatures first: a manifest or list is never published unsigned
+	for _, f := range []struct {
+		path string
+		raw  []byte
+	}{{listPath, listRaw}, {manifestPath, raw}} {
+		if err := os.WriteFile(f.path+".sig", webapp.Sign(priv, f.raw), 0o644); err != nil {
+			return err
+		}
+		if err := os.WriteFile(f.path, f.raw, 0o644); err != nil {
+			return err
+		}
+	}
+	for _, d := range dropped {
+		if !strings.Contains(d.URL, "://") {
+			os.Remove(filepath.Join(*out, filepath.FromSlash(d.URL)))
+		}
 	}
 	if _, err := readRelease(pub, manifestPath); err != nil {
 		return fmt.Errorf("the written release does not verify: %v", err)
 	}
-	fmt.Printf("%s %s: %s (%d bytes)\n  %s\n  %s.sig\nsigned for public key %s\nupload the contents of %s\n", *name, *version, zipName, len(bundle), manifestPath, manifestPath, webapp.EncodePublicKey(pub), *out)
+	fmt.Printf("%s %s: %s (%d bytes), %d listed", *name, *version, zipName, len(bundle), len(list.Versions))
+	if len(dropped) > 0 {
+		fmt.Printf(", %d older removed", len(dropped))
+	}
+	fmt.Printf("\nsigned for public key %s\nupload the contents of %s\n", webapp.EncodePublicKey(pub), *out)
 	return nil
 }
 
@@ -290,7 +383,7 @@ func verify(args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("ok: %s %s, signature and bundle verified\n", m.Name, m.Version)
+	fmt.Printf("ok: %s %s, signatures and bundles verified\n", m.Name, m.Version)
 	return nil
 }
 
@@ -315,17 +408,61 @@ func readRelease(pub ed25519.PublicKey, manifestPath string) (*webapp.Manifest, 
 	if err := m.Validate(); err != nil {
 		return nil, err
 	}
-	if !strings.Contains(m.URL, "://") {
-		bundle, err := os.ReadFile(filepath.Join(filepath.Dir(manifestPath), filepath.FromSlash(m.URL)))
-		if err != nil {
+	dir := filepath.Dir(manifestPath)
+	if err := checkBundle(dir, &m); err != nil {
+		return nil, err
+	}
+	// the version list, when there is one: signed too, and every zip it names
+	listPath := strings.TrimSuffix(manifestPath, ".json") + ".versions.json"
+	listRaw, err := os.ReadFile(listPath)
+	if os.IsNotExist(err) {
+		return &m, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	listSig, err := os.ReadFile(listPath + ".sig")
+	if err != nil {
+		return nil, err
+	}
+	if err := webapp.Verify(pub, listRaw, listSig); err != nil {
+		return nil, fmt.Errorf("%s: %v", listPath, err)
+	}
+	var list webapp.Versions
+	if err := json.Unmarshal(listRaw, &list); err != nil {
+		return nil, fmt.Errorf("%s: %v", listPath, err)
+	}
+	if list.Name != m.Name {
+		return nil, fmt.Errorf("%s is for %q, the manifest for %q", listPath, list.Name, m.Name)
+	}
+	if _, ok := list.Find(m.Version); !ok {
+		return nil, fmt.Errorf("%s does not list the published %s", listPath, m.Version)
+	}
+	for i := range list.Versions {
+		if err := list.Versions[i].Validate(); err != nil {
+			return nil, fmt.Errorf("%s: %v", listPath, err)
+		}
+		if err := checkBundle(dir, &list.Versions[i]); err != nil {
 			return nil, err
-		}
-		if int64(len(bundle)) != m.Size {
-			return nil, fmt.Errorf("%s is %d bytes, the manifest says %d", m.URL, len(bundle), m.Size)
-		}
-		if sum := sha256.Sum256(bundle); hex.EncodeToString(sum[:]) != m.SHA256 {
-			return nil, fmt.Errorf("%s does not match the manifest's sha256", m.URL)
 		}
 	}
 	return &m, nil
+}
+
+// checkBundle compares a zip next to the manifest with its size and hash.
+func checkBundle(dir string, m *webapp.Manifest) error {
+	if strings.Contains(m.URL, "://") {
+		return nil
+	}
+	bundle, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(m.URL)))
+	if err != nil {
+		return err
+	}
+	if int64(len(bundle)) != m.Size {
+		return fmt.Errorf("%s is %d bytes, the manifest says %d", m.URL, len(bundle), m.Size)
+	}
+	if sum := sha256.Sum256(bundle); hex.EncodeToString(sum[:]) != m.SHA256 {
+		return fmt.Errorf("%s does not match the manifest's sha256", m.URL)
+	}
+	return nil
 }

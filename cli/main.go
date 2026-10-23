@@ -56,7 +56,9 @@ func usage(w io.Writer, name string) {
   %[1]s app run NAME [flags]              serve an installed app (same as -app NAME)
   %[1]s app install -from URL -key KEY    install an app, or update it, without serving it
   %[1]s app update [NAME]                 update one or all installed apps
-  %[1]s app versions NAME                 installed versions; * marks the one served
+  %[1]s app versions NAME [-all]          installed (or all published) versions; * is served
+  %[1]s app use NAME VERSION|latest       serve that version and stop updating, or follow
+                                          updates again; installs it if needed
   %[1]s app remove NAME [-y]              delete an installed app
   %[1]s app default [NAME | -clear]       the app plain "%[1]s" serves
   %[1]s config                            show the defaults for serve's flags

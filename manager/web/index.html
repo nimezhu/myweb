@@ -156,6 +156,7 @@
   #appBox .head .grow { flex: 1; }
   #appBox .notes { white-space: pre-wrap; font-size: 13.5px; margin: 0 0 12px; }
   #appBox .notes:empty { display: none; }
+  #appBox .when { font: 12px system-ui, sans-serif; color: var(--muted); }
   #appBox td.notes-cell { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
   #appNew { display: block; margin: 0 0 12px; }
   #appNew[hidden] { display: none; }
@@ -192,16 +193,18 @@
       <span class="grow"></span>
       <a class="btn" href="/" target="_blank" rel="noopener">Open the app</a>
       <button class="authed" id="appCheck">Check for updates</button>
+      <button class="authed" id="appLatest" hidden title="serve the newest version and install updates again">Follow updates</button>
     </div>
     <p class="sub" id="appSub"></p>
     <div class="notice" id="appNew" hidden></div>
     <p class="notes" id="appNotes"></p>
     <details id="appVersions">
-      <summary>Installed versions <span class="sub" id="appCount"></span></summary>
+      <summary><span id="appListTitle">Installed versions</span> <span class="sub" id="appCount"></span></summary>
       <div class="table-wrap" style="margin-top:10px">
-        <table class="files"><thead><tr><th>Version</th><th>Release notes</th></tr></thead>
+        <table class="files"><thead><tr><th>Version</th><th>Release notes</th><th></th></tr></thead>
         <tbody id="appRows"></tbody></table>
       </div>
+      <div class="row" style="margin-top:10px"><button id="appAll">Show every published version</button></div>
     </details>
     <div class="msg" id="appMsg"></div>
   </section>
@@ -448,8 +451,8 @@
     $("appVer").textContent = st.current ? "v" + st.current : "not installed";
     const s = $("appState");
     const busy = st.checking || /…$/.test(st.status);
-    s.textContent = !st.updates ? "updates off" : busy ? (st.checking ? "checking…" : st.status) : st.status === "up to date" ? "up to date" : "update problem";
-    s.className = "pill " + (!st.updates ? "" : busy ? "warn" : st.status === "up to date" ? "ok" : "err");
+    s.textContent = st.pinned ? "pinned to " + st.pinned : !st.updates ? "updates off" : busy ? (st.checking ? "checking…" : st.status) : st.status === "up to date" ? "up to date" : "update problem";
+    s.className = "pill " + (st.pinned ? "warn" : !st.updates ? "" : busy ? "warn" : st.status === "up to date" ? "ok" : "err");
     s.title = st.status;
     let sub = `Served at <a href="/" target="_blank" rel="noopener">/</a>, installed from <code>${esc(st.manifest)}</code>.`;
     if (st.checked) sub += ` Last checked ${esc(when(st.checked))}.`;
@@ -464,12 +467,53 @@
     } else n.hidden = true;
     $("appCheck").hidden = !st.updates;
     $("appCheck").disabled = !authed || busy;
-    const vs = st.installed || [];
-    $("appCount").textContent = vs.length + (vs.length === 1 ? " version" : " versions") + " kept";
-    $("appRows").innerHTML = vs.map((v) =>
-      `<tr><td class="mono">${esc(v)}${v === st.current ? '<span class="tag">serving</span>' : ""}</td>` +
-      `<td class="notes-cell">${esc(notes[v] || "")}</td></tr>`).join("");
+    $("appLatest").hidden = !st.pinned;
+    $("appLatest").disabled = !authed || busy;
+    appLast = st;
+    renderVersions();
   }
+
+  // Installed versions, or with "Show every published version" all that the
+  // publisher lists; any of them can be served ("use"), which stops updates.
+  let appLast = null, appAvail = null;
+  function renderVersions() {
+    const st = appLast, notes = st.notes || {}, installed = st.installed || [];
+    const rows = appAvail
+      ? appAvail.map((m) => ({ v: m.version, notes: m.notes || "", where: installed.includes(m.version) ? "" : "published " + new Date(m.published).toLocaleDateString(undefined, { dateStyle: "medium" }) }))
+      : installed.map((v) => ({ v, notes: notes[v] || "", where: "" }));
+    $("appListTitle").textContent = appAvail ? "Published versions" : "Installed versions";
+    $("appCount").textContent = appAvail ? `${appAvail.length} published, ${installed.length} installed` : installed.length + (installed.length === 1 ? " version" : " versions") + " kept";
+    $("appAll").hidden = !!appAvail;
+    $("appRows").innerHTML = rows.map((r) =>
+      `<tr><td class="mono">${esc(r.v)}${r.v === st.current ? '<span class="tag">serving</span>' : ""}` +
+      (r.where ? `<div class="when">${esc(r.where)}</div>` : "") + `</td>` +
+      `<td class="notes-cell">${esc(r.notes)}</td>` +
+      `<td style="text-align:right">${r.v === st.current ? "" : `<button class="link plain authed" data-use="${esc(r.v)}" ${authed ? "" : "disabled"}>use</button>`}</td></tr>`).join("");
+  }
+
+  async function appPost(body) {
+    const r = await fetch("/cmd/app", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) { const e = await errText(r); onFail(r); throw new Error(e); }
+    return (await r.json()).result;
+  }
+  async function useVersion(v) {
+    msg($("appMsg"), v === "latest" ? "Switching to the newest version…" : `Switching to ${v}…`, true);
+    try {
+      const st = await appPost({ use: v });
+      renderApp(st);
+      msg($("appMsg"), st.pinned ? `Now serving ${st.current}; updates are off until "Follow updates".` : `Following updates; serving ${st.current}.`, true);
+    } catch (e) { msg($("appMsg"), "Could not switch: " + e.message, false); }
+  }
+  $("appRows").onclick = (e) => { const b = e.target.closest("[data-use]"); if (b) useVersion(b.dataset.use); };
+  $("appLatest").onclick = () => useVersion("latest");
+  $("appAll").onclick = async () => {
+    try {
+      const st = await appPost({ available: true });
+      appAvail = st.available || [];
+      renderApp(st);
+      $("appVersions").open = true;
+    } catch (e) { msg($("appMsg"), "Could not list the published versions: " + e.message, false); }
+  };
   $("appCheck").onclick = () => { $("appMsg").textContent = ""; loadApp(true); };
 
   function renderCrumbs() {

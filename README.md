@@ -36,7 +36,8 @@ The other commands manage installed web apps (see
 | `myweb app run NAME [flags]` | serve an installed app (same as `-app NAME`) |
 | `myweb app install -from URL -key KEY` | install an app, or update it, without serving it |
 | `myweb app update [NAME]` | update one or all installed apps |
-| `myweb app versions NAME` | the installed versions; `*` marks the one served |
+| `myweb app versions NAME [-all]` | the installed versions, or with `-all` every published one; `*` marks the one served |
+| `myweb app use NAME VERSION` | serve that version (installing it if needed) and stop updating; `latest` follows updates again |
 | `myweb app remove NAME [-y]` | delete an installed app (asks first) |
 | `myweb app default [NAME \| -clear]` | the app that plain `myweb` serves |
 | `myweb config` | show the saved defaults for the flags |
@@ -119,15 +120,18 @@ Instead of `-web DIR`, myweb can install your web app from a server you publish
 to, and keep it up to date:
 
 ```sh
-# once: make a signing key: app.key is secret (keep it e.g. in CI secrets),
-# app.key.pub is the public key you give to users
-go run github.com/nimezhu/myweb/cmd/myweb-publish keygen -out app.key
-# lost app.key.pub? myweb-publish pubkey -key app.key prints it again
+# once, in your app's project: settings in myweb-publish.json, and a signing
+# key: app.key is secret (keep it out of git, e.g. in CI secrets), app.key.pub
+# is the public key you give to users
+go install github.com/nimezhu/myweb/cmd/myweb-publish@latest
+myweb-publish init -name myapp -dir dist          # -out release -key app.key -keep N
 
-# each release: zip the built app and write the signed manifest
-myweb-publish build -key app.key -name myapp -version 1.4.2 -dir ./dist -out ./release
-myweb-publish verify -pub app.key.pub -manifest release/stable.json   # build checks this too
-# upload release/ (stable.json, stable.json.sig, myapp-1.4.2.zip) to any web server
+# each release: zip dist/, sign the manifest and the list of every version
+myweb-publish build -version 1.0.0                # the first one
+myweb-publish build -bump patch -notes "Fix the export"   # then: patch, minor or major
+myweb-publish versions                            # what release/ publishes
+# upload release/ as is (stable.json, stable.versions.json, their .sig, the zips)
+# to any web server; build checks it like myweb will (myweb-publish verify too)
 
 # users
 myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <public key, or app.key.pub>
@@ -135,13 +139,20 @@ myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <p
 myweb app run myapp -d ~/data   # or: myweb -d ~/data -app myapp
 myweb app list                  # what is installed
 myweb app update                # update everything now, without serving
+myweb app use myapp 1.3.0       # go back to 1.3.0 and stay there
+myweb app use myapp latest      # follow updates again
 ```
 
 - **First start** shows an "installing…" page that turns into the app as soon as
   it is ready. **Later starts** serve the installed version immediately and check
   for updates in the background (`-web-check`, or `a` in the terminal UI).
 - **Updates** are whole versions, switched in one step. The newest 3 versions
-  are kept; `-web-version` serves an older one.
+  are kept.
+- **Any version:** `myweb app use myapp 1.3.0` (or "use" in the file manager)
+  installs any version the publisher lists, verified like an update, and serves
+  it from then on without updating; a running myweb switches right away.
+  `latest` follows updates again. `-web-version` serves an installed version
+  for one run only.
 - **Reload prompt:** add `<script src="/_myweb/client.js"></script>` to the app
   and open pages offer "myapp 1.4.3 is ready. Reload" with the release notes when
   a new version is installed. For your own prompt, use
@@ -151,9 +162,11 @@ myweb app update                # update everything now, without serving
 - **Release notes** (`build -notes`) are shown by `myweb app update`,
   `myweb app versions`, the file manager and the reload prompt.
 - **In the browser,** the file manager (`/_myweb/`) shows the app: version,
-  status, last check, notes, installed versions and a "Check for updates" button.
-  Pages and tools get the same as JSON from `POST /cmd/app` (`{"check":true}`
-  starts a check; admins only with myweb-team).
+  status, last check, notes, installed and published versions, "Check for
+  updates", "use" per version and "Follow updates". Pages and tools get the same
+  as JSON from `POST /cmd/app`: `{"check":true}` starts a check,
+  `{"use":"1.3.0"}` or `{"use":"latest"}` switches, `{"available":true}` adds
+  the published versions (changes are for admins only with myweb-team).
 - **Safety:** the app runs with full access to your files, so myweb installs it
   only if the manifest's ed25519 signature matches `-web-key` and the zip matches
   the signed SHA-256. There is no switch to skip this. It never moves to an older

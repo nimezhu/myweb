@@ -106,3 +106,68 @@ func TestStatusAndNotes(t *testing.T) {
 		t.Fatal("-no-update should report updates off")
 	}
 }
+
+func TestUseVersion(t *testing.T) {
+	r := newRelease(t)
+	dir := t.TempDir()
+	var updates []string
+	in := r.installer(t, dir, func(o *Options) { o.OnUpdate = func(n, v string) { updates = append(updates, v) } })
+	ctx := context.Background()
+	for _, v := range []string{"1.0.0", "1.1.0", "1.2.0", "1.3.0", "1.4.0"} {
+		r.publish(t, v, map[string]string{"index.html": v}, nil)
+		in.check(ctx)
+	}
+	if serve(t, in, "/index.html") != "1.4.0" || strings.Join(in.Installed(), ",") != "1.4.0,1.3.0,1.2.0" {
+		t.Fatalf("setup: %v", in.Installed())
+	}
+	vs, err := in.Available(ctx)
+	if err != nil || len(vs.Versions) != 5 || vs.Versions[0].Version != "1.4.0" {
+		t.Fatalf("available: %+v %v", vs, err)
+	}
+
+	// an older version that was pruned: downloaded, verified, pinned
+	updates = nil
+	if err := in.Use(ctx, "1.0.0"); err != nil {
+		t.Fatal(err)
+	}
+	st := in.Status()
+	if serve(t, in, "/index.html") != "1.0.0" || st.Current != "1.0.0" || st.Pinned != "1.0.0" || st.Updates ||
+		strings.Join(updates, ",") != "1.0.0" {
+		t.Fatalf("use 1.0.0: %q %+v %v", serve(t, in, "/index.html"), st, updates)
+	}
+	// pinned: a newer release is not installed
+	r.publish(t, "1.5.0", map[string]string{"index.html": "1.5.0"}, nil)
+	in.check(ctx)
+	if serve(t, in, "/index.html") != "1.0.0" || !strings.Contains(in.StatusLine(), "pinned to 1.0.0") {
+		t.Fatalf("pinned: %q %s", serve(t, in, "/index.html"), in.StatusLine())
+	}
+	// the pin survives a restart, and another process's choice is picked up
+	in2 := r.installer(t, dir, nil)
+	if serve(t, in2, "/index.html") != "1.0.0" {
+		t.Fatal("pin lost on restart")
+	}
+	if err := in2.Use(ctx, "1.4.0"); err != nil {
+		t.Fatal(err)
+	}
+	in.check(ctx)
+	if serve(t, in, "/index.html") != "1.4.0" {
+		t.Fatalf("not picked up: %q", serve(t, in, "/index.html"))
+	}
+	// latest: follows updates again
+	if err := in.Use(ctx, "latest"); err != nil {
+		t.Fatal(err)
+	}
+	if st := in.Status(); serve(t, in, "/index.html") != "1.5.0" || st.Pinned != "" || !st.Updates {
+		t.Fatalf("latest: %q %+v", serve(t, in, "/index.html"), st)
+	}
+	if err := in.Use(ctx, "9.9.9"); err == nil || !strings.Contains(err.Error(), "not published") {
+		t.Fatalf("unknown version: %v", err)
+	}
+	// a tampered list is refused
+	r.mu.Lock()
+	r.files["stable.versions.json"] = append(r.files["stable.versions.json"], ' ')
+	r.mu.Unlock()
+	if _, err := in.Available(ctx); err == nil {
+		t.Fatal("tampered list accepted")
+	}
+}

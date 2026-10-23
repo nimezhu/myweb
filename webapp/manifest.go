@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -51,11 +52,16 @@ var (
 	sha256Re  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
+// ValidName reports whether s can name an app: letters, digits, '.', '_'
+// and '-', at most 64.
+func ValidName(s string) bool { return nameRe.MatchString(s) }
+
 // Validate checks the fields myweb relies on before installing.
 func (m *Manifest) Validate() error {
-	switch {
-	case !nameRe.MatchString(m.Name):
+	if !ValidName(m.Name) {
 		return fmt.Errorf("manifest: invalid name %q", m.Name)
+	}
+	switch {
 	case !versionRe.MatchString(m.Version):
 		return fmt.Errorf("manifest: invalid version %q", m.Version)
 	case !sha256Re.MatchString(m.SHA256):
@@ -180,6 +186,46 @@ func satisfies(have, req string) bool {
 		return true
 	}
 	return CompareVersions(have, strings.TrimSpace(strings.TrimPrefix(req, ">="))) >= 0
+}
+
+// Versions lists every published version of an app, newest first. It is
+// published, signed, next to the manifest as <channel>.versions.json, so myweb
+// can install a version other than the latest (myweb app use NAME VERSION).
+type Versions struct {
+	Name     string     `json:"name"`
+	Versions []Manifest `json:"versions"`
+}
+
+// VersionsURL is where the version list of a manifest is published:
+// stable.json → stable.versions.json.
+func VersionsURL(manifest string) string {
+	return strings.TrimSuffix(manifest, ".json") + ".versions.json"
+}
+
+// Find returns the entry for a version.
+func (vs *Versions) Find(version string) (*Manifest, bool) {
+	for i := range vs.Versions {
+		if vs.Versions[i].Version == version {
+			return &vs.Versions[i], true
+		}
+	}
+	return nil, false
+}
+
+// Sort orders the list newest first.
+func (vs *Versions) Sort() {
+	sort.SliceStable(vs.Versions, func(i, j int) bool {
+		return CompareVersions(vs.Versions[i].Version, vs.Versions[j].Version) > 0
+	})
+}
+
+// Encode renders the list as published (indented, trailing newline).
+func (vs *Versions) Encode() ([]byte, error) {
+	b, err := json.MarshalIndent(vs, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
 }
 
 // Encode renders a manifest as published (indented, trailing newline).
