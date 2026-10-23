@@ -23,6 +23,25 @@ go build -o myweb .
 The terminal shows the address, the request log and the keys. Without a
 terminal (or with `-no-tui`) it prints plain log lines instead.
 
+## Commands
+
+`myweb` with only flags serves files, as above (`myweb serve` is the same).
+The other commands manage installed web apps (see
+[below](#install-the-app-from-a-distribution-server)):
+
+| Command | |
+|---|---|
+| `myweb [serve] [flags]` | serve files; `myweb serve -h` lists the flags |
+| `myweb app [list]` | list the installed apps |
+| `myweb app run NAME [flags]` | serve an installed app (same as `-app NAME`) |
+| `myweb app install -from URL -key KEY` | install an app, or update it, without serving it |
+| `myweb app update [NAME]` | update one or all installed apps |
+| `myweb app versions NAME` | the installed versions; `*` marks the one served |
+| `myweb app remove NAME [-y]` | delete an installed app (asks first) |
+| `myweb version`, `myweb help` | |
+
+All of them take `-home DIR`.
+
 ## Options
 
 | Flag | Default | |
@@ -99,8 +118,9 @@ myweb-publish verify -pub app.key.pub -manifest release/stable.json   # build ch
 # users
 myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <public key, or app.key.pub>
 # after the first install, by name (myweb remembers the URL and the key)
-myweb -d ~/data -app myapp
-myweb -apps                     # what is installed
+myweb app run myapp -d ~/data   # or: myweb -d ~/data -app myapp
+myweb app list                  # what is installed
+myweb app update                # update everything now, without serving
 ```
 
 - **First start** shows an "installing…" page that turns into the app as soon as
@@ -144,8 +164,8 @@ myweb-team serve -global                                          # same flags a
   search (`find`, `grep`), live events, versions and the trash (which records who
   deleted what). Files you may not see answer 404, so their names don't leak.
 - **Sign-in links** carry a personal token; only its SHA-256 is stored, in
-  `~/.myweb-team/team.json` (`$MYWEB_TEAM_HOME`; use the variable rather than
-  `-home` here, so the `user` and `share` commands use the same file). `user reset` replaces a link,
+  `~/.myweb-team/team.json` (`$MYWEB_TEAM_HOME`, or `-home DIR` on every
+  command). `user reset` replaces a link,
   `user remove` revokes it. The running server picks up changes within a second,
   also for connections already open. Requests are logged with the user's name.
 - **HTTPS:** over a network, links and cookies travel in clear text unless HTTPS

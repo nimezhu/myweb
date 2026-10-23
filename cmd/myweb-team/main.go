@@ -8,7 +8,7 @@
 //	myweb-team folders
 //	myweb-team [serve] [myweb flags]          runs the server (-h for flags)
 //
-// Users and folders live in ~/.myweb-team/team.json ($MYWEB_TEAM_HOME); a
+// Users and folders live in ~/.myweb-team/team.json ($MYWEB_TEAM_HOME, or -home); a
 // running server picks up changes within a second.
 package main
 
@@ -35,6 +35,9 @@ func main() {
 	cmd := ""
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, args = args[0], args[1:]
+	}
+	if cmd != "" && cmd != "serve" {
+		args, homeDir = takeHome(args)
 	}
 	var err error
 	switch cmd {
@@ -73,12 +76,39 @@ private folders (/users/<name>) and shared folders.
   myweb-team folders
   myweb-team [serve] [flags]           run the server; myweb-team serve -h lists flags
 
-Users and folders are kept in ~/.myweb-team/team.json (or $MYWEB_TEAM_HOME);
+Users and folders are kept in ~/.myweb-team/team.json (or $MYWEB_TEAM_HOME,
+or -home DIR, which every command takes);
 a running server picks up changes within a second.
 `)
 }
 
+// homeDir is -home for the user and share commands; serve parses its own.
+var homeDir string
+
+// takeHome removes -home DIR (or -home=DIR) from anywhere in args.
+func takeHome(args []string) (rest []string, dir string) {
+	for i := 0; i < len(args); i++ {
+		a := strings.TrimPrefix(args[i], "-")
+		switch {
+		case a == "-home" || a == "home":
+			if i+1 < len(args) {
+				dir = args[i+1]
+				i++
+			}
+		case strings.HasPrefix(a, "-home=") || strings.HasPrefix(a, "home="):
+			dir = a[strings.Index(a, "=")+1:]
+		default:
+			rest = append(rest, args[i])
+		}
+	}
+	return rest, dir
+}
+
 func teamFile() (string, error) {
+	if homeDir != "" {
+		abs, err := filepath.Abs(homeDir)
+		return filepath.Join(abs, "team.json"), err
+	}
 	d, err := home.For(name)
 	if err != nil {
 		return "", err

@@ -289,11 +289,11 @@ func (memInfo) Sys() interface{}   { return nil }
 
 // ---- checking and installing ----
 
-func (in *Installer) check(ctx context.Context) {
+func (in *Installer) check(ctx context.Context) error {
 	in.mu.Lock()
 	if in.checking {
 		in.mu.Unlock()
-		return
+		return nil
 	}
 	in.checking = true
 	if in.state.Current == "" {
@@ -309,16 +309,14 @@ func (in *Installer) check(ctx context.Context) {
 
 	m, base, err := in.fetchManifest(ctx)
 	if err != nil {
-		in.fail("cannot check for updates: %v", err)
-		return
+		return in.fail("cannot check for updates: %v", err)
 	}
 	in.mu.Lock()
 	in.latest = m.Version
 	current := in.state.Current
 	if in.state.Name != "" && in.state.Name != m.Name {
 		in.mu.Unlock()
-		in.fail("the manifest is for %q, not %q", m.Name, in.state.Name)
-		return
+		return in.fail("the manifest is for %q, not %q", m.Name, in.state.Name)
 	}
 	if key := EncodePublicKey(in.opts.PublicKey); current != "" && in.state.Key != key {
 		in.state.Key = key // installed before keys were saved: the manifest just verified with this one
@@ -326,17 +324,15 @@ func (in *Installer) check(ctx context.Context) {
 	}
 	in.mu.Unlock()
 	if !satisfies(in.opts.Myweb, m.Requires.Myweb) {
-		in.fail("%s %s needs myweb %s (this is %s)", m.Name, m.Version, m.Requires.Myweb, in.opts.Myweb)
-		return
+		return in.fail("%s %s needs myweb %s (this is %s)", m.Name, m.Version, m.Requires.Myweb, in.opts.Myweb)
 	}
 	if current != "" && CompareVersions(m.Version, current) <= 0 {
 		// same or older: never move backwards by ourselves
 		in.setStatus("up to date")
-		return
+		return nil
 	}
 	if err := in.install(ctx, m, base); err != nil {
-		in.fail("cannot install %s %s: %v", m.Name, m.Version, err)
-		return
+		return in.fail("cannot install %s %s: %v", m.Name, m.Version, err)
 	}
 	in.setStatus("up to date")
 	log.Printf("app: %s %s installed", m.Name, m.Version)
@@ -346,12 +342,20 @@ func (in *Installer) check(ctx context.Context) {
 	if in.opts.OnUpdate != nil {
 		in.opts.OnUpdate(m.Name, m.Version)
 	}
+	return nil
 }
 
-func (in *Installer) fail(format string, a ...interface{}) {
+func (in *Installer) fail(format string, a ...interface{}) error {
 	msg := fmt.Sprintf(format, a...)
 	log.Printf("app: %s", msg)
 	in.setStatus(msg)
+	return errors.New(msg)
+}
+
+// Update checks for a new version now and installs it, waiting until done;
+// it reports what a background check would only log.
+func (in *Installer) Update(ctx context.Context) error {
+	return in.check(ctx)
 }
 
 func (in *Installer) get(ctx context.Context, u string, limit int64) ([]byte, error) {

@@ -11,6 +11,7 @@ import (
 // App is an app installed with -web-from, as recorded in its state.json.
 type App struct {
 	Name     string
+	Dir      string // its folder; everything installed for it is inside
 	Manifest string
 	Key      string // "" if installed before keys were saved
 	Current  string
@@ -36,7 +37,7 @@ func InstalledApps(dir string) ([]App, error) {
 		if in.state.Name == "" || in.state.Current == "" {
 			continue
 		}
-		apps = append(apps, App{Name: in.state.Name, Manifest: in.state.Manifest, Key: in.state.Key,
+		apps = append(apps, App{Name: in.state.Name, Dir: in.home, Manifest: in.state.Manifest, Key: in.state.Key,
 			Current: in.state.Current, Versions: in.Installed()})
 	}
 	sort.Slice(apps, func(i, j int) bool {

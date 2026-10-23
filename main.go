@@ -9,5 +9,5 @@ import (
 )
 
 func main() {
-	os.Exit(cli.Serve(cli.Spec{Name: "myweb", Args: os.Args[1:]}))
+	os.Exit(cli.Main(cli.Spec{Name: "myweb", Args: os.Args[1:]}))
 }

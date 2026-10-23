@@ -65,6 +65,10 @@ func Serve(spec Spec) int {
 	version := fs.Bool("version", false, "print version and exit")
 	fs.BoolVar(version, "v", false, "print version and exit (shorthand)")
 	webFlags := webapp.AddFlags(fs)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "usage: %s [serve] [flags]   (%s help lists the other commands)\n\nflags:\n", name, name)
+		fs.PrintDefaults()
+	}
 	if err := fs.Parse(spec.Args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -85,23 +89,14 @@ func Serve(spec Spec) int {
 		return fail(fmt.Errorf("use -web, -web-from or -app, not several"))
 	}
 
-	dirs, err := home.For(name)
-	if *homeDir != "" {
-		dirs.Root, err = filepath.Abs(*homeDir)
-	}
+	dirs, err := homeFor(name, *homeDir)
 	if err != nil {
 		return fail(err)
 	}
 	if webFlags.List {
-		apps, err := webapp.InstalledApps(dirs.Apps())
-		if err != nil {
+		if err := printApps(name, dirs.Apps()); err != nil {
 			return fail(err)
 		}
-		if len(apps) == 0 {
-			fmt.Printf("no apps installed in %s; install one with -web-from URL -web-key KEY\n", dirs.Apps())
-			return 0
-		}
-		fmt.Println(webapp.FormatApps(apps))
 		return 0
 	}
 	createdData := false
