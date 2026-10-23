@@ -40,6 +40,8 @@ The other commands manage installed web apps (see
 | `myweb app use NAME VERSION` | serve that version (installing it if needed) and stop updating; `latest` follows updates again |
 | `myweb app remove NAME [-y]` | delete an installed app (asks first) |
 | `myweb app default [NAME \| -clear]` | the app that plain `myweb` serves |
+| `myweb service install [-as NAME] [flags]` | run in the background, started at login (see below) |
+| `myweb service uninstall`, `status` | |
 | `myweb config` | show the saved defaults for the flags |
 | `myweb config set NAME VALUE` / `unset NAME` | e.g. `config set p 9000`, `config set d ~/data` |
 | `myweb version`, `myweb help` | |
@@ -55,6 +57,16 @@ just the files.
 **One copy:** starting myweb again for the same folder and app opens the copy
 that is already running instead of starting a second one on another port.
 `-new` starts another copy anyway.
+
+**In the background:** `myweb service install -app myapp -d ~/data` runs
+myweb with those flags now and at every login, without a terminal: a systemd
+user service on Linux (logs: `journalctl --user -u myweb`; it runs while you
+are logged in unless `loginctl enable-linger`), a LaunchAgent on macOS and a
+hidden launcher in the Startup folder on Windows (logs in `~/.myweb/logs`). No
+admin rights are needed. Running `myweb` for the same folder and app then just
+opens it. `-as NAME` installs a second one (e.g. one per app), `-dry-run`
+shows what would be written, and installing again replaces the flags. Keep a
+token in `myweb config set token …`, not in the service's flags.
 
 ## Options
 
@@ -93,7 +105,7 @@ that is already running instead of starting a second one on another port.
 | `o` | open the browser (signed in when auth is on) |
 | `y` | copy the startup URL (includes the login token when auth is on) |
 | `m` | open the file manager (when `-web` serves an app at `/`) |
-| `a` | check for an app update now (`-web-from`) |
+| `a` | the app view (`-web-from`, `-app`): status, release notes and versions; in it `⏎` serves the selected version, `l` follows updates again, `c` checks now, `p` lists every published version, `esc` goes back |
 | `r` | toggle read-only |
 | `/` | filter the request log; `e` shows errors only |
 | `↑` `↓` | select a request; `⏎` shows its details (including the error response) |

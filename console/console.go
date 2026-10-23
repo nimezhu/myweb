@@ -24,6 +24,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/nimezhu/myweb/myserver"
+	"github.com/nimezhu/myweb/webapp"
 )
 
 // Row is an extra line in the TUI's info panel (and the plain-mode banner).
@@ -52,6 +53,14 @@ type Options struct {
 type App interface {
 	StatusLine() string
 	CheckNow()
+}
+
+// AppVersions is an App that can list and switch versions (webapp.Installer):
+// 'a' then opens the TUI's app view instead of just checking.
+type AppVersions interface {
+	Status() webapp.Status
+	Available(ctx context.Context) (*webapp.Versions, error)
+	Use(ctx context.Context, version string) error
 }
 
 // SetApp attaches an installed web app (call before Run).

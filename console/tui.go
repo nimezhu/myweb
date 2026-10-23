@@ -14,6 +14,7 @@ import (
 	qrcode "github.com/skip2/go-qrcode"
 
 	"github.com/nimezhu/myweb/myserver"
+	"github.com/nimezhu/myweb/webapp"
 )
 
 const maxEntries = 2000
@@ -62,6 +63,11 @@ type model struct {
 	top        int  // first visible row while an entry is selected
 	detail     bool // show the selected entry in full
 	qr         bool // show a QR code of the URL
+
+	appView  bool              // the app view ('a')
+	appSel   int               // selected row in it
+	appAvail []webapp.Manifest // published versions, after 'p'
+	appBusy  string            // a switch or listing in progress
 
 	requests int
 	errors   int
@@ -210,6 +216,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.push(entry{req: &ev, time: ev.Time})
 	case logMsg:
 		m.push(entry{log: msg.text, time: msg.t})
+	case appDoneMsg:
+		m.appBusy = ""
+		return m, m.setFlash(msg.flash)
+	case appAvailMsg:
+		m.appBusy = ""
+		if msg.err != nil {
+			return m, m.setFlash("could not list published versions: " + msg.err.Error())
+		}
+		m.appAvail, m.appSel = msg.list, 0
 	case stopMsg:
 		m.quitting = true
 		return m, tea.Quit
@@ -244,6 +259,11 @@ func (m model) filterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.appView {
+		if mm, cmd, done := m.appKey(msg); done {
+			return mm, cmd
+		}
+	}
 	page := max(1, m.logHeight()-1)
 	switch msg.String() {
 	case "q":
@@ -271,7 +291,11 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.setFlash("opened the file manager")
 	case "a":
 		if m.opts.App == nil {
-			return m, m.setFlash("no auto-updated app (start with -web-from)")
+			return m, m.setFlash("no auto-updated app (start with -web-from or -app)")
+		}
+		if _, ok := m.appVersions(); ok {
+			m.appView, m.qr, m.detail, m.appSel = true, false, false, 0
+			return m, nil
 		}
 		m.opts.App.CheckNow()
 		return m, m.setFlash("checking for an app update…")
@@ -296,7 +320,7 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, m.setFlash("now read-write")
 	case "u":
 		m.qr = !m.qr
-		m.detail = false
+		m.detail, m.appView = false, false
 	case "/":
 		m.typing, m.qr = true, false
 	case "e":
@@ -389,7 +413,11 @@ func (m model) infoLines() []string {
 		lines = append(lines, row("Files", urlStyle.Render(u)+dimStyle.Render("  file manager (m)")))
 	}
 	if m.opts.App != nil {
-		lines = append(lines, row("App", valueStyle.Render(m.opts.App.StatusLine())+dimStyle.Render("  (a: check now)")))
+		hint := "  (a: check now)"
+		if _, ok := m.appVersions(); ok {
+			hint = "  (a: versions)"
+		}
+		lines = append(lines, row("App", valueStyle.Render(m.opts.App.StatusLine())+dimStyle.Render(hint)))
 	}
 	for _, r := range m.opts.Rows {
 		val := r.Value
@@ -457,6 +485,9 @@ func (m model) footerLines() []string {
 	switch {
 	case m.typing:
 		keys = []key{{"⏎", "apply"}, {"esc", "clear"}}
+	case m.appView:
+		keys = []key{{"↑↓", "select"}, {"⏎", "use version"}, {"l", "follow updates"}, {"c", "check now"},
+			{"p", "all published"}, {"esc", "back"}, {"q", "quit"}}
 	case m.detail:
 		keys = []key{{"↑↓", "prev/next"}, {"y", "copy URL"}, {"esc", "back"}, {"q", "quit"}}
 	case m.qr:
@@ -658,6 +689,8 @@ func (m model) View() string {
 	var title string
 	var body []string
 	switch {
+	case m.appView:
+		title, body = "App", m.appLines(h)
 	case m.qr:
 		title, body = "URL", m.qrLines(h)
 	case m.detail && indexOf(v, m.sel) >= 0:

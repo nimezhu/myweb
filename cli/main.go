@@ -28,6 +28,12 @@ func Main(spec Spec) int {
 		return Serve(spec)
 	case "app", "apps":
 		return appCmd(spec, args)
+	case "service":
+		if err := serviceCmd(spec, args); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
+			return 1
+		}
+		return 0
 	case "config":
 		if err := configCmd(spec, args); err != nil {
 			if errors.Is(err, flag.ErrHelp) {
@@ -61,6 +67,8 @@ func usage(w io.Writer, name string) {
                                           updates again; installs it if needed
   %[1]s app remove NAME [-y]              delete an installed app
   %[1]s app default [NAME | -clear]       the app plain "%[1]s" serves
+  %[1]s service install [-as NAME] [flags] run in the background, started at login
+  %[1]s service uninstall | status [-as NAME]
   %[1]s config                            show the defaults for serve's flags
   %[1]s config set NAME VALUE             e.g. config set p 9000, config set d ~/data
   %[1]s config unset NAME
