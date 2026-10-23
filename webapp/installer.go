@@ -73,6 +73,7 @@ type Installer struct {
 type state struct {
 	Name     string   `json:"name"`
 	Manifest string   `json:"manifest"`
+	Key      string   `json:"key,omitempty"` // the public key, so -app can start it again
 	Current  string   `json:"current"`
 	Versions []string `json:"versions"`
 }
@@ -319,6 +320,10 @@ func (in *Installer) check(ctx context.Context) {
 		in.fail("the manifest is for %q, not %q", m.Name, in.state.Name)
 		return
 	}
+	if key := EncodePublicKey(in.opts.PublicKey); current != "" && in.state.Key != key {
+		in.state.Key = key // installed before keys were saved: the manifest just verified with this one
+		in.saveStateLocked()
+	}
 	in.mu.Unlock()
 	if !satisfies(in.opts.Myweb, m.Requires.Myweb) {
 		in.fail("%s %s needs myweb %s (this is %s)", m.Name, m.Version, m.Requires.Myweb, in.opts.Myweb)
@@ -335,6 +340,9 @@ func (in *Installer) check(ctx context.Context) {
 	}
 	in.setStatus("up to date")
 	log.Printf("app: %s %s installed", m.Name, m.Version)
+	if current == "" {
+		log.Printf("app: next time, start it with -app %s", m.Name)
+	}
 	if in.opts.OnUpdate != nil {
 		in.opts.OnUpdate(m.Name, m.Version)
 	}
@@ -418,6 +426,7 @@ func (in *Installer) install(ctx context.Context, m *Manifest, base *url.URL) er
 	in.mu.Lock()
 	in.state.Name = m.Name
 	in.state.Manifest = in.opts.ManifestURL
+	in.state.Key = EncodePublicKey(in.opts.PublicKey)
 	in.state.Current = m.Version
 	if !contains(in.state.Versions, m.Version) {
 		in.state.Versions = append(in.state.Versions, m.Version)

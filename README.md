@@ -31,6 +31,8 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 | `-d DIR` | `~/.myweb/data` | folder to serve (created if it's the default); `-d .` for the current folder |
 | `-p PORT` | `8433` | port; the next free one is used if it is taken |
 | `-web DIR` | | serve your own web app at `/` (the file manager moves to `/_myweb/`) |
+| `-app NAME` | | serve an app installed with `-web-from`, by name, and keep it updated |
+| `-apps` | | list the installed apps and exit |
 | `-web-from URL` | | install the app at `/` from a signed manifest and keep it updated (see below) |
 | `-web-key KEY` | | public key (or a file holding it) that signs the `-web-from` manifest (required with it) |
 | `-web-version V` | | serve this installed version and don't update (rollback) |
@@ -96,6 +98,9 @@ myweb-publish verify -pub app.key.pub -manifest release/stable.json   # build ch
 
 # users
 myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <public key, or app.key.pub>
+# after the first install, by name (myweb remembers the URL and the key)
+myweb -d ~/data -app myapp
+myweb -apps                     # what is installed
 ```
 
 - **First start** shows an "installing…" page that turns into the app as soon as

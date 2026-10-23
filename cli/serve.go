@@ -81,8 +81,8 @@ func Serve(spec Spec) int {
 			return fail(fmt.Errorf("%s_CORS: %w", env, err))
 		}
 	}
-	if *web != "" && webFlags.From != "" {
-		return fail(fmt.Errorf("use -web or -web-from, not both"))
+	if *web != "" && (webFlags.From != "" || webFlags.App != "") {
+		return fail(fmt.Errorf("use -web, -web-from or -app, not several"))
 	}
 
 	dirs, err := home.For(name)
@@ -91,6 +91,18 @@ func Serve(spec Spec) int {
 	}
 	if err != nil {
 		return fail(err)
+	}
+	if webFlags.List {
+		apps, err := webapp.InstalledApps(dirs.Apps())
+		if err != nil {
+			return fail(err)
+		}
+		if len(apps) == 0 {
+			fmt.Printf("no apps installed in %s; install one with -web-from URL -web-key KEY\n", dirs.Apps())
+			return 0
+		}
+		fmt.Println(webapp.FormatApps(apps))
+		return 0
 	}
 	createdData := false
 	if *directory == "" {

@@ -1,0 +1,74 @@
+package webapp
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestApp(t *testing.T) {
+	r := newRelease(t)
+	dir := t.TempDir()
+	if _, err := FindApp(dir, "demo"); err == nil || !strings.Contains(err.Error(), "no apps are installed") {
+		t.Fatalf("empty: %v", err)
+	}
+	r.publish(t, "1.0.0", map[string]string{"index.html": "v1"}, nil)
+	r.installer(t, dir, nil).check(context.Background())
+	r.publish(t, "1.1.0", map[string]string{"index.html": "v1.1"}, nil)
+	r.installer(t, dir, nil).check(context.Background())
+
+	apps, err := InstalledApps(dir)
+	if err != nil || len(apps) != 1 {
+		t.Fatalf("list: %v %v", apps, err)
+	}
+	a := apps[0]
+	if a.Name != "demo" || a.Current != "1.1.0" || a.Key != EncodePublicKey(r.pub) ||
+		a.Manifest != r.ts.URL+"/stable.json" || strings.Join(a.Versions, ",") != "1.1.0,1.0.0" {
+		t.Fatalf("app: %+v", a)
+	}
+	if _, err := FindApp(dir, "other"); err == nil || !strings.Contains(err.Error(), "demo") {
+		t.Fatalf("unknown name should list the installed ones: %v", err)
+	}
+
+	// -app fills in -web-from and -web-key
+	f := &Flags{App: "demo"}
+	in, err := f.Installer("0.1.0", dir, nil)
+	if err != nil || in.Current() != "1.1.0" || f.From != a.Manifest {
+		t.Fatalf("-app: %v %v", in, err)
+	}
+	if _, err := (&Flags{App: "demo", From: a.Manifest}).Installer("0.1.0", dir, nil); err == nil {
+		t.Fatal("-app with -web-from should be refused")
+	}
+
+	// installed before keys were saved: -app asks for the key once, and a
+	// successful check with -web-key saves it
+	stateFile := filepath.Join(dir, apps[0].dirName(t, dir), "state.json")
+	var st state
+	b, _ := os.ReadFile(stateFile)
+	json.Unmarshal(b, &st)
+	st.Key = ""
+	b, _ = json.Marshal(st)
+	os.WriteFile(stateFile, b, 0o644)
+	if _, err := (&Flags{App: "demo"}).Installer("0.1.0", dir, nil); err == nil || !strings.Contains(err.Error(), "-web-key") {
+		t.Fatalf("no saved key: %v", err)
+	}
+	r.installer(t, dir, nil).check(context.Background())
+	if a, _ := FindApp(dir, "demo"); a.Key != EncodePublicKey(r.pub) {
+		t.Fatal("key not saved by a check")
+	}
+}
+
+// dirName finds the folder an app is installed in.
+func (a App) dirName(t *testing.T, dir string) string {
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if b, err := os.ReadFile(filepath.Join(dir, e.Name(), "state.json")); err == nil && strings.Contains(string(b), a.Manifest) {
+			return e.Name()
+		}
+	}
+	t.Fatal("app folder not found")
+	return ""
+}
