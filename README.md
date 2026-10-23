@@ -38,9 +38,22 @@ The other commands manage installed web apps (see
 | `myweb app update [NAME]` | update one or all installed apps |
 | `myweb app versions NAME` | the installed versions; `*` marks the one served |
 | `myweb app remove NAME [-y]` | delete an installed app (asks first) |
+| `myweb app default [NAME \| -clear]` | the app that plain `myweb` serves |
+| `myweb config` | show the saved defaults for the flags |
+| `myweb config set NAME VALUE` / `unset NAME` | e.g. `config set p 9000`, `config set d ~/data` |
 | `myweb version`, `myweb help` | |
 
 All of them take `-home DIR`.
+
+**Defaults:** `config set` saves a flag's value in `~/.myweb/config.json`, so
+plain `myweb` uses it; a flag given on the command line wins. With a default
+app (`myweb app default myapp`), `myweb` alone serves that app; `-web`,
+`-web-from` or `-app` on the command line replace it, and `-app ""` serves
+just the files.
+
+**One copy:** starting myweb again for the same folder and app opens the copy
+that is already running instead of starting a second one on another port.
+`-new` starts another copy anyway.
 
 ## Options
 
@@ -69,6 +82,7 @@ All of them take `-home DIR`.
 | `-log FILE` | | also append requests and messages to FILE as JSON lines (rotates at 50 MB) |
 | `-no-tui` | | plain log output |
 | `-no-open` | | don't open the browser on start |
+| `-new` | | start another copy even if one already serves this folder and app |
 | `-v`, `-version` | | print the version |
 
 ## Terminal UI
@@ -175,8 +189,8 @@ myweb-team serve -global                                          # same flags a
 ## Folders
 
 Everything myweb keeps lives in `~/.myweb` (`C:\Users\<you>\.myweb` on Windows):
-`data/` is the default data folder and `apps/` holds web apps installed with
-`-web-from`. Start with `-home DIR`, or set `MYWEB_HOME`, to keep it elsewhere (e.g. on another disk or a
+`data/` is the default data folder, `apps/` holds web apps installed with
+`-web-from`, `config.json` the saved defaults and `run/` a note per running copy. Start with `-home DIR`, or set `MYWEB_HOME`, to keep it elsewhere (e.g. on another disk or a
 USB stick). Inside every served folder, versions and the trash are kept in its
 own `.myweb/` subfolder.
 

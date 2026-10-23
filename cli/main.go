@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +28,15 @@ func Main(spec Spec) int {
 		return Serve(spec)
 	case "app", "apps":
 		return appCmd(spec, args)
+	case "config":
+		if err := configCmd(spec, args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				return 0
+			}
+			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
+			return 1
+		}
+		return 0
 	case "version":
 		fmt.Println(spec.Name, myserver.VERSION)
 		return 0
@@ -47,10 +58,16 @@ func usage(w io.Writer, name string) {
   %[1]s app update [NAME]                 update one or all installed apps
   %[1]s app versions NAME                 installed versions; * marks the one served
   %[1]s app remove NAME [-y]              delete an installed app
+  %[1]s app default [NAME | -clear]       the app plain "%[1]s" serves
+  %[1]s config                            show the defaults for serve's flags
+  %[1]s config set NAME VALUE             e.g. config set p 9000, config set d ~/data
+  %[1]s config unset NAME
   %[1]s version
   %[1]s help
 
-The app commands take -home DIR, like serve.
+Flags given on the command line win over the config. Starting the same folder
+and app again opens the copy that is running (-new starts another). Every
+command takes -home DIR.
 `, name)
 }
 

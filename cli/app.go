@@ -31,6 +31,7 @@ func appCmd(spec Spec, args []string) int {
 		"update":   appUpdate,
 		"versions": appVersions,
 		"remove":   appRemove, "rm": appRemove,
+		"default": appDefault,
 	}
 	if sub == "help" {
 		usage(os.Stdout, spec.Name)
@@ -105,19 +106,22 @@ func appList(name string, args []string) error {
 	if err != nil {
 		return err
 	}
-	return printApps(name, dirs.Apps())
+	return printApps(name, dirs)
 }
 
-func printApps(name, dir string) error {
-	apps, err := webapp.InstalledApps(dir)
+func printApps(name string, dirs home.Dirs) error {
+	apps, err := webapp.InstalledApps(dirs.Apps())
 	if err != nil {
 		return err
 	}
 	if len(apps) == 0 {
-		fmt.Printf("no apps installed in %s; install one with: %s app install -from URL -key KEY\n", dir, name)
+		fmt.Printf("no apps installed in %s; install one with: %s app install -from URL -key KEY\n", dirs.Apps(), name)
 		return nil
 	}
 	fmt.Println(webapp.FormatApps(apps))
+	if cfg, err := loadConfig(dirs); err == nil && cfg["app"] != "" {
+		fmt.Printf("default: %s (plain \"%s\" serves it)\n", cfg["app"], name)
+	}
 	return nil
 }
 
@@ -163,7 +167,7 @@ func appUpdate(name string, args []string) error {
 			return err
 		}
 		if len(apps) == 0 {
-			return printApps(name, dirs.Apps())
+			return printApps(name, dirs)
 		}
 	}
 	for _, n := range names {
@@ -253,5 +257,61 @@ func appRemove(name string, args []string) error {
 		return fmt.Errorf("%v (is a %s still serving it?)", err, name)
 	}
 	fmt.Printf("%s removed\n", a.Name)
+	dirs, err := homeFor(name, *f.home)
+	if err != nil {
+		return err
+	}
+	if cfg, err := loadConfig(dirs); err == nil && (cfg["app"] == a.Name || cfg["app"] == a.Manifest) {
+		delete(cfg, "app")
+		if err := cfg.save(dirs); err != nil {
+			return err
+		}
+		fmt.Printf("it was the default app; plain %s serves files again\n", name)
+	}
+	return nil
+}
+
+// appDefault shows or sets the app that plain "myweb" serves (config "app").
+func appDefault(name string, args []string) error {
+	f := newAppFlags(name, "default")
+	clearApp := f.Bool("clear", false, "serve files again, no app")
+	names, err := f.parse(args)
+	if err != nil {
+		return err
+	}
+	dirs, err := homeFor(name, *f.home)
+	if err != nil {
+		return err
+	}
+	cfg, err := loadConfig(dirs)
+	if err != nil {
+		return err
+	}
+	var done string
+	switch {
+	case *clearApp && len(names) == 0:
+		delete(cfg, "app")
+		done = fmt.Sprintf("no default app; plain \"%s\" serves files", name)
+	case len(names) == 1 && !*clearApp:
+		a, err := webapp.FindApp(dirs.Apps(), names[0])
+		if err != nil {
+			return err
+		}
+		cfg["app"] = names[0] // as given: a name, or the manifest URL when names clash
+		done = fmt.Sprintf("plain \"%s\" now serves %s %s", name, a.Name, a.Current)
+	case len(names) == 0:
+		if cfg["app"] == "" {
+			fmt.Printf("no default app; set one with: %s app default NAME\n", name)
+		} else {
+			fmt.Println(cfg["app"])
+		}
+		return nil
+	default:
+		return fmt.Errorf("usage: %s app default [NAME | -clear]", name)
+	}
+	if err := cfg.save(dirs); err != nil {
+		return err
+	}
+	fmt.Println(done)
 	return nil
 }

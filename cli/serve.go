@@ -7,10 +7,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nimezhu/myweb/console"
 	"github.com/nimezhu/myweb/home"
@@ -31,6 +33,56 @@ type Spec struct {
 	Access func(dirs home.Dirs, root string) (myserver.Access, []console.Row, error)
 }
 
+// serveFlags are serve's command-line options.
+type serveFlags struct {
+	port                              *int
+	global, readOnly                  *bool
+	homeDir, directory, web           *string
+	noManager, noTUI, noOpen, newCopy *bool
+	auth                              *bool   // nil when spec.Access is set
+	token                             *string // nil when spec.Access is set
+	versions, trashDays               *int
+	uploadMax                         *int64
+	logFile                           *string
+	cors                              myserver.OriginList
+	version                           *bool
+	webFlags                          *webapp.Flags
+}
+
+func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
+	name := spec.Name
+	env := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	f := &serveFlags{}
+	f.port = fs.Int("p", 8433, "port to serve on (next free port is used if taken)")
+	f.global = fs.Bool("global", false, "listen on all interfaces (visible to your network)")
+	f.readOnly = fs.Bool("r", false, "read only (can be toggled in the TUI with 'r')")
+	f.homeDir = fs.String("home", "", fmt.Sprintf("%s's own folder, holding data/ and apps/ (default $%s_HOME, or ~/.%s)", name, env, name))
+	f.directory = fs.String("d", "", "the folder of data files to serve (default <home>/data;\n-d . for the current folder)")
+	f.web = fs.String("web", "", "serve this web app at / (the file manager stays at "+myserver.ManagerPath+")")
+	f.noManager = fs.Bool("no-manager", false, "don't serve the built-in file manager")
+	f.noTUI = fs.Bool("no-tui", false, "plain log output instead of the interactive TUI")
+	f.noOpen = fs.Bool("no-open", false, "do not open the browser on start")
+	f.newCopy = fs.Bool("new", false, "start another copy even if one already serves this folder and app")
+	if spec.Access == nil {
+		f.auth = fs.Bool("auth", false, "require an access token for writes and commands (random per start unless -token is given)")
+		f.token = fs.String("token", os.Getenv(env+"_TOKEN"), fmt.Sprintf("access token; setting it (or $%s_TOKEN) turns on -auth", env))
+	}
+	f.versions = fs.Int("versions", 20, "previous versions kept per file on overwrite (0: off)")
+	f.trashDays = fs.Int("trash-days", 30, "days deleted files stay in the trash (0: delete immediately)")
+	f.uploadMax = fs.Int64("upload-max", 100, "largest file accepted by an upload, in MiB")
+	f.logFile = fs.String("log", "", "also append requests and messages to this file (JSON lines)")
+	fs.Var(&f.cors, "cors", fmt.Sprintf("extra browser origins allowed to call the API, comma-separated or repeated\n(e.g. https://app.example.com); also $%s_CORS", env))
+	f.version = fs.Bool("version", false, "print version and exit")
+	fs.BoolVar(f.version, "v", false, "print version and exit (shorthand)")
+	f.webFlags = webapp.AddFlags(fs)
+	fs.Usage = func() {
+		fmt.Fprintf(fs.Output(), "usage: %s [serve] [flags]   (%s help lists the other commands)\n\nflags:\n", name, name)
+		fs.PrintDefaults()
+	}
+	return fs, f
+}
+
 // Serve runs the server until it is stopped and returns the exit code.
 func Serve(spec Spec) int {
 	name := spec.Name
@@ -40,35 +92,10 @@ func Serve(spec Spec) int {
 		return 1
 	}
 
-	fs := flag.NewFlagSet(name, flag.ContinueOnError)
-	port := fs.Int("p", 8433, "port to serve on (next free port is used if taken)")
-	global := fs.Bool("global", false, "listen on all interfaces (visible to your network)")
-	readOnly := fs.Bool("r", false, "read only (can be toggled in the TUI with 'r')")
-	homeDir := fs.String("home", "", fmt.Sprintf("%s's own folder, holding data/ and apps/ (default $%s_HOME, or ~/.%s)", name, env, name))
-	directory := fs.String("d", "", "the folder of data files to serve (default <home>/data;\n-d . for the current folder)")
-	web := fs.String("web", "", "serve this web app at / (the file manager stays at "+myserver.ManagerPath+")")
-	noManager := fs.Bool("no-manager", false, "don't serve the built-in file manager")
-	noTUI := fs.Bool("no-tui", false, "plain log output instead of the interactive TUI")
-	noOpen := fs.Bool("no-open", false, "do not open the browser on start")
-	var auth *bool
-	var token *string
-	if spec.Access == nil {
-		auth = fs.Bool("auth", false, "require an access token for writes and commands (random per start unless -token is given)")
-		token = fs.String("token", os.Getenv(env+"_TOKEN"), fmt.Sprintf("access token; setting it (or $%s_TOKEN) turns on -auth", env))
-	}
-	versions := fs.Int("versions", 20, "previous versions kept per file on overwrite (0: off)")
-	trashDays := fs.Int("trash-days", 30, "days deleted files stay in the trash (0: delete immediately)")
-	uploadMax := fs.Int64("upload-max", 100, "largest file accepted by an upload, in MiB")
-	logFile := fs.String("log", "", "also append requests and messages to this file (JSON lines)")
-	var cors myserver.OriginList
-	fs.Var(&cors, "cors", fmt.Sprintf("extra browser origins allowed to call the API, comma-separated or repeated\n(e.g. https://app.example.com); also $%s_CORS", env))
-	version := fs.Bool("version", false, "print version and exit")
-	fs.BoolVar(version, "v", false, "print version and exit (shorthand)")
-	webFlags := webapp.AddFlags(fs)
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: %s [serve] [flags]   (%s help lists the other commands)\n\nflags:\n", name, name)
-		fs.PrintDefaults()
-	}
+	fs, f := newServeFlags(spec)
+	port, global, readOnly, homeDir, directory, web := f.port, f.global, f.readOnly, f.homeDir, f.directory, f.web
+	noManager, noTUI, noOpen, auth, token := f.noManager, f.noTUI, f.noOpen, f.auth, f.token
+	versions, trashDays, uploadMax, logFile, version, webFlags := f.versions, f.trashDays, f.uploadMax, f.logFile, f.version, f.webFlags
 	if err := fs.Parse(spec.Args); err != nil {
 		if err == flag.ErrHelp {
 			return 0
@@ -80,8 +107,22 @@ func Serve(spec Spec) int {
 		fmt.Println(name, myserver.VERSION)
 		return 0
 	}
+	dirs, err := homeFor(name, *homeDir)
+	if err != nil {
+		return fail(err)
+	}
+	cfg, err := loadConfig(dirs)
+	if err != nil {
+		return fail(err)
+	}
+	if os.Getenv(env+"_TOKEN") != "" {
+		delete(cfg, "token") // the variable beats the file, as for the flag's default
+	}
+	if err := cfg.apply(fs, configFile(dirs)); err != nil {
+		return fail(err)
+	}
 	if v := os.Getenv(env + "_CORS"); v != "" {
-		if err := cors.Set(v); err != nil {
+		if err := f.cors.Set(v); err != nil {
 			return fail(fmt.Errorf("%s_CORS: %w", env, err))
 		}
 	}
@@ -89,12 +130,8 @@ func Serve(spec Spec) int {
 		return fail(fmt.Errorf("use -web, -web-from or -app, not several"))
 	}
 
-	dirs, err := homeFor(name, *homeDir)
-	if err != nil {
-		return fail(err)
-	}
 	if webFlags.List {
-		if err := printApps(name, dirs.Apps()); err != nil {
+		if err := printApps(name, dirs); err != nil {
 			return fail(err)
 		}
 		return 0
@@ -136,6 +173,30 @@ func Serve(spec Spec) int {
 		webFS = app.FS()
 	}
 
+	// the same folder and app already being served: open that copy
+	source := "files"
+	switch {
+	case webFlags.From != "":
+		source = "app:" + webFlags.From
+	case *web != "":
+		abs, _ := filepath.Abs(*web)
+		source = "web:" + abs
+	}
+	runFile := instanceFile(dirs, root, source)
+	other := running(runFile)
+	if other != nil && !*f.newCopy {
+		fmt.Printf("%s is already serving %s at %s (pid %d); ", name, root, other.URL, other.PID)
+		if *noOpen || other.URL == "" {
+			fmt.Println("-new starts another copy")
+			return 0
+		}
+		fmt.Println("opening it (-new starts another copy)")
+		if err := console.OpenBrowser(other.URL); err != nil {
+			return fail(fmt.Errorf("could not open browser: %w", err))
+		}
+		return 0
+	}
+
 	var access myserver.Access
 	var rows []console.Row
 	if spec.Access != nil {
@@ -164,6 +225,7 @@ func Serve(spec Spec) int {
 	if createdData {
 		con.Note("created your data folder: %s (give -d to serve another folder)", root)
 	}
+	instanceID := newInstanceID()
 	srv = myserver.New(myserver.Config{
 		Root:      root,
 		WebFS:     webFS,
@@ -171,7 +233,7 @@ func Serve(spec Spec) int {
 		Port:      *port,
 		Global:    *global,
 		ReadOnly:  *readOnly,
-		CORS:      append(append([]string{}, myserver.DefaultCORS...), cors...),
+		CORS:      append(append([]string{}, myserver.DefaultCORS...), f.cors...),
 		Token:     tok,
 		Access:    access,
 		OnRequest: con.OnRequest,
@@ -179,9 +241,10 @@ func Serve(spec Spec) int {
 		KeepVersions: offIfZero(*versions),
 		TrashDays:    offIfZero(*trashDays),
 		MaxUpload:    *uploadMax << 20,
+		Instance:     instanceID,
 	})
-	if len(cors) > 0 {
-		con.AddRow("CORS", "+ "+cors.String())
+	if len(f.cors) > 0 {
+		con.AddRow("CORS", "+ "+f.cors.String())
 	}
 	plugins.RegisterFileOps(srv)
 	if err := srv.Start(); err != nil {
@@ -192,6 +255,16 @@ func Serve(spec Spec) int {
 	}
 	if srv.Port() != *port {
 		fmt.Fprintf(os.Stderr, "port %d is busy, using %d\n", *port, srv.Port())
+	}
+	self := &instance{ID: instanceID, PID: os.Getpid(), Port: srv.Port(), Root: root, Source: source, Started: time.Now().UTC()}
+	if srv.ServesRoot() {
+		self.URL = srv.LoginURL()
+	}
+	if other == nil { // a -new copy leaves the record to the first one
+		if err := self.record(runFile); err != nil {
+			log.Printf("could not record the running server: %v", err)
+		}
+		defer self.forget(runFile)
 	}
 	return con.Run(srv)
 }

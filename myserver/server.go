@@ -90,6 +90,10 @@ type Config struct {
 
 	// OnRequest, if set, is called after every request completes.
 	OnRequest func(RequestEvent)
+
+	// Instance, if set, is reported by /cmd/status so a later start can tell
+	// that this server is the copy it recorded.
+	Instance string
 }
 
 // RequestEvent describes a completed request.
@@ -190,6 +194,7 @@ func (s *Server) routes() {
 			"authed":    s.Authorized(r),
 			"user":      UserFrom(r.Context()),
 			"multiUser": s.MultiUser(),
+			"instance":  s.cfg.Instance,
 		})
 	})
 	m.HandleFunc("/events", s.serveEvents)

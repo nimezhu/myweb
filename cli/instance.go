@@ -1,0 +1,86 @@
+package cli
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
+
+	"github.com/nimezhu/myweb/home"
+)
+
+// instance records a running server in <home>/run/<id>.json, so starting the
+// same folder and app again opens it instead of starting a second copy.
+type instance struct {
+	ID      string    `json:"id"` // also reported by /cmd/status
+	PID     int       `json:"pid"`
+	Port    int       `json:"port"`
+	URL     string    `json:"url"` // what the browser opens; may carry the token
+	Root    string    `json:"root"`
+	Source  string    `json:"source"` // what is served at "/"
+	Started time.Time `json:"started"`
+}
+
+// instanceFile is the record for one folder and one app.
+func instanceFile(dirs home.Dirs, root, source string) string {
+	sum := sha256.Sum256([]byte(root + "\x00" + source))
+	return filepath.Join(dirs.Root, "run", hex.EncodeToString(sum[:6])+".json")
+}
+
+// running returns the recorded server if it is still up, else nil.
+func running(file string) *instance {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return nil
+	}
+	var in instance
+	if json.Unmarshal(b, &in) != nil || in.ID == "" || in.Port == 0 {
+		return nil
+	}
+	// the port may have been reused since: ask the server who it is
+	c := http.Client{Timeout: time.Second}
+	resp, err := c.Get("http://127.0.0.1:" + strconv.Itoa(in.Port) + "/cmd/status")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+	var st struct {
+		Instance string `json:"instance"`
+	}
+	if json.NewDecoder(resp.Body).Decode(&st) != nil || st.Instance != in.ID {
+		return nil
+	}
+	return &in
+}
+
+func newInstanceID() string {
+	b := make([]byte, 12)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// record writes the file (private: the URL may carry the access token).
+func (in *instance) record(file string) error {
+	if err := os.MkdirAll(filepath.Dir(file), 0o700); err != nil {
+		return err
+	}
+	b, _ := json.MarshalIndent(in, "", "  ")
+	return os.WriteFile(file, b, 0o600)
+}
+
+// forget removes the file if it is still this server's.
+func (in *instance) forget(file string) {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return
+	}
+	var cur instance
+	if json.Unmarshal(b, &cur) == nil && cur.ID == in.ID {
+		os.Remove(file)
+	}
+}
