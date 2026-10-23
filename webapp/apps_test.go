@@ -2,6 +2,8 @@ package webapp
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -169,5 +171,63 @@ func TestUseVersion(t *testing.T) {
 	r.mu.Unlock()
 	if _, err := in.Available(ctx); err == nil {
 		t.Fatal("tampered list accepted")
+	}
+}
+
+func TestKeyRotation(t *testing.T) {
+	r := newRelease(t)
+	ctx := context.Background()
+	oldPub, oldPriv := r.pub, r.priv
+	newPub, newPriv, _ := ed25519.GenerateKey(rand.Reader)
+	keys := func(ks ...ed25519.PublicKey) func(*Manifest) {
+		return func(m *Manifest) {
+			for _, k := range ks {
+				m.Keys = append(m.Keys, EncodePublicKey(k))
+			}
+		}
+	}
+	dir, offline := t.TempDir(), t.TempDir()
+	r.publish(t, "1.0.0", map[string]string{"index.html": "v1"}, nil)
+	r.installer(t, dir, nil).check(ctx)
+	r.installer(t, offline, nil).check(ctx) // a second user, offline from now until the rotation is done
+
+	// rotate: releases are signed with both keys and name both
+	r.sign = []ed25519.PrivateKey{newPriv, oldPriv}
+	r.publish(t, "1.1.0", map[string]string{"index.html": "v1.1"}, keys(newPub, oldPub))
+	r.installer(t, dir, nil).check(ctx)
+	a, _ := FindApp(dir, "demo")
+	if a.Current != "1.1.0" || a.Key != EncodePublicKey(newPub) {
+		t.Fatalf("after rotate: %+v", a)
+	}
+	// finish: the new key only; -app (which uses the saved key) keeps working
+	r.sign = []ed25519.PrivateKey{newPriv}
+	r.publish(t, "1.2.0", map[string]string{"index.html": "v1.2"}, keys(newPub))
+	in, err := (&Flags{App: "demo"}).Installer("0.1.0", dir, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := in.Update(ctx); err != nil || in.Current() != "1.2.0" {
+		t.Fatalf("after finish: %v %s", err, in.Current())
+	}
+	// the old key is no longer trusted
+	r.sign = []ed25519.PrivateKey{oldPriv}
+	r.publish(t, "1.3.0", map[string]string{"index.html": "evil"}, nil)
+	in, _ = (&Flags{App: "demo"}).Installer("0.1.0", dir, nil)
+	if err := in.Update(ctx); err == nil || in.Current() != "1.2.0" {
+		t.Fatalf("a release signed with the retired key was accepted: %v %s", err, in.Current())
+	}
+	// even when the retired key is given explicitly (e.g. an old -web-key)
+	if err := r.installer(t, dir, func(o *Options) { o.PublicKey = oldPub }).Update(ctx); err == nil {
+		t.Fatal("a retired -web-key was trusted")
+	}
+	// the user who missed the rotation can't verify the new key's releases:
+	// they need the new public key once (-web-key)
+	r.sign = []ed25519.PrivateKey{newPriv}
+	r.publish(t, "1.4.0", map[string]string{"index.html": "v1.4"}, keys(newPub))
+	if err := r.installer(t, offline, nil).Update(ctx); err == nil {
+		t.Fatal("verified without knowing the new key")
+	}
+	if err := r.installer(t, offline, func(o *Options) { o.PublicKey = newPub }).Update(ctx); err != nil {
+		t.Fatalf("with the new key: %v", err)
 	}
 }

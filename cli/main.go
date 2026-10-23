@@ -28,6 +28,17 @@ func Main(spec Spec) int {
 		return Serve(spec)
 	case "app", "apps":
 		return appCmd(spec, args)
+	case "completion":
+		if err := completionCmd(spec, args, os.Stdout); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
+			return 2
+		}
+		return 0
+	case "__complete": // used by the completion scripts
+		for _, c := range completions(spec, args) {
+			fmt.Println(c)
+		}
+		return 0
 	case "service":
 		if err := serviceCmd(spec, args); err != nil {
 			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
@@ -72,6 +83,7 @@ func usage(w io.Writer, name string) {
   %[1]s config                            show the defaults for serve's flags
   %[1]s config set NAME VALUE             e.g. config set p 9000, config set d ~/data
   %[1]s config unset NAME
+  %[1]s completion bash|zsh|fish          shell completion (see %[1]s completion)
   %[1]s version
   %[1]s help
 

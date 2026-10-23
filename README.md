@@ -44,9 +44,14 @@ The other commands manage installed web apps (see
 | `myweb service uninstall`, `status` | |
 | `myweb config` | show the saved defaults for the flags |
 | `myweb config set NAME VALUE` / `unset NAME` | e.g. `config set p 9000`, `config set d ~/data` |
+| `myweb completion bash\|zsh\|fish` | shell completion of commands, flags, app names and versions |
 | `myweb version`, `myweb help` | |
 
 All of them take `-home DIR`.
+
+**Completion:** add `source <(myweb completion bash)` to `~/.bashrc`
+(`zsh` likewise, after `compinit`; fish:
+`myweb completion fish > ~/.config/fish/completions/myweb.fish`).
 
 **Defaults:** `config set` saves a flag's value in `~/.myweb/config.json`, so
 plain `myweb` uses it; a flag given on the command line wins. With a default
@@ -179,6 +184,12 @@ myweb app use myapp latest      # follow updates again
   as JSON from `POST /cmd/app`: `{"check":true}` starts a check,
   `{"use":"1.3.0"}` or `{"use":"latest"}` switches, `{"available":true}` adds
   the published versions (changes are for admins only with myweb-team).
+- **New signing key:** `myweb-publish rotate` makes a new key; releases are
+  then signed with both and name both, and each myweb that installs one trusts
+  the new key, with no change for users. Once they have updated,
+  `myweb-publish rotate -finish` signs with the new key alone, and from that
+  release on myweb no longer trusts the old one, even if given as `-web-key`.
+  Users who skipped every release in between need the new public key once.
 - **Safety:** the app runs with full access to your files, so myweb installs it
   only if the manifest's ed25519 signature matches `-web-key` and the zip matches
   the signed SHA-256. There is no switch to skip this. It never moves to an older

@@ -19,13 +19,14 @@ const projectFile = "myweb-publish.json"
 
 // project is myweb-publish.json; paths are relative to the file.
 type project struct {
-	Name     string `json:"name"`
-	Dir      string `json:"dir"`
-	Out      string `json:"out"`
-	Key      string `json:"key"`
-	Channel  string `json:"channel,omitempty"`
-	Requires string `json:"requires-myweb,omitempty"`
-	Keep     int    `json:"keep,omitempty"`
+	Name     string   `json:"name"`
+	Dir      string   `json:"dir"`
+	Out      string   `json:"out"`
+	Key      string   `json:"key"`
+	Channel  string   `json:"channel,omitempty"`
+	Requires string   `json:"requires-myweb,omitempty"`
+	Keep     int      `json:"keep,omitempty"`
+	OldKeys  []string `json:"old-keys,omitempty"` // still signing during a key rotation
 }
 
 // loadProject fills in the flags that were not given from the project file.
@@ -58,6 +59,13 @@ func loadProject(fs *flag.FlagSet, path string) error {
 		if v != "" && !given[flagName] && fs.Lookup(flagName) != nil {
 			fs.Set(flagName, v)
 		}
+	}
+	var olds []string
+	for _, k := range p.OldKeys {
+		olds = append(olds, rel(k))
+	}
+	if len(olds) > 0 && !given["old-key"] && fs.Lookup("old-key") != nil {
+		fs.Set("old-key", strings.Join(olds, ","))
 	}
 	if p.Keep > 0 && !given["keep"] && fs.Lookup("keep") != nil {
 		fs.Set("keep", strconv.Itoa(p.Keep))
@@ -171,4 +179,84 @@ func versionsCmd(args []string) error {
 		}
 	}
 	return nil
+}
+
+// rotateCmd moves the project to a new signing key in two steps. "rotate"
+// makes the new key and from then on builds sign with both; myweb learns the
+// new key from the first such release it installs. "rotate -finish", once
+// users have updated, signs with the new key alone, and myweb stops trusting
+// the old one.
+func rotateCmd(args []string) error {
+	fs := flag.NewFlagSet("rotate", flag.ExitOnError)
+	config := fs.String("config", projectFile, "project settings written by init")
+	newKey := fs.String("new", "", "file for the new private key (default: app-2.key next to the current one)")
+	finish := fs.Bool("finish", false, "stop signing with the old key")
+	fs.Parse(args)
+	b, err := os.ReadFile(*config)
+	if err != nil {
+		return fmt.Errorf("%v (rotate works on a project made with myweb-publish init)", err)
+	}
+	var p project
+	if err := json.Unmarshal(b, &p); err != nil {
+		return fmt.Errorf("%s: %v", *config, err)
+	}
+	base := filepath.Dir(*config)
+	if *finish {
+		if len(p.OldKeys) == 0 {
+			return fmt.Errorf("no rotation in progress")
+		}
+		old := p.OldKeys
+		p.OldKeys = nil
+		if err := saveProject(*config, p); err != nil {
+			return err
+		}
+		fmt.Printf("builds are signed with %s only from now on; the next release makes myweb stop trusting the old key.\n", p.Key)
+		fmt.Printf("users who haven't updated since the rotation started need the new public key once: %s.pub\n", p.Key)
+		fmt.Printf("after that release is out, the old key can be deleted: %s\n", strings.Join(old, ", "))
+		return nil
+	}
+	if len(p.OldKeys) > 0 {
+		return fmt.Errorf("a rotation is in progress (from %s); finish it first: myweb-publish rotate -finish", strings.Join(p.OldKeys, ", "))
+	}
+	if *newKey == "" {
+		ext := filepath.Ext(p.Key)
+		stem := strings.TrimSuffix(p.Key, ext)
+		if i := strings.LastIndex(stem, "-"); i > 0 {
+			if _, err := strconv.Atoi(stem[i+1:]); err == nil {
+				stem = stem[:i]
+			}
+		}
+		for n := 2; ; n++ {
+			*newKey = fmt.Sprintf("%s-%d%s", stem, n, ext)
+			if _, err := os.Stat(filepath.Join(base, *newKey)); os.IsNotExist(err) {
+				break
+			}
+		}
+	}
+	keyPath := *newKey
+	if !filepath.IsAbs(keyPath) {
+		keyPath = filepath.Join(base, keyPath)
+	}
+	pub, err := makeKey(keyPath)
+	if err != nil {
+		return err
+	}
+	p.OldKeys, p.Key = []string{p.Key}, *newKey
+	if err := saveProject(*config, p); err != nil {
+		return err
+	}
+	fmt.Printf("created %s (secret) and %s.pub (public key %s)\n", *newKey, *newKey, pub)
+	fmt.Printf("builds are now signed with %s and %s; each myweb that installs one of them trusts the new key.\n", *newKey, p.OldKeys[0])
+	fmt.Printf("new users can start with -web-key %s.pub\n", *newKey)
+	fmt.Printf("when users have updated (e.g. after a few releases or weeks): myweb-publish rotate -finish\n")
+	return nil
+}
+
+func saveProject(path string, p project) error {
+	b, _ := json.MarshalIndent(p, "", "  ")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }

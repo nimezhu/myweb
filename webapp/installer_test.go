@@ -27,7 +27,8 @@ type release struct {
 	priv  ed25519.PrivateKey
 	pub   ed25519.PublicKey
 	ts    *httptest.Server
-	list  Versions // what publish has put up, signed as stable.versions.json
+	list  Versions             // what publish has put up, signed as stable.versions.json
+	sign  []ed25519.PrivateKey // keys that sign; just priv when empty
 	down  bool
 }
 
@@ -62,6 +63,13 @@ func zipOf(t *testing.T, files map[string]string) []byte {
 	return buf.Bytes()
 }
 
+func (r *release) signers() []ed25519.PrivateKey {
+	if len(r.sign) > 0 {
+		return r.sign
+	}
+	return []ed25519.PrivateKey{r.priv}
+}
+
 // publish puts a version up; mutate can tamper with the manifest before signing.
 func (r *release) publish(t *testing.T, version string, files map[string]string, mutate func(*Manifest)) {
 	bundle := zipOf(t, files)
@@ -76,13 +84,13 @@ func (r *release) publish(t *testing.T, version string, files map[string]string,
 	defer r.mu.Unlock()
 	r.files["demo-"+version+".zip"] = bundle
 	r.files["stable.json"] = raw
-	r.files["stable.json.sig"] = Sign(r.priv, raw)
+	r.files["stable.json.sig"] = Sign(raw, r.signers()...)
 	r.list.Name = m.Name
 	r.list.Versions = append(r.list.Versions, m)
 	r.list.Sort()
 	list, _ := r.list.Encode()
 	r.files["stable.versions.json"] = list
-	r.files["stable.versions.json.sig"] = Sign(r.priv, list)
+	r.files["stable.versions.json.sig"] = Sign(list, r.signers()...)
 }
 
 func (r *release) installer(t *testing.T, dir string, mod func(*Options)) *Installer {
@@ -179,7 +187,7 @@ func TestRefusesTampering(t *testing.T) {
 		{"wrong key", func(t *testing.T, r *release) {
 			r.publish(t, "1.0.0", map[string]string{"index.html": "x"}, nil)
 			_, other, _ := ed25519.GenerateKey(rand.Reader)
-			r.files["stable.json.sig"] = Sign(other, r.files["stable.json"])
+			r.files["stable.json.sig"] = Sign(r.files["stable.json"], other)
 		}},
 		{"manifest changed after signing", func(t *testing.T, r *release) {
 			r.publish(t, "1.0.0", map[string]string{"index.html": "x"}, nil)

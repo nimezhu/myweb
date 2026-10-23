@@ -99,3 +99,39 @@ func TestBuildVersionList(t *testing.T) {
 		t.Fatal("an older version was accepted")
 	}
 }
+
+func TestRotate(t *testing.T) {
+	dir := t.TempDir()
+	cfg := filepath.Join(dir, projectFile)
+	if _, err := makeKey(filepath.Join(dir, "app.key")); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(cfg, []byte(`{"name":"hello","dir":"dist","out":"release","key":"app.key"}`), 0o644)
+	read := func() project {
+		var p project
+		b, _ := os.ReadFile(cfg)
+		json.Unmarshal(b, &p)
+		return p
+	}
+	if err := rotateCmd([]string{"-config", cfg}); err != nil {
+		t.Fatal(err)
+	}
+	if p := read(); p.Key != "app-2.key" || strings.Join(p.OldKeys, ",") != "app.key" {
+		t.Fatalf("rotate: %+v", p)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "app-2.key.pub")); err != nil {
+		t.Fatal("new key not written next to the project")
+	}
+	if err := rotateCmd([]string{"-config", cfg}); err == nil {
+		t.Fatal("a second rotation started before finishing")
+	}
+	if err := rotateCmd([]string{"-config", cfg, "-finish"}); err != nil {
+		t.Fatal(err)
+	}
+	if p := read(); p.Key != "app-2.key" || len(p.OldKeys) != 0 {
+		t.Fatalf("finish: %+v", p)
+	}
+	if err := rotateCmd([]string{"-config", cfg}); err != nil || read().Key != "app-3.key" {
+		t.Fatalf("next rotation: %v %+v", err, read())
+	}
+}

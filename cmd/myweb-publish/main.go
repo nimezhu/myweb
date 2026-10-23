@@ -54,6 +54,8 @@ func main() {
 		err = build(os.Args[2:])
 	case "versions":
 		err = versionsCmd(os.Args[2:])
+	case "rotate":
+		err = rotateCmd(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
 	case "-h", "-help", "--help", "help":
@@ -77,6 +79,8 @@ func usage() {
                                            -key app.key -name NAME -dir DIR -out OUTDIR
                                            [-channel stable] [-requires-myweb 0.1.0]
   myweb-publish versions                   what the output folder publishes
+  myweb-publish rotate [-new FILE]         move to a new signing key: builds sign with both
+  myweb-publish rotate -finish             ... until users have updated; then the new one only
   myweb-publish verify -pub app.key.pub|KEY -manifest OUTDIR/stable.json   (or -key app.key)
   myweb-publish keygen -out app.key        writes app.key (secret) and app.key.pub
   myweb-publish pubkey -key app.key        prints the public key of app.key
@@ -180,6 +184,7 @@ func build(args []string) error {
 	requires := fs.String("requires-myweb", "", "lowest myweb version the app needs, e.g. 0.1.0")
 	notes := fs.String("notes", "", "release notes")
 	keep := fs.Int("keep", 0, "keep only the newest N versions in the folder and the version list (0: all)")
+	oldKeys := fs.String("old-key", "", "during a key rotation: the previous private key file(s), comma-separated, which sign too")
 	fs.Parse(args)
 	if err := loadProject(fs, *config); err != nil {
 		return err
@@ -195,6 +200,21 @@ func build(args []string) error {
 		return err
 	}
 	pub := priv.Public().(ed25519.PublicKey)
+	// every release names the keys it is signed with; myweb then trusts
+	// exactly those, which is how a rotation reaches users
+	signers := []ed25519.PrivateKey{priv}
+	signerKeys := []string{webapp.EncodePublicKey(pub)}
+	for _, f := range strings.Split(*oldKeys, ",") {
+		if f = strings.TrimSpace(f); f == "" {
+			continue
+		}
+		k, err := loadPrivateKey(f)
+		if err != nil {
+			return fmt.Errorf("-old-key: %v", err)
+		}
+		signers = append(signers, k)
+		signerKeys = append(signerKeys, webapp.EncodePublicKey(k.Public().(ed25519.PublicKey)))
+	}
 	// a <key>.pub that doesn't belong to this key would make every install fail
 	if text, err := os.ReadFile(*keyFile + ".pub"); err == nil {
 		if have, err := webapp.ParsePublicKey(string(text)); err != nil || !have.Equal(pub) {
@@ -258,6 +278,7 @@ func build(args []string) error {
 		SHA256: hex.EncodeToString(sum[:]), Size: int64(len(bundle)),
 		Requires:  webapp.Requires{Myweb: *requires},
 		Published: time.Now().UTC().Truncate(time.Second), Notes: *notes,
+		Keys: signerKeys,
 	}
 	if err := m.Validate(); err != nil {
 		return err
@@ -283,7 +304,7 @@ func build(args []string) error {
 		path string
 		raw  []byte
 	}{{listPath, listRaw}, {manifestPath, raw}} {
-		if err := os.WriteFile(f.path+".sig", webapp.Sign(priv, f.raw), 0o644); err != nil {
+		if err := os.WriteFile(f.path+".sig", webapp.Sign(f.raw, signers...), 0o644); err != nil {
 			return err
 		}
 		if err := os.WriteFile(f.path, f.raw, 0o644); err != nil {
@@ -302,7 +323,11 @@ func build(args []string) error {
 	if len(dropped) > 0 {
 		fmt.Printf(", %d older removed", len(dropped))
 	}
-	fmt.Printf("\nsigned for public key %s\nupload the contents of %s\n", webapp.EncodePublicKey(pub), *out)
+	fmt.Printf("\nsigned for public key %s", webapp.EncodePublicKey(pub))
+	if len(signers) > 1 {
+		fmt.Printf(" and %d old one(s): key rotation in progress (finish it with: myweb-publish rotate -finish)", len(signers)-1)
+	}
+	fmt.Printf("\nupload the contents of %s\n", *out)
 	return nil
 }
 
@@ -398,7 +423,7 @@ func readRelease(pub ed25519.PublicKey, manifestPath string) (*webapp.Manifest, 
 	if err != nil {
 		return nil, err
 	}
-	if err := webapp.Verify(pub, raw, sig); err != nil {
+	if _, err := webapp.Verify(raw, sig, pub); err != nil {
 		return nil, fmt.Errorf("%v (public key %s); was it signed with another key, or edited after signing?", err, webapp.EncodePublicKey(pub))
 	}
 	var m webapp.Manifest
@@ -425,7 +450,7 @@ func readRelease(pub ed25519.PublicKey, manifestPath string) (*webapp.Manifest, 
 	if err != nil {
 		return nil, err
 	}
-	if err := webapp.Verify(pub, listRaw, listSig); err != nil {
+	if _, err := webapp.Verify(listRaw, listSig, pub); err != nil {
 		return nil, fmt.Errorf("%s: %v", listPath, err)
 	}
 	var list webapp.Versions

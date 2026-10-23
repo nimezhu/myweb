@@ -39,6 +39,10 @@ type Manifest struct {
 	Requires  Requires  `json:"requires,omitempty"`
 	Published time.Time `json:"published"`
 	Notes     string    `json:"notes,omitempty"`
+	// Keys are the public keys this release is signed with. After a verified
+	// manifest, myweb trusts exactly these, which is how a publisher moves to
+	// a new key (myweb-publish rotate) without users changing -web-key.
+	Keys []string `json:"keys,omitempty"`
 }
 
 // Requires lists what the app needs from the server.
@@ -70,6 +74,11 @@ func (m *Manifest) Validate() error {
 		return errors.New("manifest: url is required")
 	case m.Size < 0:
 		return errors.New("manifest: invalid size")
+	}
+	for _, k := range m.Keys {
+		if _, err := ParsePublicKey(k); err != nil {
+			return fmt.Errorf("manifest: keys: %v", err)
+		}
 	}
 	return nil
 }
@@ -128,18 +137,31 @@ func ParsePrivateKey(s string) (ed25519.PrivateKey, error) {
 	return ed25519.NewKeyFromSeed(b), nil
 }
 
-// Sign returns the detached signature published as <manifest>.sig.
-func Sign(priv ed25519.PrivateKey, manifest []byte) []byte {
-	return []byte(base64.StdEncoding.EncodeToString(ed25519.Sign(priv, manifest)) + "\n")
+// Sign returns the detached signature published as <manifest>.sig: one line
+// per key, so a release can be signed with an old and a new key at once.
+func Sign(manifest []byte, keys ...ed25519.PrivateKey) []byte {
+	var b strings.Builder
+	for _, k := range keys {
+		b.WriteString(base64.StdEncoding.EncodeToString(ed25519.Sign(k, manifest)) + "\n")
+	}
+	return []byte(b.String())
 }
 
-// Verify checks a manifest's exact bytes against its .sig file.
-func Verify(pub ed25519.PublicKey, manifest, sig []byte) error {
-	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(sig)))
-	if err != nil || len(raw) != ed25519.SignatureSize || !ed25519.Verify(pub, manifest, raw) {
-		return errors.New("manifest signature does not match the public key")
+// Verify checks a manifest's exact bytes against its .sig file: some line
+// must be a signature by one of the keys. It returns that key.
+func Verify(manifest, sig []byte, keys ...ed25519.PublicKey) (ed25519.PublicKey, error) {
+	for _, line := range strings.Fields(string(sig)) {
+		raw, err := base64.StdEncoding.DecodeString(line)
+		if err != nil || len(raw) != ed25519.SignatureSize {
+			continue
+		}
+		for _, k := range keys {
+			if len(k) == ed25519.PublicKeySize && ed25519.Verify(k, manifest, raw) {
+				return k, nil
+			}
+		}
 	}
-	return nil
+	return nil, errors.New("manifest signature does not match the public key")
 }
 
 // ---- versions ----

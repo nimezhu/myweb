@@ -74,7 +74,9 @@ type Installer struct {
 type state struct {
 	Name     string            `json:"name"`
 	Manifest string            `json:"manifest"`
-	Key      string            `json:"key,omitempty"` // the public key, so -app can start it again
+	Key      string            `json:"key,omitempty"`     // the public key, so -app can start it again
+	Keys     []string          `json:"keys,omitempty"`    // the keys the publisher signs with, from its manifest
+	Retired  []string          `json:"retired,omitempty"` // keys it stopped signing with: never trusted again
 	Current  string            `json:"current"`
 	Pin      string            `json:"pin,omitempty"` // chosen with Use: serve it, don't update
 	Versions []string          `json:"versions"`
@@ -364,8 +366,30 @@ func (in *Installer) check(ctx context.Context) error {
 		in.mu.Unlock()
 		return in.fail("the manifest is for %q, not %q", m.Name, in.state.Name)
 	}
-	if key := EncodePublicKey(in.opts.PublicKey); current != "" && in.state.Key != key {
-		in.state.Key = key // installed before keys were saved: the manifest just verified with this one
+	changed := false
+	switch {
+	case len(m.Keys) > 0 && strings.Join(m.Keys, ",") != strings.Join(in.state.Keys, ","):
+		// trust exactly the keys the publisher signs with now: this follows a
+		// key rotation, and drops the old key once rotation is finished
+		for _, k := range append(in.state.Keys, in.state.Key) {
+			if k != "" && !contains(m.Keys, k) && !contains(in.state.Retired, k) {
+				in.state.Retired = append(in.state.Retired, k)
+			}
+		}
+		var retired []string
+		for _, k := range in.state.Retired {
+			if !contains(m.Keys, k) {
+				retired = append(retired, k)
+			}
+		}
+		in.state.Keys, in.state.Retired = append([]string(nil), m.Keys...), retired
+		in.state.Key = m.Keys[0]
+		changed = true
+	case len(in.state.Keys) == 0 && in.state.Key != EncodePublicKey(in.opts.PublicKey):
+		in.state.Key = EncodePublicKey(in.opts.PublicKey) // installed before keys were saved
+		changed = true
+	}
+	if changed && current != "" {
 		in.saveStateLocked()
 	}
 	pin := in.state.Pin
@@ -403,6 +427,24 @@ func (in *Installer) fail(format string, a ...interface{}) error {
 	return errors.New(msg)
 }
 
+// trusted are the keys a manifest may be signed with: the one myweb was given
+// (unless the publisher has retired it) and the ones the publisher's last
+// verified manifest named.
+func (in *Installer) trusted() []ed25519.PublicKey {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	var keys []ed25519.PublicKey
+	if !contains(in.state.Retired, EncodePublicKey(in.opts.PublicKey)) {
+		keys = append(keys, in.opts.PublicKey)
+	}
+	for _, k := range in.state.Keys {
+		if pk, err := ParsePublicKey(k); err == nil {
+			keys = append(keys, pk)
+		}
+	}
+	return keys
+}
+
 // Refresh picks up what another process (e.g. "myweb app use") saved for
 // this app, and serves its current version.
 func (in *Installer) Refresh() { in.refresh() }
@@ -436,7 +478,7 @@ func (in *Installer) Available(ctx context.Context) (*Versions, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := Verify(in.opts.PublicKey, raw, sig); err != nil {
+	if _, err := Verify(raw, sig, in.trusted()...); err != nil {
 		return nil, fmt.Errorf("version list: %v", err)
 	}
 	var vs Versions
@@ -556,7 +598,7 @@ func (in *Installer) fetchManifest(ctx context.Context) (*Manifest, *url.URL, er
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := Verify(in.opts.PublicKey, raw, sig); err != nil {
+	if _, err := Verify(raw, sig, in.trusted()...); err != nil {
 		return nil, nil, err
 	}
 	var m Manifest
@@ -598,7 +640,9 @@ func (in *Installer) install(ctx context.Context, m *Manifest, base *url.URL) er
 	in.mu.Lock()
 	in.state.Name = m.Name
 	in.state.Manifest = in.opts.ManifestURL
-	in.state.Key = EncodePublicKey(in.opts.PublicKey)
+	if len(in.state.Keys) == 0 {
+		in.state.Key = EncodePublicKey(in.opts.PublicKey)
+	}
 	in.state.Current = m.Version
 	if m.Notes != "" {
 		if in.state.Notes == nil {
