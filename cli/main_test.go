@@ -6,7 +6,7 @@ import (
 )
 
 func TestAppFlagsParse(t *testing.T) {
-	f := newAppFlags("myweb", "remove")
+	f := newAppFlags("myweb", "app remove")
 	yes := f.Bool("y", false, "")
 	names, err := f.parse([]string{"-home", "/x", "hello", "-y"})
 	if err != nil || strings.Join(names, ",") != "hello" || *f.home != "/x" || !*yes {

@@ -122,6 +122,9 @@ func expandHome(v string) string {
 // configCmd is "config [set NAME VALUE | unset NAME]".
 func configCmd(spec Spec, args []string) error {
 	f := newAppFlags(spec.Name, "config")
+	if len(args) > 0 && args[0] == "help" {
+		return flag.ErrHelp
+	}
 	words, err := f.parse(args)
 	if err != nil {
 		return err
@@ -161,7 +164,7 @@ func configCmd(spec Spec, args []string) error {
 		}
 		delete(c, k)
 	default:
-		return errors.New("usage: " + spec.Name + " config [set NAME VALUE | unset NAME]")
+		return usageError{errors.New("config takes no arguments, set NAME VALUE or unset NAME")}
 	}
 	if err := c.save(dirs); err != nil {
 		return err

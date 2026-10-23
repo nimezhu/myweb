@@ -26,9 +26,9 @@ func AddFlags(fs *flag.FlagSet) *Flags {
 	fs.BoolVar(&f.List, "apps", false, "list the installed apps and exit")
 	fs.StringVar(&f.From, "web-from", "", "install the web app at / from this signed manifest URL and keep it updated")
 	fs.StringVar(&f.Key, "web-key", "", "public key (or a file holding it, e.g. app.key.pub) that signs the -web-from manifest")
-	fs.StringVar(&f.Version, "web-version", "", "with -web-from: serve this installed version and don't update (rollback)")
-	fs.BoolVar(&f.NoUpdate, "no-update", false, "with -web-from: serve the installed version, don't check for updates")
-	fs.DurationVar(&f.Check, "web-check", defaultInterval, "with -web-from: how often to check for updates")
+	fs.StringVar(&f.Version, "web-version", "", "serve this installed version of the app and don't update (for one run)")
+	fs.BoolVar(&f.NoUpdate, "no-update", false, "serve the installed app as is; don't check for updates")
+	fs.DurationVar(&f.Check, "web-check", defaultInterval, "how often to check the app for updates")
 	return f
 }
 

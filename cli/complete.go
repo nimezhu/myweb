@@ -51,11 +51,11 @@ complete -c {{name}} -f -a '(__{{fn}}_complete)'
 }
 
 func completionCmd(spec Spec, args []string, w io.Writer) error {
+	if len(args) == 0 || isHelpArg(args[0]) {
+		return flag.ErrHelp
+	}
 	if len(args) != 1 || completionScripts[args[0]] == "" {
-		return fmt.Errorf(`usage: %[1]s completion bash|zsh|fish
-  bash: add to ~/.bashrc:                   source <(%[1]s completion bash)
-  zsh:  add to ~/.zshrc (after compinit):    source <(%[1]s completion zsh)
-  fish: %[1]s completion fish > ~/.config/fish/completions/%[1]s.fish`, spec.Name)
+		return usageError{fmt.Errorf("completion takes bash, zsh or fish")}
 	}
 	fn := strings.NewReplacer("-", "_", ".", "_").Replace(spec.Name)
 	fmt.Fprint(w, strings.NewReplacer("{{name}}", spec.Name, "{{fn}}", fn).Replace(completionScripts[args[0]]))

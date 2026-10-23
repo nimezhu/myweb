@@ -66,6 +66,9 @@ func registerAppCmd(srv *myserver.Server, app *webapp.Installer) {
 // appCmd runs "app …": managing the web apps installed with -web-from.
 func appCmd(spec Spec, args []string) int {
 	sub := "list"
+	if len(args) > 0 && isHelpArg(args[0]) {
+		return finish(spec, "app", flag.ErrHelp)
+	}
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		sub, args = args[0], args[1:]
 	}
@@ -81,24 +84,11 @@ func appCmd(spec Spec, args []string) int {
 		"default": appDefault,
 		"use":     appUse,
 	}
-	if sub == "help" {
-		usage(os.Stdout, spec.Name)
-		return 0
-	}
 	f, ok := cmds[sub]
 	if !ok {
-		fmt.Fprintf(os.Stderr, "%s: unknown command \"app %s\"\n\n", spec.Name, sub)
-		usage(os.Stderr, spec.Name)
-		return 2
+		return finish(spec, "app", usageError{fmt.Errorf("unknown command \"app %s\"", sub)})
 	}
-	if err := f(spec.Name, args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			return 0
-		}
-		fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
-		return 1
-	}
-	return 0
+	return finish(spec, "app", f(spec.Name, args))
 }
 
 // appFlags is a flag set with -home; parse accepts flags before and after
@@ -109,8 +99,11 @@ type appFlags struct {
 	home *string
 }
 
-func newAppFlags(name, sub string) appFlags {
-	fs := flag.NewFlagSet(name+" app "+sub, flag.ContinueOnError)
+// newAppFlags is for the command cmd, e.g. "app use"; errors and -h are
+// reported by finish, with the command's help topic.
+func newAppFlags(name, cmd string) appFlags {
+	fs := flag.NewFlagSet(name+" "+cmd, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
 	return appFlags{fs, name, fs.String("home", "", fmt.Sprintf("%s's own folder (default $%s, or ~/.%s)", name, home.EnvVar(name), name))}
 }
 
@@ -118,7 +111,10 @@ func (f appFlags) parse(args []string) ([]string, error) {
 	var names []string
 	for {
 		if err := f.Parse(args); err != nil {
-			return nil, err
+			if errors.Is(err, flag.ErrHelp) {
+				return nil, err
+			}
+			return nil, usageError{err}
 		}
 		if args = f.Args(); len(args) == 0 {
 			return names, nil
@@ -144,7 +140,7 @@ func (f appFlags) oneApp(args []string) (webapp.App, error) {
 }
 
 func appList(name string, args []string) error {
-	f := newAppFlags(name, "list")
+	f := newAppFlags(name, "app list")
 	if names, err := f.parse(args); err != nil {
 		return err
 	} else if len(names) > 0 {
@@ -176,15 +172,17 @@ func printApps(name string, dirs home.Dirs) error {
 // appRun is "app run NAME [serve flags]", i.e. serve -app NAME.
 func appRun(spec Spec, args []string) int {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		fmt.Fprintf(os.Stderr, "usage: %s app run NAME [flags]\n", spec.Name)
-		return 2
+		if len(args) > 0 && isHelpArg(args[0]) {
+			return finish(spec, "app", flag.ErrHelp)
+		}
+		return finish(spec, "app", usageError{errors.New("app run needs the app's NAME")})
 	}
 	spec.Args = append([]string{"-app", args[0]}, args[1:]...)
 	return Serve(spec)
 }
 
 func appInstall(name string, args []string) error {
-	f := newAppFlags(name, "install")
+	f := newAppFlags(name, "app install")
 	from := f.String("from", "", "the app's signed manifest URL, e.g. https://…/stable.json")
 	key := f.String("key", "", "its public key, or a file holding it")
 	if names, err := f.parse(args); err != nil {
@@ -200,7 +198,7 @@ func appInstall(name string, args []string) error {
 }
 
 func appUpdate(name string, args []string) error {
-	f := newAppFlags(name, "update")
+	f := newAppFlags(name, "app update")
 	names, err := f.parse(args)
 	if err != nil {
 		return err
@@ -281,7 +279,7 @@ func printNotes(notes string) {
 }
 
 func appVersions(name string, args []string) error {
-	f := newAppFlags(name, "versions")
+	f := newAppFlags(name, "app versions")
 	all := f.Bool("all", false, "also list the versions published but not installed (asks the server)")
 	a, err := f.oneApp(args)
 	if err != nil {
@@ -338,7 +336,7 @@ func contains(list []string, s string) bool {
 // appUse is "app use NAME VERSION|latest": serve that version from now on
 // (installing it if needed) and stop updating, or follow updates again.
 func appUse(name string, args []string) error {
-	f := newAppFlags(name, "use")
+	f := newAppFlags(name, "app use")
 	words, err := f.parse(args)
 	if err != nil {
 		return err
@@ -409,7 +407,7 @@ func tellRunning(dirs home.Dirs, manifest string) int {
 }
 
 func appRemove(name string, args []string) error {
-	f := newAppFlags(name, "remove")
+	f := newAppFlags(name, "app remove")
 	yes := f.Bool("y", false, "don't ask")
 	a, err := f.oneApp(args)
 	if err != nil {
@@ -442,7 +440,7 @@ func appRemove(name string, args []string) error {
 
 // appDefault shows or sets the app that plain "myweb" serves (config "app").
 func appDefault(name string, args []string) error {
-	f := newAppFlags(name, "default")
+	f := newAppFlags(name, "app default")
 	clearApp := f.Bool("clear", false, "serve files again, no app")
 	names, err := f.parse(args)
 	if err != nil {

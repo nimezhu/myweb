@@ -4,7 +4,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,68 +28,54 @@ func Main(spec Spec) int {
 	case "app", "apps":
 		return appCmd(spec, args)
 	case "completion":
-		if err := completionCmd(spec, args, os.Stdout); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
-			return 2
-		}
-		return 0
+		return finish(spec, "completion", completionCmd(spec, args, os.Stdout))
 	case "__complete": // used by the completion scripts
 		for _, c := range completions(spec, args) {
 			fmt.Println(c)
 		}
 		return 0
 	case "service":
-		if err := serviceCmd(spec, args); err != nil {
-			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
-			return 1
-		}
-		return 0
+		return finish(spec, "service", serviceCmd(spec, args))
 	case "config":
-		if err := configCmd(spec, args); err != nil {
-			if errors.Is(err, flag.ErrHelp) {
-				return 0
-			}
-			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
-			return 1
-		}
-		return 0
+		return finish(spec, "config", configCmd(spec, args))
 	case "version":
 		fmt.Println(spec.Name, myserver.VERSION)
 		return 0
 	case "help":
-		usage(os.Stdout, spec.Name)
+		topic := ""
+		if len(args) > 0 {
+			topic = args[0]
+		}
+		if err := helpTopic(os.Stdout, spec, topic); err != nil {
+			fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
+			return 2
+		}
 		return 0
 	}
-	fmt.Fprintf(os.Stderr, "%s: unknown command %q\n\n", spec.Name, cmd)
-	usage(os.Stderr, spec.Name)
+	fmt.Fprintf(os.Stderr, "%s: unknown command %q (run '%s help')\n", spec.Name, cmd, spec.Name)
 	return 2
 }
 
-func usage(w io.Writer, name string) {
-	fmt.Fprintf(w, `usage:
-  %[1]s [serve] [flags]                   serve files (%[1]s serve -h lists the flags)
-  %[1]s app [list]                        list the installed apps
-  %[1]s app run NAME [flags]              serve an installed app (same as -app NAME)
-  %[1]s app install -from URL -key KEY    install an app, or update it, without serving it
-  %[1]s app update [NAME]                 update one or all installed apps
-  %[1]s app versions NAME [-all]          installed (or all published) versions; * is served
-  %[1]s app use NAME VERSION|latest       serve that version and stop updating, or follow
-                                          updates again; installs it if needed
-  %[1]s app remove NAME [-y]              delete an installed app
-  %[1]s app default [NAME | -clear]       the app plain "%[1]s" serves
-  %[1]s service install [-as NAME] [flags] run in the background, started at login
-  %[1]s service uninstall | status [-as NAME]
-  %[1]s config                            show the defaults for serve's flags
-  %[1]s config set NAME VALUE             e.g. config set p 9000, config set d ~/data
-  %[1]s config unset NAME
-  %[1]s completion bash|zsh|fish          shell completion (see %[1]s completion)
-  %[1]s version
-  %[1]s help
+// usageError is a mistake in how a command was called: its help topic is
+// pointed to.
+type usageError struct{ error }
 
-Flags given on the command line win over the config. Starting the same folder
-and app again opens the copy that is running (-new starts another). Every
-command takes -home DIR.
-`, name)
+// finish turns a command's result into an exit code; asking for help (-h)
+// prints the command's topic.
+func finish(spec Spec, topic string, err error) int {
+	var ue usageError
+	switch {
+	case err == nil:
+		return 0
+	case errors.Is(err, flag.ErrHelp):
+		helpTopic(os.Stdout, spec, topic)
+		return 0
+	case errors.As(err, &ue):
+		fmt.Fprintf(os.Stderr, "%s: %v (run '%s help %s')\n", spec.Name, err, spec.Name, topic)
+		return 2
+	}
+	fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
+	return 1
 }
 
 // homeFor is the program's folder: dir if given, else $<NAME>_HOME or ~/.<name>.

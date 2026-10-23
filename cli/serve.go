@@ -76,10 +76,7 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f.version = fs.Bool("version", false, "print version and exit")
 	fs.BoolVar(f.version, "v", false, "print version and exit (shorthand)")
 	f.webFlags = webapp.AddFlags(fs)
-	fs.Usage = func() {
-		fmt.Fprintf(fs.Output(), "usage: %s [serve] [flags]   (%s help lists the other commands)\n\nflags:\n", name, name)
-		fs.PrintDefaults()
-	}
+	fs.Usage = func() { fmt.Fprintf(fs.Output(), "run '%s -h' for help\n", name) }
 	return fs, f
 }
 
@@ -96,6 +93,12 @@ func Serve(spec Spec) int {
 	port, global, readOnly, homeDir, directory, web := f.port, f.global, f.readOnly, f.homeDir, f.directory, f.web
 	noManager, noTUI, noOpen, auth, token := f.noManager, f.noTUI, f.noOpen, f.auth, f.token
 	versions, trashDays, uploadMax, logFile, version, webFlags := f.versions, f.trashDays, f.uploadMax, f.logFile, f.version, f.webFlags
+	for _, a := range spec.Args {
+		if a != "help" && isHelpArg(a) {
+			overview(os.Stdout, spec)
+			return 0
+		}
+	}
 	if err := fs.Parse(spec.Args); err != nil {
 		if err == flag.ErrHelp {
 			return 0

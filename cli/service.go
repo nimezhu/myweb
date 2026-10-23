@@ -39,6 +39,14 @@ func serviceCmd(spec Spec, args []string) error {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		sub, args = args[0], args[1:]
 	}
+	for _, a := range args {
+		if isHelpArg(a) && a != "help" {
+			return flag.ErrHelp
+		}
+	}
+	if sub == "" || sub == "help" {
+		return flag.ErrHelp
+	}
 	// options of the service command itself; the rest are serve flags
 	var as, homeDir string
 	dry := false
@@ -98,10 +106,7 @@ func serviceCmd(spec Spec, args []string) error {
 	case "status":
 		return newService(runtime.GOOS, spec.Name, as, "", dirs, nil).status()
 	}
-	return fmt.Errorf(`usage: %[1]s service install [-as NAME] [serve flags]   start at login, in the background
-       %[1]s service uninstall [-as NAME]
-       %[1]s service status [-as NAME]
--as names a second service (e.g. one per app); -dry-run shows what install or uninstall would do`, spec.Name)
+	return usageError{fmt.Errorf("unknown command \"service %s\"", sub)}
 }
 
 // checkServeArgs refuses flags serve would refuse, before they are saved, and
