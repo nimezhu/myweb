@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/nimezhu/myweb/webapp"
 )
 
 // Help: "myweb -h", "myweb help" and "myweb serve -h" show the overview;
@@ -166,15 +168,23 @@ var helpTopics = map[string]string{
 
   %[1]s app [list]                        list the installed apps
   %[1]s app run NAME [flags]              serve one (same as %[1]s -app NAME [flags])
-  %[1]s app install -from URL -key KEY    install an app, or update it, without serving it
+  %[1]s app catalog [WORD]                the apps you can install, from the catalogs
+  %[1]s app install NAME                  install one of them (app run NAME does too)
+  %[1]s app install -from URL -key KEY    install any app, or update it, without serving it
   %[1]s app update [NAME]                 update one or all installed apps now
   %[1]s app versions NAME [-all]          installed versions, or with -all every published one
   %[1]s app use NAME VERSION|latest       serve that version and stop updating (installs it
                                           if needed); latest follows updates again
   %[1]s app remove NAME [-y]              delete an installed app
   %[1]s app default [NAME | -clear]       the app that plain "%[1]s" serves
+  %[1]s app catalog add URL -key KEY      also read this catalog
+  %[1]s app catalog remove URL
 
 Every app command takes -home DIR. NAME may also be the app's manifest URL.
+A catalog is a signed list of apps (apps.json, made with myweb-publish
+catalog). %[1]s reads the ones added and, unless removed,
+  %[2]s
+The file manager's "App catalog" installs and opens them too.
 `,
 	"config": `saved defaults for serve's flags, kept in <home>/config.json:
 
@@ -239,7 +249,7 @@ func helpTopic(w io.Writer, spec Spec, topic string) error {
 	if !ok {
 		return fmt.Errorf("no help for %q; topics: app, status, config, service, upgrade, completion", topic)
 	}
-	fmt.Fprintf(w, t, spec.Name)
+	fmt.Fprintf(w, t, spec.Name, webapp.DefaultCatalogURL)
 	return nil
 }
 

@@ -164,6 +164,13 @@
   #appBox .notes { white-space: pre-wrap; font-size: 13.5px; margin: 0 0 12px; }
   #appBox .notes:empty { display: none; }
   #appBox .when { font: 12px system-ui, sans-serif; color: var(--muted); }
+  .cat-list { display: grid; gap: 10px; margin-top: 12px; }
+  .cat-app { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .cat-app .grow { flex: 1; min-width: 0; }
+  .cat-app .title { font-weight: 600; }
+  .cat-app .title .mono { font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .cat-app p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
+  .cat-app .acts { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
   #appBox td.notes-cell { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
   #appNew { display: block; margin: 0 0 12px; }
   #appNew[hidden] { display: none; }
@@ -214,6 +221,18 @@
       <div class="row" style="margin-top:10px"><button id="appAll">Show every published version</button></div>
     </details>
     <div class="msg" id="appMsg"></div>
+  </section>
+
+  <section>
+    <details id="catBox">
+      <summary>App catalog <span class="sub" id="catNote">web apps you can install and open</span></summary>
+      <div class="cat-list" id="catList"><div class="empty">Loading…</div></div>
+      <div class="row" style="margin-top:10px">
+        <button class="authed" id="catRefresh">Refresh</button>
+        <span class="sub" style="margin:0">From the catalogs this myweb reads (<code>myweb app catalog</code> in a terminal; add one with <code>app catalog add URL -key KEY</code>).</span>
+      </div>
+      <div class="msg" id="catMsg"></div>
+    </details>
   </section>
 
   <section>
@@ -666,6 +685,64 @@
       const r = await fetch("/rm" + enc(rm.dataset.rm), { method: "POST" });
       if (!r.ok) { msg($("wmsg"), "Delete failed: " + await errText(r), false); onFail(r); }
       load(cwd);
+    }
+  });
+
+  // the app catalog
+  let catalog = [];
+  async function loadCatalog(refresh) {
+    const r = await post("/cmd/catalog", refresh ? { refresh: true } : {});
+    if (!r.ok) { $("catList").innerHTML = `<div class="empty">${esc(await errText(r))}</div>`; onFail(r); return; }
+    const { result } = await r.json();
+    catalog = result.apps;
+    msg($("catMsg"), (result.errors || []).join("; "), false);
+    $("catNote").textContent = catalog.length ? `${catalog.length} app${catalog.length === 1 ? "" : "s"}` : "";
+    renderCatalog();
+  }
+  function renderCatalog() {
+    if (!catalog.length) { $("catList").innerHTML = `<div class="empty">No apps listed yet.</div>`; return; }
+    const off = authed ? "" : "disabled";
+    $("catList").innerHTML = catalog.map((a) => {
+      const state = a.installed ? `<span class="pill ok">${esc(a.installed)}${a.running ? " · running" : ""}</span>` : "";
+      const home = a.homepage ? ` <a class="link" href="${esc(a.homepage)}" target="_blank" rel="noopener">about</a>` : "";
+      const act = a.installed
+        ? `<button class="primary authed" data-cat-open="${esc(a.name)}" ${off}>Open</button>`
+        : `<button class="primary authed" data-cat-install="${esc(a.name)}" ${off}>Install</button>`;
+      return `<div class="cat-app"><div class="grow">
+          <div class="title">${esc(a.title || a.name)}<span class="mono">${esc(a.name)}</span></div>
+          ${a.description ? `<p>${esc(a.description)}</p>` : ""}
+        </div><div class="acts">${state}${home}${act}</div></div>`;
+    }).join("");
+  }
+  $("catBox").addEventListener("toggle", () => { if ($("catBox").open) loadCatalog(false); });
+  $("catRefresh").onclick = () => loadCatalog(true);
+  $("catList").addEventListener("click", async (e) => {
+    const ins = e.target.closest("[data-cat-install]");
+    const op = e.target.closest("[data-cat-open]");
+    if (ins) {
+      const name = ins.dataset.catInstall;
+      ins.disabled = true; ins.textContent = "Installing…";
+      const r = await post("/cmd/catalog", { install: name });
+      if (r.ok) {
+        const { result } = await r.json();
+        catalog = result.apps; renderCatalog();
+        msg($("catMsg"), `Installed ${name}. Open starts it in the background.`, true);
+      } else { msg($("catMsg"), `Install failed: ${await errText(r)}`, false); onFail(r); renderCatalog(); }
+    }
+    if (op) {
+      const name = op.dataset.catOpen;
+      const win = window.open("", "_blank"); // now, while the click counts: after a wait it would be blocked
+      op.disabled = true; op.textContent = "Starting…";
+      const r = await post("/cmd/catalog", { open: name });
+      if (r.ok) {
+        const { result } = await r.json();
+        if (win) win.location = result.url; else location.href = result.url;
+        msg($("catMsg"), "", true);
+        loadCatalog(false);
+      } else {
+        if (win) win.close();
+        msg($("catMsg"), `Could not open ${name}: ${await errText(r)}`, false); onFail(r); renderCatalog();
+      }
     }
   });
 

@@ -169,6 +169,11 @@ func Serve(spec Spec) int {
 	// -web-from: install the app from a distribution server and keep it updated
 	var srv *myserver.Server
 	var app *webapp.Installer
+	if webFlags.App != "" { // an app from a catalog, not installed yet
+		if err := ensureInstalled(name, dirs, webFlags.App); err != nil {
+			return fail(err)
+		}
+	}
 	app, err = webFlags.Installer(myserver.VERSION, dirs.Apps(), func(n, v string) {
 		srv.Broadcast(map[string]string{"type": "app-updated", "name": n, "version": v, "notes": app.Status().Notes[v]})
 	})
@@ -258,6 +263,7 @@ func Serve(spec Spec) int {
 		con.AddRow("CORS", "+ "+f.cors.String())
 	}
 	plugins.RegisterFileOps(srv)
+	registerCatalogCmd(srv, spec, dirs)
 	if app != nil {
 		registerAppCmd(srv, app)
 	}

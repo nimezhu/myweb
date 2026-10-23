@@ -38,7 +38,9 @@ The other commands manage installed web apps (see
 | `myweb [serve] [flags]` | serve files; `myweb serve -h` lists the flags |
 | `myweb app [list]` | list the installed apps |
 | `myweb app run NAME [flags]` | serve an installed app (same as `-app NAME`) |
-| `myweb app install -from URL -key KEY` | install an app, or update it, without serving it |
+| `myweb app catalog [WORD]` | the apps you can install from the catalogs (see [below](#app-catalogs-install-by-name)) |
+| `myweb app install NAME` | install an app from a catalog (`app run NAME` installs it too) |
+| `myweb app install -from URL -key KEY` | install any app, or update it, without serving it |
 | `myweb app update [NAME]` | update one or all installed apps |
 | `myweb app versions NAME [-all]` | the installed versions, or with `-all` every published one; `*` marks the one served |
 | `myweb app use NAME VERSION` | serve that version (installing it if needed) and stop updating; `latest` follows updates again |
@@ -222,6 +224,40 @@ myweb app use myapp latest      # follow updates again
   Windows), never in the data folder. Don't edit files there; they are replaced
   on update. The file manager stays at `/_myweb/`.
 
+### App catalogs: install by name
+
+A catalog is a signed list of apps, each with its manifest URL and public key,
+so users install by name instead of by URL and key:
+
+```sh
+myweb app catalog              # the apps you can install (app catalog WORD searches)
+myweb app install rx-graphic   # install one; or just: myweb app run rx-graphic
+```
+
+In the browser, the file manager's **App catalog** lists the same apps with
+**Install** and **Open**; Open starts `myweb app run NAME` in the background
+(logs in `~/.myweb/logs`) unless it is already running, and opens it.
+
+myweb reads any catalog you add: `myweb app catalog add URL -key KEY` (`remove URL` drops
+one). Catalogs are cached for an hour and used offline.
+
+Publishing a catalog:
+
+```sh
+myweb-publish catalog init -title "My apps"       # apps.json, and catalog.key + .pub if missing
+myweb-publish catalog add -manifest https://…/stable.json -app-key app.key.pub \
+    -title "My app" -description "What it does"   # checks the manifest is signed with that key
+myweb-publish catalog remove myapp
+myweb-publish catalog list                        # check the signature
+# each change signs apps.json again: upload apps.json and apps.json.sig together
+```
+
+The catalog only introduces an app: myweb checks the catalog's signature, then
+installs and updates the app exactly as with `-web-from` and `-web-key`. An
+installed app keeps the key it was installed with, so a later change to the
+catalog can't redirect its updates. Catalogs and manifests must be https (http
+only for localhost).
+
 ## Several people: myweb-team
 
 `myweb-team` is myweb for a team or lab: everyone signs in with a personal link,
@@ -301,6 +337,7 @@ changed.
 | `trash` | | deleted files |
 | `untrash` | `{id, overwrite}` | put a deleted file back |
 | `emptyTrash` | | delete the trash permanently |
+| `catalog` | `{refresh}`, `{install}`, `{open}` | the catalogs' apps; install one; open one (starting it if needed, returns `url`) |
 | `unzip` | `{path, to, onconflict}` | unpack a `.zip` (into a new folder next to it unless `to` is given); files land like uploads, `onconflict` as for `/up/`. Paths can't leave the folder; at most 100,000 files and 16 GiB |
 
 Also: `GET /cmd/fetchUrl?url=` (a page's OpenGraph metadata), `GET /cmd/status`

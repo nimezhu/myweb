@@ -296,6 +296,10 @@ func (s *Server) writable(h http.HandlerFunc) http.Handler {
 	}))
 }
 
+// Handler is the server's HTTP handler with all its middleware, for
+// embedding it in another server or testing without listening.
+func (s *Server) Handler() http.Handler { return s.handler() }
+
 func (s *Server) handler() http.Handler {
 	return recoverer(s.cors.Handler(s.logRequests(s.login(s.cfg.Mux))))
 }

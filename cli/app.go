@@ -83,6 +83,7 @@ func appCmd(spec Spec, args []string) int {
 		"remove":   appRemove, "rm": appRemove,
 		"default": appDefault,
 		"use":     appUse,
+		"catalog": appCatalog,
 	}
 	f, ok := cmds[sub]
 	if !ok {
@@ -159,7 +160,7 @@ func printApps(name string, dirs home.Dirs) error {
 		return err
 	}
 	if len(apps) == 0 {
-		fmt.Printf("no apps installed in %s; install one with: %s app install -from URL -key KEY\n", dirs.Apps(), name)
+		fmt.Printf("no apps installed in %s; %s app catalog lists the apps you can install\n", dirs.Apps(), name)
 		return nil
 	}
 	fmt.Println(webapp.FormatApps(apps))
@@ -185,14 +186,19 @@ func appInstall(name string, args []string) error {
 	f := newAppFlags(name, "app install")
 	from := f.String("from", "", "the app's signed manifest URL, e.g. https://…/stable.json")
 	key := f.String("key", "", "its public key, or a file holding it")
-	if names, err := f.parse(args); err != nil {
+	names, err := f.parse(args)
+	if err != nil {
 		return err
-	} else if len(names) > 0 || *from == "" || *key == "" {
-		return fmt.Errorf("usage: %s app install -from URL -key KEY", name)
 	}
 	dirs, err := homeFor(name, *f.home)
 	if err != nil {
 		return err
+	}
+	if len(names) == 1 && *from == "" && *key == "" { // by name, from a catalog
+		return installFromCatalog(name, dirs, names[0])
+	}
+	if len(names) > 0 || *from == "" || *key == "" {
+		return usageError{fmt.Errorf("usage: %s app install NAME, or app install -from URL -key KEY", name)}
 	}
 	return update(name, dirs.Apps(), &webapp.Flags{From: *from, Key: *key})
 }
@@ -241,6 +247,9 @@ func appUpdate(name string, args []string) error {
 	return nil
 }
 
+// serveHint: after installing, say how to serve the app.
+var serveHint = true
+
 // update checks one app's manifest now and installs a newer version.
 func update(name, appsDir string, fl *webapp.Flags) error {
 	in, err := fl.Installer(myserver.VERSION, appsDir, nil)
@@ -260,7 +269,11 @@ func update(name, appsDir string, fl *webapp.Flags) error {
 	}
 	switch {
 	case before == "":
-		fmt.Printf("%s %s installed; serve it with: %s app run %s\n", a.Name, a.Current, name, a.Name)
+		if serveHint {
+			fmt.Printf("%s %s installed; serve it with: %s app run %s\n", a.Name, a.Current, name, a.Name)
+		} else {
+			fmt.Printf("%s %s installed\n", a.Name, a.Current)
+		}
 	case before != a.Current:
 		fmt.Printf("%s %s → %s (a running %s switches at its next check, or press a)\n", a.Name, before, a.Current, name)
 	default:

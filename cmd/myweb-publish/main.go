@@ -16,6 +16,9 @@
 //	    lists what the output folder publishes
 //	myweb-publish verify -pub app.key.pub -manifest release/stable.json
 //	    checks the signature and the bundle before uploading
+//	myweb-publish catalog add -manifest URL -app-key app.key.pub
+//	    adds an app to apps.json, the signed list myweb installs apps from
+//	    by name (see catalog.go)
 package main
 
 import (
@@ -58,6 +61,8 @@ func main() {
 		err = rotateCmd(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
+	case "catalog":
+		err = catalogCmd(os.Args[2:])
 	case "-h", "-help", "--help", "help":
 		usage()
 	default:
@@ -82,6 +87,8 @@ func usage() {
   myweb-publish rotate [-new FILE]         move to a new signing key: builds sign with both
   myweb-publish rotate -finish             ... until users have updated; then the new one only
   myweb-publish verify -pub app.key.pub|KEY -manifest OUTDIR/stable.json   (or -key app.key)
+  myweb-publish catalog init|add|remove|sign|list   the signed list of apps myweb installs
+                                           by name; see catalog.go
   myweb-publish keygen -out app.key        writes app.key (secret) and app.key.pub
   myweb-publish pubkey -key app.key        prints the public key of app.key
 `)

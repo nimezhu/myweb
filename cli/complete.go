@@ -1,12 +1,14 @@
 package cli
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/nimezhu/myweb/webapp"
 )
@@ -65,7 +67,7 @@ func completionCmd(spec Spec, args []string, w io.Writer) error {
 
 var (
 	topCommands = []string{"serve", "app", "status", "open", "stop", "config", "service", "upgrade", "completion", "version", "help"}
-	appCommands = []string{"list", "run", "install", "update", "versions", "use", "remove", "default"}
+	appCommands = []string{"list", "run", "install", "update", "versions", "use", "remove", "default", "catalog"}
 )
 
 // completions returns the candidates after words (the command line so far,
@@ -78,6 +80,20 @@ func completions(spec Spec, words []string) []string {
 		if (w == "-home" || w == "--home") && i+1 < len(words) {
 			home = words[i+1]
 		}
+	}
+	catalogApps := func() []string { // from the cached catalogs; never waits long
+		dirs, err := homeFor(spec.Name, home)
+		if err != nil {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		list, _ := catalogsFor(dirs).Apps(ctx, false)
+		var names []string
+		for _, a := range list {
+			names = append(names, a.Name)
+		}
+		return names
 	}
 	apps := func() []string {
 		dirs, err := homeFor(spec.Name, home)
@@ -170,7 +186,18 @@ func completions(spec Spec, words []string) []string {
 		case "update":
 			return apps()
 		case "install":
+			if len(pos) == 0 {
+				return append(catalogApps(), "-from", "-key", "-home")
+			}
 			return []string{"-from", "-key", "-home"}
+		case "catalog":
+			if len(pos) == 0 {
+				return []string{"add", "remove", "-refresh", "-home"}
+			}
+			if pos[0] == "add" {
+				return []string{"-key"}
+			}
+			return nil
 		case "list", "ls":
 			return []string{"-home"}
 		}
