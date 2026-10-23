@@ -63,7 +63,7 @@ func completionCmd(spec Spec, args []string, w io.Writer) error {
 }
 
 var (
-	topCommands = []string{"serve", "app", "config", "service", "completion", "version", "help"}
+	topCommands = []string{"serve", "app", "config", "service", "upgrade", "completion", "version", "help"}
 	appCommands = []string{"list", "run", "install", "update", "versions", "use", "remove", "default"}
 )
 
@@ -203,6 +203,8 @@ func completions(spec Spec, words []string) []string {
 			return append([]string{"-as", "-dry-run"}, serveFlags...)
 		}
 		return []string{"-as", "-dry-run"}
+	case "upgrade":
+		return []string{"-check", "-rollback", "-home"}
 	case "completion":
 		if len(words) == 1 {
 			return []string{"bash", "zsh", "fish"}

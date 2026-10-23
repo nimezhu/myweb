@@ -14,7 +14,11 @@ manager and an interactive terminal UI.
 
 ## Quick start
 
+Download the binary for your system from the
+[releases](https://github.com/nimezhu/myweb/releases), or build it:
+
 ```sh
+go install github.com/nimezhu/myweb@latest   # or, in a checkout:
 go build -o myweb .
 ./myweb                    # serve ~/.myweb/data (created on first start)
 ./myweb -d ~/data          # serve another folder; -d . for the current one
@@ -44,6 +48,7 @@ The other commands manage installed web apps (see
 | `myweb service uninstall`, `status` | |
 | `myweb config` | show the saved defaults for the flags |
 | `myweb config set NAME VALUE` / `unset NAME` | e.g. `config set p 9000`, `config set d ~/data` |
+| `myweb upgrade [VERSION]` | install the latest release from GitHub, or that version; `-check` only tells, `-rollback` goes back |
 | `myweb completion bash\|zsh\|fish` | shell completion of commands, flags, app names and versions |
 | `myweb version`, `myweb help` | |
 
@@ -73,6 +78,16 @@ opens it. `-as NAME` installs a second one (e.g. one per app), `-dry-run`
 shows what would be written, and installing again replaces the flags. Keep a
 token in `myweb config set token …`, not in the service's flags.
 
+**Upgrading:** `myweb upgrade` downloads the latest
+[release](https://github.com/nimezhu/myweb/releases) for your system, checks
+it against the release's `checksums.txt` and that it runs, and replaces the
+binary, keeping the old one next to it as `myweb.old` (`myweb upgrade
+-rollback` swaps them back). Servers already running keep the old version
+until restarted. A running server tells, at most once a day, when a newer
+release is out; `-no-upgrade-check` (or `myweb config set no-upgrade-check
+true`) turns that off. A binary in a folder you can't write to (e.g.
+`/usr/local/bin`) is upgraded with the rights to write there.
+
 ## Options
 
 | Flag | Default | |
@@ -101,6 +116,7 @@ token in `myweb config set token …`, not in the service's flags.
 | `-no-tui` | | plain log output |
 | `-no-open` | | don't open the browser on start |
 | `-new` | | start another copy even if one already serves this folder and app |
+| `-no-upgrade-check` | | don't look for a newer myweb release (checked once a day) |
 | `-v`, `-version` | | print the version |
 
 ## Terminal UI
@@ -396,6 +412,19 @@ From JavaScript, [`@reflexiv/storage`](https://github.com/reflexdata/storage)'s
 go test ./...           # add -race to check for data races
 go vet ./...
 ```
+
+**Releasing:** set the version in `myserver/server.go`, commit, then tag and
+push it:
+
+```sh
+git tag -a v0.0.2 -m "myweb 0.0.2" && git push origin main v0.0.2
+```
+
+The release workflow (`.github/workflows/release.yml`) tests, builds myweb,
+myweb-publish and myweb-team for Linux, macOS and Windows (amd64 and arm64)
+with `scripts/release-build.sh`, and publishes them with `checksums.txt` as a
+GitHub release; a tag like `v0.1.0-rc.1` makes a prerelease, which `myweb
+upgrade` only installs when asked for by version.
 
 ## License
 

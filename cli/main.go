@@ -38,6 +38,8 @@ func Main(spec Spec) int {
 		return finish(spec, "service", serviceCmd(spec, args))
 	case "config":
 		return finish(spec, "config", configCmd(spec, args))
+	case "upgrade":
+		return finish(spec, "upgrade", upgradeCmd(spec, args, os.Stdout))
 	case "version":
 		fmt.Println(spec.Name, myserver.VERSION)
 		return 0

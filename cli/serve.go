@@ -39,6 +39,7 @@ type serveFlags struct {
 	global, readOnly                  *bool
 	homeDir, directory, web           *string
 	noManager, noTUI, noOpen, newCopy *bool
+	noUpgradeCheck                    *bool
 	auth                              *bool   // nil when spec.Access is set
 	token                             *string // nil when spec.Access is set
 	versions, trashDays               *int
@@ -64,6 +65,7 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f.noTUI = fs.Bool("no-tui", false, "plain log output instead of the interactive TUI")
 	f.noOpen = fs.Bool("no-open", false, "do not open the browser on start")
 	f.newCopy = fs.Bool("new", false, "start another copy even if one already serves this folder and app")
+	f.noUpgradeCheck = fs.Bool("no-upgrade-check", false, fmt.Sprintf("don't look for a newer %s release (checked once a day)", name))
 	if spec.Access == nil {
 		f.auth = fs.Bool("auth", false, "require an access token for writes and commands (random per start unless -token is given)")
 		f.token = fs.String("token", os.Getenv(env+"_TOKEN"), fmt.Sprintf("access token; setting it (or $%s_TOKEN) turns on -auth", env))
@@ -261,6 +263,9 @@ func Serve(spec Spec) int {
 	}
 	if err := srv.Start(); err != nil {
 		return fail(err)
+	}
+	if !*f.noUpgradeCheck {
+		noticeUpgrade(name, dirs, log.Printf)
 	}
 	if app != nil {
 		app.Start(context.Background())

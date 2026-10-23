@@ -20,7 +20,7 @@ var flagGroups = []struct {
 	{"Web app at /", []string{"app", "web", "web-from", "web-key", "web-version", "no-update", "web-check", "no-manager"}},
 	{"Access", []string{"auth", "token", "cors"}},
 	{"Safety", []string{"versions", "trash-days", "upload-max"}},
-	{"Running", []string{"no-tui", "no-open", "log", "new", "v"}},
+	{"Running", []string{"no-tui", "no-open", "log", "new", "no-upgrade-check", "v"}},
 }
 
 // hiddenFlags have a command that shows them better.
@@ -54,6 +54,7 @@ commands:
   app          installed web apps: list, run, install, update, versions, use, remove, default
   service      run %[1]s in the background, started at login
   config       saved defaults for the flags below
+  upgrade      install the latest release from GitHub (or -check, VERSION, -rollback)
   completion   shell completion for bash, zsh and fish
   version      print the version
   help [CMD]   this help, or a command's
@@ -194,6 +195,18 @@ flags are serve's, e.g. -app myapp -d ~/data. -as names a second service (e.g.
 one per app); -dry-run shows what install or uninstall would do. Keep a token
 in "%[1]s config set token …", not in the service's flags.
 `,
+	"upgrade": `replace %[1]s with a release from github.com/nimezhu/myweb/releases:
+
+  %[1]s upgrade                 the latest release, if it is newer
+  %[1]s upgrade VERSION         that release, newer or older (e.g. 0.0.2)
+  %[1]s upgrade -check          only tell whether a newer release exists
+  %[1]s upgrade -rollback       back to the binary the last upgrade replaced
+
+The download is checked against the release's checksums.txt and must run
+before it replaces the binary; the old one is kept next to it as .old. Running
+servers keep the old version until restarted. A running server tells once a
+day when a newer release is out (-no-upgrade-check: don't).
+`,
 	"completion": `shell completion of commands, flags, app names and versions:
 
   bash: add to ~/.bashrc                  source <(%[1]s completion bash)
@@ -213,7 +226,7 @@ func helpTopic(w io.Writer, spec Spec, topic string) error {
 	}
 	t, ok := helpTopics[topic]
 	if !ok {
-		return fmt.Errorf("no help for %q; topics: app, config, service, completion", topic)
+		return fmt.Errorf("no help for %q; topics: app, config, service, upgrade, completion", topic)
 	}
 	fmt.Fprintf(w, t, spec.Name)
 	return nil
