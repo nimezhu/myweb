@@ -44,6 +44,9 @@ The other commands manage installed web apps (see
 | `myweb app use NAME VERSION` | serve that version (installing it if needed) and stop updating; `latest` follows updates again |
 | `myweb app remove NAME [-y]` | delete an installed app (asks first) |
 | `myweb app default [NAME \| -clear]` | the app that plain `myweb` serves |
+| `myweb status [-json]` | the servers running now, numbered |
+| `myweb open [WHICH]` | open one in the browser, signed in |
+| `myweb stop [WHICH \| -all]` | stop one, or all; `WHICH` is the number from `status`, a pid, a port, an app's name or a data folder, and can be left out when only one runs |
 | `myweb service install [-as NAME] [flags]` | run in the background, started at login (see below) |
 | `myweb service uninstall`, `status` | |
 | `myweb config` | show the saved defaults for the flags |
@@ -144,7 +147,9 @@ At `/` (or `/_myweb/` when `-web` is set): browse folders, preview files
 (images, video, audio, PDF, Markdown, CSV/TSV, JSON, text; HTML is shown as
 source and never run), search names and contents, upload files and whole
 folders by dropping them on the list, rename, delete, browse and restore
-previous versions, and restore files from the trash. It updates live as files
+previous versions, and restore files from the trash. Download a folder, or the
+files and folders you tick, as one `.zip`, and extract a `.zip` into a new
+folder next to it. It updates live as files
 change, and lists and runs the plugin commands.
 
 ## Install the app from a distribution server
@@ -271,6 +276,7 @@ Paths below are relative to the served folder. Errors are JSON:
 | `POST /w/<path>` | write the request body to the file (creates folders); `{success, file:{url, name, size, etag}}` |
 | `POST /rm/<path>` | delete a file (into the trash) or an empty folder |
 | `POST /up/<dir>` | multipart upload of any number of files; file names may contain sub-folders; `?onconflict=rename` (default, `a (1).txt`) \| `overwrite` \| `fail` |
+| `GET /zip/<dir>` | the folder as a `.zip`, streamed; `?f=name&f=…` only those entries of it. Leaves out `.myweb` and symbolic links |
 | `POST /cmd/uploadFile` | one file (field `myFile`) into `uploads/<md5>_<name>` (for editor.js) |
 
 **Conditional writes.** `/w/` and `/rm/` honour `If-Match: <ETag>` (only if the
@@ -295,6 +301,7 @@ changed.
 | `trash` | | deleted files |
 | `untrash` | `{id, overwrite}` | put a deleted file back |
 | `emptyTrash` | | delete the trash permanently |
+| `unzip` | `{path, to, onconflict}` | unpack a `.zip` (into a new folder next to it unless `to` is given); files land like uploads, `onconflict` as for `/up/`. Paths can't leave the folder; at most 100,000 files and 16 GiB |
 
 Also: `GET /cmd/fetchUrl?url=` (a page's OpenGraph metadata), `GET /cmd/status`
 (version, read-only and sign-in state), `POST /cmd/app` (the installed web app,

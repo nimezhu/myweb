@@ -273,16 +273,18 @@ func Serve(spec Spec) int {
 	if srv.Port() != *port {
 		fmt.Fprintf(os.Stderr, "port %d is busy, using %d\n", *port, srv.Port())
 	}
-	self := &instance{ID: instanceID, PID: os.Getpid(), Port: srv.Port(), Root: root, Source: source, Started: time.Now().UTC()}
+	self := &instance{ID: instanceID, PID: os.Getpid(), Port: srv.Port(), Root: root, Source: source,
+		Version: myserver.VERSION, Started: time.Now().UTC()}
 	if srv.ServesRoot() {
 		self.URL = srv.LoginURL()
 	}
-	if other == nil { // a -new copy leaves the record to the first one
-		if err := self.record(runFile); err != nil {
-			log.Printf("could not record the running server: %v", err)
-		}
-		defer self.forget(runFile)
+	if other != nil || *f.newCopy { // a -new copy leaves the main record to the first one
+		runFile = strings.TrimSuffix(runFile, ".json") + "-" + instanceID[:8] + ".json"
 	}
+	if err := self.record(runFile); err != nil {
+		log.Printf("could not record the running server: %v", err)
+	}
+	defer self.forget(runFile)
 	return con.Run(srv)
 }
 

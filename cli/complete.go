@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nimezhu/myweb/webapp"
@@ -63,7 +64,7 @@ func completionCmd(spec Spec, args []string, w io.Writer) error {
 }
 
 var (
-	topCommands = []string{"serve", "app", "config", "service", "upgrade", "completion", "version", "help"}
+	topCommands = []string{"serve", "app", "status", "open", "stop", "config", "service", "upgrade", "completion", "version", "help"}
 	appCommands = []string{"list", "run", "install", "update", "versions", "use", "remove", "default"}
 )
 
@@ -205,6 +206,22 @@ func completions(spec Spec, words []string) []string {
 		return []string{"-as", "-dry-run"}
 	case "upgrade":
 		return []string{"-check", "-rollback", "-home"}
+	case "status", "ps":
+		return []string{"-json", "-home"}
+	case "open", "stop":
+		var c []string
+		if dirs, err := homeFor(spec.Name, home); err == nil {
+			for i, s := range runningServers(dirs) {
+				c = append(c, strconv.Itoa(i+1))
+				if s.App != "" {
+					c = append(c, s.App)
+				}
+			}
+		}
+		if words[0] == "stop" {
+			c = append(c, "-all")
+		}
+		return append(c, "-home")
 	case "completion":
 		if len(words) == 1 {
 			return []string{"bash", "zsh", "fish"}

@@ -74,7 +74,14 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   button.link { border: 0; background: none; color: var(--err); padding: 2px 6px; font-weight: 500; }
-  button.link.plain { color: var(--accent); }
+  button.link.plain, a.link { color: var(--accent); }
+  a.link { font: 500 13px system-ui, sans-serif; padding: 2px 6px; text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .bar .crumbs { margin-bottom: 0; flex: 1; }
+  .bar .sub { margin: 0; }
+  .files td.sel, .files th.sel { width: 1.6em; padding-right: 0; }
+  .files tr.picked td { background: var(--accent-soft); }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
   .grid section { margin-bottom: 0; }
@@ -220,13 +227,19 @@
       <h3><span class="grow" id="resTitle"></span><button class="link plain" type="button" id="resClose">close</button></h3>
       <div id="resBody"></div>
     </div>
-    <div class="crumbs" id="crumbs"></div>
+    <div class="bar">
+      <div class="crumbs" id="crumbs"></div>
+      <span class="sub" id="selNote"></span>
+      <button class="link plain" type="button" id="selClear" hidden>clear</button>
+      <a class="btn" id="zipBtn" href="/zip/" download title="GET /zip/&lt;folder&gt;">Download folder as .zip</a>
+    </div>
     <div class="table-wrap">
       <table class="files">
-        <thead><tr><th>Name</th><th style="text-align:right">Size</th><th style="text-align:right">Modified</th><th></th></tr></thead>
-        <tbody id="files"><tr><td colspan="4" class="empty">Loading…</td></tr></tbody>
+        <thead><tr><th class="sel"><input type="checkbox" id="selAll" aria-label="Select all"></th><th>Name</th><th style="text-align:right">Size</th><th style="text-align:right">Modified</th><th></th></tr></thead>
+        <tbody id="files"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
       </table>
     </div>
+    <div class="msg" id="fmsg"></div>
     <div class="panel" id="hist" hidden>
       <h3><span class="grow">Versions of <code id="histPath"></code></span><button class="link plain" id="histClose">close</button></h3>
       <div class="table-wrap">
@@ -290,6 +303,7 @@
           <tr><td class="method">GET</td><td class="mono">/ls/&lt;dir&gt;</td><td>List a directory as JSON</td></tr>
           <tr><td class="method">POST</td><td class="mono">/w/&lt;path&gt;</td><td>Write the request body to a file (creates folders)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/rm/&lt;path&gt;</td><td>Remove a file</td></tr>
+          <tr><td class="method">GET</td><td class="mono">/zip/&lt;folder&gt;</td><td>Download a folder as a .zip; <code>?f=name&amp;f=…</code> only those entries (unpack one with <code>/cmd/unzip</code>)</td></tr>
           <tr><td class="method">POST</td><td class="mono">/up/&lt;folder&gt;</td><td>Multipart upload of any number of files (names may contain sub-folders); <code>?onconflict=rename|overwrite|fail</code></td></tr>
           <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>One file (field <code>myFile</code>) into <code>uploads/&lt;md5&gt;_&lt;name&gt;</code>, e.g. for editor.js</td></tr>
           <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
@@ -527,6 +541,36 @@
     $("crumbs").innerHTML = html;
   }
 
+  // selection, for "Download … as .zip"
+  const chosen = new Set();
+  let shownDir = null;
+  function updateSelection() {
+    const n = chosen.size;
+    const q = [...chosen].map((f) => "f=" + encodeURIComponent(f)).join("&");
+    $("zipBtn").href = "/zip" + enc(cwd) + (q ? "?" + q : "");
+    $("zipBtn").textContent = n ? `Download ${n} as .zip` : "Download folder as .zip";
+    $("selNote").textContent = n ? `${n} selected` : "";
+    $("selClear").hidden = !n;
+    const boxes = document.querySelectorAll("#files [data-pick]");
+    $("selAll").checked = n > 0 && n === boxes.length;
+    $("selAll").indeterminate = n > 0 && n < boxes.length;
+  }
+  document.addEventListener("change", (e) => {
+    const box = e.target.closest("[data-pick]");
+    if (box) {
+      box.checked ? chosen.add(box.dataset.pick) : chosen.delete(box.dataset.pick);
+      box.closest("tr").classList.toggle("picked", box.checked);
+    } else if (e.target.id === "selAll") {
+      document.querySelectorAll("#files [data-pick]").forEach((b) => {
+        b.checked = e.target.checked;
+        e.target.checked ? chosen.add(b.dataset.pick) : chosen.delete(b.dataset.pick);
+        b.closest("tr").classList.toggle("picked", b.checked);
+      });
+    } else return;
+    updateSelection();
+  });
+  $("selClear").onclick = () => { chosen.clear(); load(cwd); };
+
   async function load(dir) {
     cwd = dir || "/";
     watchCwd();
@@ -537,7 +581,11 @@
       if (!r.ok) throw new Error(await errText(r));
       const items = await r.json();
       items.sort((a, b) => (b.isdir - a.isdir) || a.name.localeCompare(b.name));
-      if (!items.length) { body.innerHTML = `<tr><td colspan="4" class="empty">This folder is empty.</td></tr>`; return; }
+      if (cwd !== shownDir) chosen.clear();
+      shownDir = cwd;
+      for (const n of [...chosen]) if (!items.some((f) => f.name === n)) chosen.delete(n);
+      updateSelection();
+      if (!items.length) { body.innerHTML = `<tr><td colspan="5" class="empty">This folder is empty.</td></tr>`; return; }
       body.innerHTML = items.map((f) => {
         const p = join(cwd, f.name);
         const link = f.isdir
@@ -547,12 +595,16 @@
         const mv = `<button class="link plain writable" data-mv="${esc(p)}" ${off}>rename</button>`;
         const hist = f.isdir || !keepsVersions ? "" : `<button class="link plain" data-hist="${esc(p)}">history</button>`;
         const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${off}>delete</button>`;
-        return `<tr><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${hist}${mv}${rm}</td></tr>`;
+        const zip = f.isdir ? `<a class="link" href="/zip${esc(enc(p))}" download title="download as .zip">zip</a>`
+          : /\.zip$/i.test(f.name) ? `<button class="link plain writable" data-unzip="${esc(p)}" ${off} title="unpack into a new folder next to it">extract</button>` : "";
+        const on = chosen.has(f.name);
+        const sel = `<input type="checkbox" data-pick="${esc(f.name)}" ${on ? "checked" : ""} aria-label="Select ${esc(f.name)}">`;
+        return `<tr${on ? ' class="picked"' : ""}><td class="sel">${sel}</td><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${zip}${hist}${mv}${rm}</td></tr>`;
       }).join("");
       applyLocks();
       loadTrash();
     } catch (e) {
-      body.innerHTML = `<tr><td colspan="4" class="empty">Could not list ${esc(cwd)}: ${esc(e.message)}</td></tr>`;
+      body.innerHTML = `<tr><td colspan="5" class="empty">Could not list ${esc(cwd)}: ${esc(e.message)}</td></tr>`;
     }
   }
 
@@ -594,6 +646,18 @@
         body: JSON.stringify({ from, to: to.startsWith("/") ? to : join(cwd, to) }),
       });
       if (!r.ok) { msg($("wmsg"), "Rename failed: " + await errText(r), false); onFail(r); }
+      load(cwd);
+      return;
+    }
+    const uz = e.target.closest("[data-unzip]");
+    if (uz) {
+      uz.disabled = true;
+      msg($("fmsg"), "Extracting " + uz.dataset.unzip + "…", true);
+      const r = await post("/cmd/unzip", { path: uz.dataset.unzip });
+      if (r.ok) {
+        const { result: x } = await r.json();
+        msg($("fmsg"), `Extracted ${x.files} file${x.files === 1 ? "" : "s"} (${size(x.bytes)}) into ${x.to}`, true);
+      } else { msg($("fmsg"), "Extract failed: " + await errText(r), false); onFail(r); }
       load(cwd);
       return;
     }

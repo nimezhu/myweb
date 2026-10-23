@@ -52,6 +52,8 @@ usage:
 
 commands:
   app          installed web apps: list, run, install, update, versions, use, remove, default
+  status       the servers running now; open one in the browser, or stop it:
+               status, open [WHICH], stop [WHICH | -all]
   service      run %[1]s in the background, started at login
   config       saved defaults for the flags below
   upgrade      install the latest release from GitHub (or -check, VERSION, -rollback)
@@ -195,6 +197,15 @@ flags are serve's, e.g. -app myapp -d ~/data. -as names a second service (e.g.
 one per app); -dry-run shows what install or uninstall would do. Keep a token
 in "%[1]s config set token …", not in the service's flags.
 `,
+	"status": `the %[1]s servers running now (started from this -home):
+
+  %[1]s status [-json]          list them, numbered
+  %[1]s open [WHICH]            open one in the browser (signed in)
+  %[1]s stop [WHICH | -all]     stop one, or all of them
+
+WHICH is the number status shows, a pid, a port, an app's name or a data
+folder; leave it out when only one server runs. Every command takes -home DIR.
+`,
 	"upgrade": `replace %[1]s with a release from github.com/nimezhu/myweb/releases:
 
   %[1]s upgrade                 the latest release, if it is newer
@@ -226,7 +237,7 @@ func helpTopic(w io.Writer, spec Spec, topic string) error {
 	}
 	t, ok := helpTopics[topic]
 	if !ok {
-		return fmt.Errorf("no help for %q; topics: app, config, service, upgrade, completion", topic)
+		return fmt.Errorf("no help for %q; topics: app, status, config, service, upgrade, completion", topic)
 	}
 	fmt.Fprintf(w, t, spec.Name)
 	return nil

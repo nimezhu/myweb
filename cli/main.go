@@ -38,6 +38,12 @@ func Main(spec Spec) int {
 		return finish(spec, "service", serviceCmd(spec, args))
 	case "config":
 		return finish(spec, "config", configCmd(spec, args))
+	case "status", "ps":
+		return finish(spec, "status", statusCmd(spec, args, os.Stdout))
+	case "open":
+		return finish(spec, "status", openCmd(spec, args, os.Stdout))
+	case "stop":
+		return finish(spec, "status", stopCmd(spec, args, os.Stdout))
 	case "upgrade":
 		return finish(spec, "upgrade", upgradeCmd(spec, args, os.Stdout))
 	case "version":

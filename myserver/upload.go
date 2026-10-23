@@ -225,14 +225,7 @@ func (s *Server) storePart(u *User, folder string, part *multipart.Part, mode st
 	// Browsers send only the base name, unless the page passes a relative
 	// path (folder uploads); clean every segment of it.
 	name := rawFileName(part)
-	var segs []string
-	for _, seg := range strings.Split(strings.ReplaceAll(name, "\\", "/"), "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			continue // no climbing out of the folder
-		}
-		segs = append(segs, sanitizeFilename(seg))
-	}
-	rel := path.Join(segs...)
+	rel := cleanRelPath(name)
 	if rel == "" {
 		return uploaded{}, http.StatusBadRequest, errors.New("invalid file name")
 	}
@@ -255,17 +248,37 @@ func (s *Server) storePart(u *User, folder string, part *multipart.Part, mode st
 	defer os.Remove(tmp) // no-op after a successful rename
 
 	res := uploaded{Name: name, Size: size}
+	urlPath, renamed, status, err := s.place(tmp, urlPath, rel, mode)
+	res.Renamed = renamed
+	if err != nil {
+		return res, status, err
+	}
+	res.Path, res.URL = urlPath, "/f"+urlPath
+	if fi, err := os.Stat(s.ResolvePath(urlPath)); err == nil {
+		res.ETag = fileETag(fi)
+	}
+	log.Printf("uploaded %s (%d bytes)", urlPath, size)
+	return res, 0, nil
+}
+
+// place moves the received temp file to urlPath. If a file is there, mode
+// says what happens: rename (to a free name, which is returned), overwrite
+// (the replaced file is kept as a version) or fail. rel names the file in
+// errors.
+func (s *Server) place(tmp, urlPath, rel, mode string) (string, bool, int, error) {
+	dst := s.ResolvePath(urlPath)
 	unlock := s.locks.lock(dst)
 	defer unlock()
+	renamed := false
 	if fi, err := os.Lstat(dst); err == nil {
 		switch {
 		case fi.IsDir():
-			return res, http.StatusConflict, fmt.Errorf("%s: a folder has that name", rel)
+			return urlPath, false, http.StatusConflict, fmt.Errorf("%s: a folder has that name", rel)
 		case mode == "fail":
-			return res, http.StatusConflict, fmt.Errorf("%s: already exists", rel)
+			return urlPath, false, http.StatusConflict, fmt.Errorf("%s: already exists", rel)
 		case mode == "rename":
 			urlPath, dst = s.freeName(urlPath)
-			res.Renamed = true
+			renamed = true
 		}
 	}
 	kept := s.KeepVersion(urlPath) // overwrite: the replaced file stays in its history
@@ -273,14 +286,9 @@ func (s *Server) storePart(u *User, folder string, part *multipart.Part, mode st
 		if kept != "" {
 			os.Remove(kept)
 		}
-		return res, http.StatusInternalServerError, fmt.Errorf("%s: cannot store the file", rel)
+		return urlPath, false, http.StatusInternalServerError, fmt.Errorf("%s: cannot store the file", rel)
 	}
-	res.Path, res.URL = urlPath, "/f"+urlPath
-	if fi, err := os.Stat(dst); err == nil {
-		res.ETag = fileETag(fi)
-	}
-	log.Printf("uploaded %s (%d bytes)", urlPath, size)
-	return res, 0, nil
+	return urlPath, renamed, 0, nil
 }
 
 // freeName finds "name (1).ext", "name (2).ext", … that doesn't exist yet.
@@ -294,6 +302,19 @@ func (s *Server) freeName(urlPath string) (string, string) {
 			return p, fsPath
 		}
 	}
+}
+
+// cleanRelPath makes a relative file name sent by a client (an upload, a
+// zip entry) safe: every segment cleaned, none climbing out of the folder.
+func cleanRelPath(name string) string {
+	var segs []string
+	for _, seg := range strings.Split(strings.ReplaceAll(name, "\\", "/"), "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			continue
+		}
+		segs = append(segs, sanitizeFilename(seg))
+	}
+	return path.Join(segs...)
 }
 
 func sanitizeFilename(name string) string {

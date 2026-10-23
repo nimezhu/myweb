@@ -23,6 +23,7 @@ type instance struct {
 	URL     string    `json:"url"` // what the browser opens; may carry the token
 	Root    string    `json:"root"`
 	Source  string    `json:"source"` // what is served at "/"
+	Version string    `json:"version,omitempty"`
 	Started time.Time `json:"started"`
 }
 

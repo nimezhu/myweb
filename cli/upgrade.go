@@ -98,27 +98,15 @@ func upgradeCmd(spec Spec, args []string, w io.Writer) error {
 		fmt.Fprintf(w, "\n%s\n", notes)
 	}
 	if dirs, err := homeFor(spec.Name, *fl.home); err == nil {
-		if old := runningInstances(dirs); len(old) > 0 {
-			fmt.Fprintf(w, "\nstill running %s %s until restarted:\n", spec.Name, u.Current)
-			for _, in := range old {
-				fmt.Fprintf(w, "  pid %d, %s\n", in.PID, in.Root)
+		if old := runningServers(dirs); len(old) > 0 {
+			fmt.Fprintf(w, "\nstill running the old version until restarted:\n")
+			for _, s := range old {
+				fmt.Fprintf(w, "  pid %d  %s  %s\n", s.PID, s.address(), tildePath(s.Root))
 			}
-			fmt.Fprintf(w, "(a service restarts with: %s service install again, with its flags)\n", spec.Name)
+			fmt.Fprintf(w, "(%s stop -all stops them; a service restarts with %s service install, with its flags)\n", spec.Name, spec.Name)
 		}
 	}
 	return nil
-}
-
-// runningInstances are the servers recorded in <home>/run that are up.
-func runningInstances(dirs home.Dirs) []*instance {
-	files, _ := filepath.Glob(filepath.Join(dirs.Root, "run", "*.json"))
-	var out []*instance
-	for _, f := range files {
-		if in := running(f); in != nil {
-			out = append(out, in)
-		}
-	}
-	return out
 }
 
 // noticeUpgrade logs, once the server runs, that a newer release exists.
