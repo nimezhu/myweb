@@ -77,7 +77,7 @@ func usage() {
   myweb-publish build -version V | -bump patch|minor|major [-notes TEXT] [-keep N]
                                            with myweb-publish.json; without it also give
                                            -key app.key -name NAME -dir DIR -out OUTDIR
-                                           [-channel stable] [-requires-myweb 0.1.0]
+                                           [-channel stable] [-requires-myweb 0.0.1]
   myweb-publish versions                   what the output folder publishes
   myweb-publish rotate [-new FILE]         move to a new signing key: builds sign with both
   myweb-publish rotate -finish             ... until users have updated; then the new one only
@@ -181,7 +181,7 @@ func build(args []string) error {
 	dir := fs.String("dir", "", "folder with the built app (index.html at its top)")
 	out := fs.String("out", "", "output folder to upload")
 	channel := fs.String("channel", "stable", "manifest name: <channel>.json")
-	requires := fs.String("requires-myweb", "", "lowest myweb version the app needs, e.g. 0.1.0")
+	requires := fs.String("requires-myweb", "", "lowest myweb version the app needs, e.g. 0.0.1")
 	notes := fs.String("notes", "", "release notes")
 	keep := fs.Int("keep", 0, "keep only the newest N versions in the folder and the version list (0: all)")
 	oldKeys := fs.String("old-key", "", "during a key rotation: the previous private key file(s), comma-separated, which sign too")
