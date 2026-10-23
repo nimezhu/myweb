@@ -396,3 +396,7 @@ From JavaScript, [`@reflexiv/storage`](https://github.com/reflexdata/storage)'s
 go test ./...           # add -race to check for data races
 go vet ./...
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
