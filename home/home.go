@@ -1,5 +1,6 @@
 // Package home locates an app's own folder in the user's home: ~/.<name>
-// (e.g. ~/.myweb), or $<NAME>_HOME (e.g. MYWEB_HOME) when set. It holds the
+// (e.g. ~/.myweb), or $<NAME>_HOME (e.g. MYWEB_HOME) when set; the -home flag
+// overrides both. It holds the
 // default data folder and the installed web apps:
 //
 //	~/.myweb/data   served when no data folder is given

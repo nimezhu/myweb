@@ -44,7 +44,8 @@ func Serve(spec Spec) int {
 	port := fs.Int("p", 8433, "port to serve on (next free port is used if taken)")
 	global := fs.Bool("global", false, "listen on all interfaces (visible to your network)")
 	readOnly := fs.Bool("r", false, "read only (can be toggled in the TUI with 'r')")
-	directory := fs.String("d", "", fmt.Sprintf("the folder of data files to serve (default ~/.%s/data, or $%s_HOME/data;\n-d . for the current folder)", name, env))
+	homeDir := fs.String("home", "", fmt.Sprintf("%s's own folder, holding data/ and apps/ (default $%s_HOME, or ~/.%s)", name, env, name))
+	directory := fs.String("d", "", "the folder of data files to serve (default <home>/data;\n-d . for the current folder)")
 	web := fs.String("web", "", "serve this web app at / (the file manager stays at "+myserver.ManagerPath+")")
 	noManager := fs.Bool("no-manager", false, "don't serve the built-in file manager")
 	noTUI := fs.Bool("no-tui", false, "plain log output instead of the interactive TUI")
@@ -85,6 +86,9 @@ func Serve(spec Spec) int {
 	}
 
 	dirs, err := home.For(name)
+	if *homeDir != "" {
+		dirs.Root, err = filepath.Abs(*homeDir)
+	}
 	if err != nil {
 		return fail(err)
 	}

@@ -27,6 +27,7 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 
 | Flag | Default | |
 |---|---|---|
+| `-home DIR` | `$MYWEB_HOME`, else `~/.myweb` | myweb's own folder: the default data folder (`data/`) and installed apps (`apps/`) |
 | `-d DIR` | `~/.myweb/data` | folder to serve (created if it's the default); `-d .` for the current folder |
 | `-p PORT` | `8433` | port; the next free one is used if it is taken |
 | `-web DIR` | | serve your own web app at `/` (the file manager moves to `/_myweb/`) |
@@ -138,7 +139,8 @@ myweb-team serve -global                                          # same flags a
   search (`find`, `grep`), live events, versions and the trash (which records who
   deleted what). Files you may not see answer 404, so their names don't leak.
 - **Sign-in links** carry a personal token; only its SHA-256 is stored, in
-  `~/.myweb-team/team.json` (`$MYWEB_TEAM_HOME`). `user reset` replaces a link,
+  `~/.myweb-team/team.json` (`$MYWEB_TEAM_HOME`; use the variable rather than
+  `-home` here, so the `user` and `share` commands use the same file). `user reset` replaces a link,
   `user remove` revokes it. The running server picks up changes within a second,
   also for connections already open. Requests are logged with the user's name.
 - **HTTPS:** over a network, links and cookies travel in clear text unless HTTPS
@@ -149,7 +151,7 @@ myweb-team serve -global                                          # same flags a
 
 Everything myweb keeps lives in `~/.myweb` (`C:\Users\<you>\.myweb` on Windows):
 `data/` is the default data folder and `apps/` holds web apps installed with
-`-web-from`. Set `MYWEB_HOME` to keep it elsewhere (e.g. on another disk or a
+`-web-from`. Start with `-home DIR`, or set `MYWEB_HOME`, to keep it elsewhere (e.g. on another disk or a
 USB stick). Inside every served folder, versions and the trash are kept in its
 own `.myweb/` subfolder.
 
