@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -50,7 +51,8 @@ var (
 	sha256Re  = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-func (m *Manifest) validate() error {
+// Validate checks the fields myweb relies on before installing.
+func (m *Manifest) Validate() error {
 	switch {
 	case !nameRe.MatchString(m.Name):
 		return fmt.Errorf("manifest: invalid name %q", m.Name)
@@ -74,7 +76,7 @@ func GenerateKey() (public, private string, err error) {
 	if err != nil {
 		return "", "", err
 	}
-	return base64.StdEncoding.EncodeToString(pub), base64.StdEncoding.EncodeToString(priv.Seed()), nil
+	return EncodePublicKey(pub), base64.StdEncoding.EncodeToString(priv.Seed()), nil
 }
 
 // ParsePublicKey decodes a base64 ed25519 public key (as printed by keygen).
@@ -84,6 +86,31 @@ func ParsePublicKey(s string) (ed25519.PublicKey, error) {
 		return nil, errors.New("public key must be a base64 ed25519 key (32 bytes)")
 	}
 	return ed25519.PublicKey(b), nil
+}
+
+// LoadPublicKey accepts a public key either as printed by keygen or as the
+// path of a file holding it (e.g. app.key.pub).
+func LoadPublicKey(s string) (ed25519.PublicKey, error) {
+	if pub, err := ParsePublicKey(s); err == nil {
+		return pub, nil
+	}
+	b, err := os.ReadFile(strings.TrimSpace(s))
+	if err != nil {
+		if strings.TrimSpace(s) == "" {
+			return nil, errors.New("a public key is required")
+		}
+		return nil, fmt.Errorf("%q is neither a base64 ed25519 public key nor a readable key file", s)
+	}
+	pub, err := ParsePublicKey(string(b))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", strings.TrimSpace(s), err)
+	}
+	return pub, nil
+}
+
+// EncodePublicKey renders a public key the way keygen prints it.
+func EncodePublicKey(pub ed25519.PublicKey) string {
+	return base64.StdEncoding.EncodeToString(pub)
 }
 
 // ParsePrivateKey decodes a base64 ed25519 seed (the private key file).

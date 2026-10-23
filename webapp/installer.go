@@ -383,7 +383,7 @@ func (in *Installer) fetchManifest(ctx context.Context) (*Manifest, *url.URL, er
 	if err := json.Unmarshal(raw, &m); err != nil {
 		return nil, nil, fmt.Errorf("manifest: %v", err)
 	}
-	if err := m.validate(); err != nil {
+	if err := m.Validate(); err != nil {
 		return nil, nil, err
 	}
 	base, _ := url.Parse(in.opts.ManifestURL)

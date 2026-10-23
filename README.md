@@ -31,7 +31,7 @@ terminal (or with `-no-tui`) it prints plain log lines instead.
 | `-p PORT` | `8433` | port; the next free one is used if it is taken |
 | `-web DIR` | | serve your own web app at `/` (the file manager moves to `/_myweb/`) |
 | `-web-from URL` | | install the app at `/` from a signed manifest and keep it updated (see below) |
-| `-web-key KEY` | | public key that signs the `-web-from` manifest (required with it) |
+| `-web-key KEY` | | public key (or a file holding it) that signs the `-web-from` manifest (required with it) |
 | `-web-version V` | | serve this installed version and don't update (rollback) |
 | `-no-update` | | with `-web-from`: serve what is installed, don't check |
 | `-web-check DUR` | `6h` | with `-web-from`: how often to check for updates |
@@ -83,16 +83,18 @@ Instead of `-web DIR`, myweb can install your web app from a server you publish
 to, and keep it up to date:
 
 ```sh
-# once: make a signing key (keep app.key secret, e.g. in CI secrets)
+# once: make a signing key: app.key is secret (keep it e.g. in CI secrets),
+# app.key.pub is the public key you give to users
 go run github.com/nimezhu/myweb/cmd/myweb-publish keygen -out app.key
+# lost app.key.pub? myweb-publish pubkey -key app.key prints it again
 
 # each release: zip the built app and write the signed manifest
 myweb-publish build -key app.key -name myapp -version 1.4.2 -dir ./dist -out ./release
-myweb-publish verify -pub <public key> -manifest release/stable.json
+myweb-publish verify -pub app.key.pub -manifest release/stable.json   # build checks this too
 # upload release/ (stable.json, stable.json.sig, myapp-1.4.2.zip) to any web server
 
 # users
-myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <public key>
+myweb -d ~/data -web-from https://dist.example.com/myapp/stable.json -web-key <public key, or app.key.pub>
 ```
 
 - **First start** shows an "installing…" page that turns into the app as soon as

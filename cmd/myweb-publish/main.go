@@ -1,18 +1,21 @@
 // myweb-publish prepares web app releases that myweb installs with -web-from.
 //
 //	myweb-publish keygen -out app.key
-//	    writes a private key (keep it secret, e.g. in CI secrets) and prints
-//	    the public key to give to myweb with -web-key
+//	    writes a private key to app.key (keep it secret, e.g. in CI secrets)
+//	    and its public key to app.key.pub, to give to myweb with -web-key
+//	myweb-publish pubkey -key app.key
+//	    prints the public key of a private key (if app.key.pub was lost)
 //	myweb-publish build -key app.key -name cellome -version 1.4.2 -dir ./dist -out ./release
 //	    zips ./dist into release/cellome-1.4.2.zip and writes the signed
 //	    manifest release/stable.json + stable.json.sig; upload release/ as is
-//	myweb-publish verify -pub <public key> -manifest release/stable.json
+//	myweb-publish verify -pub app.key.pub -manifest release/stable.json
 //	    checks the signature and the bundle before uploading
 package main
 
 import (
 	"archive/zip"
 	"bytes"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -37,11 +40,16 @@ func main() {
 	switch os.Args[1] {
 	case "keygen":
 		err = keygen(os.Args[2:])
+	case "pubkey":
+		err = pubkey(os.Args[2:])
 	case "build":
 		err = build(os.Args[2:])
 	case "verify":
 		err = verify(os.Args[2:])
+	case "-h", "-help", "--help", "help":
+		usage()
 	default:
+		fmt.Fprintf(os.Stderr, "myweb-publish: unknown command %q\n", os.Args[1])
 		usage()
 	}
 	if err != nil {
@@ -52,34 +60,85 @@ func main() {
 
 func usage() {
 	fmt.Fprint(os.Stderr, `usage:
-  myweb-publish keygen -out app.key
+  myweb-publish keygen -out app.key        writes app.key (secret) and app.key.pub
+  myweb-publish pubkey -key app.key        prints the public key of app.key
   myweb-publish build  -key app.key -name NAME -version V -dir DIR -out OUTDIR [-channel stable] [-requires-myweb 0.1.0] [-notes TEXT]
-  myweb-publish verify -pub PUBLIC_KEY -manifest OUTDIR/stable.json
+  myweb-publish verify -pub app.key.pub|KEY -manifest OUTDIR/stable.json   (or -key app.key)
 `)
 	os.Exit(2)
 }
 
 func keygen(args []string) error {
 	fs := flag.NewFlagSet("keygen", flag.ExitOnError)
-	out := fs.String("out", "", "file for the private key (must not exist)")
+	out := fs.String("out", "", "file for the private key (must not exist); the public key goes to <out>.pub")
 	fs.Parse(args)
 	if *out == "" {
 		return fmt.Errorf("-out is required")
+	}
+	pubFile := *out + ".pub"
+	for _, p := range []string{*out, pubFile} {
+		if _, err := os.Lstat(p); err == nil {
+			return fmt.Errorf("%s exists (keygen never overwrites a key)", p)
+		}
 	}
 	pub, priv, err := webapp.GenerateKey()
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(*out, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if err != nil {
-		return fmt.Errorf("%v (keygen never overwrites a key)", err)
-	}
-	fmt.Fprintln(f, priv)
-	if err := f.Close(); err != nil {
+	if err := writeNew(*out, priv+"\n", 0o600); err != nil {
 		return err
 	}
-	fmt.Printf("private key: %s (keep it secret)\npublic key:  %s\n\nstart myweb with:  -web-from <URL>/stable.json -web-key %s\n", *out, pub, pub)
+	if err := writeNew(pubFile, pub+"\n", 0o644); err != nil {
+		os.Remove(*out) // a private key without its public key is no use
+		return err
+	}
+	fmt.Printf("private key: %s (keep it secret)\npublic key:  %s  (also in %s)\n\nstart myweb with:  -web-from <URL>/stable.json -web-key %s\n", *out, pub, pubFile, pub)
 	return nil
+}
+
+// writeNew writes a file that must not exist yet.
+func writeNew(path, content string, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.WriteString(content); err != nil {
+		f.Close()
+		os.Remove(path)
+		return err
+	}
+	return f.Close()
+}
+
+func pubkey(args []string) error {
+	fs := flag.NewFlagSet("pubkey", flag.ExitOnError)
+	keyFile := fs.String("key", "", "private key file from keygen")
+	fs.Parse(args)
+	if *keyFile == "" {
+		return fmt.Errorf("-key is required")
+	}
+	priv, err := loadPrivateKey(*keyFile)
+	if err != nil {
+		return err
+	}
+	fmt.Println(webapp.EncodePublicKey(priv.Public().(ed25519.PublicKey)))
+	return nil
+}
+
+func loadPrivateKey(path string) (ed25519.PrivateKey, error) {
+	// public keys and private seeds are both 32 bytes, so only the name tells them apart
+	if strings.HasSuffix(path, ".pub") {
+		return nil, fmt.Errorf("%s is a public key; -key needs the private key file", path)
+	}
+	text, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	priv, err := webapp.ParsePrivateKey(string(text))
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", path, err)
+	}
+	return priv, nil
 }
 
 func build(args []string) error {
@@ -96,13 +155,16 @@ func build(args []string) error {
 	if *keyFile == "" || *name == "" || *version == "" || *dir == "" || *out == "" {
 		return fmt.Errorf("-key, -name, -version, -dir and -out are required")
 	}
-	keyText, err := os.ReadFile(*keyFile)
+	priv, err := loadPrivateKey(*keyFile)
 	if err != nil {
 		return err
 	}
-	priv, err := webapp.ParsePrivateKey(string(keyText))
-	if err != nil {
-		return err
+	pub := priv.Public().(ed25519.PublicKey)
+	// a <key>.pub that doesn't belong to this key would make every install fail
+	if text, err := os.ReadFile(*keyFile + ".pub"); err == nil {
+		if have, err := webapp.ParsePublicKey(string(text)); err != nil || !have.Equal(pub) {
+			return fmt.Errorf("%s.pub is not the public key of %s (myweb-publish pubkey -key %s prints the right one)", *keyFile, *keyFile, *keyFile)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(*dir, "index.html")); err != nil {
 		return fmt.Errorf("%s has no index.html at its top", *dir)
@@ -144,7 +206,10 @@ func build(args []string) error {
 	if err := os.WriteFile(manifestPath, raw, 0o644); err != nil {
 		return err
 	}
-	fmt.Printf("%s %s: %s (%d bytes)\n  %s\n  %s.sig\nupload the contents of %s\n", *name, *version, zipName, len(bundle), manifestPath, manifestPath, *out)
+	if _, err := readRelease(pub, manifestPath); err != nil {
+		return fmt.Errorf("the written release does not verify: %v", err)
+	}
+	fmt.Printf("%s %s: %s (%d bytes)\n  %s\n  %s.sig\nsigned for public key %s\nupload the contents of %s\n", *name, *version, zipName, len(bundle), manifestPath, manifestPath, webapp.EncodePublicKey(pub), *out)
 	return nil
 }
 
@@ -196,37 +261,71 @@ func zipDir(dir string) ([]byte, error) {
 
 func verify(args []string) error {
 	fs := flag.NewFlagSet("verify", flag.ExitOnError)
-	pubText := fs.String("pub", "", "public key")
+	pubText := fs.String("pub", "", "public key, or a file holding it (e.g. app.key.pub)")
+	keyFile := fs.String("key", "", "or: the private key file, to check against its public key")
 	manifestPath := fs.String("manifest", "", "manifest file, e.g. release/stable.json")
 	fs.Parse(args)
-	pub, err := webapp.ParsePublicKey(*pubText)
-	if err != nil {
-		return err
+	if *manifestPath == "" {
+		return fmt.Errorf("-manifest is required")
 	}
-	raw, err := os.ReadFile(*manifestPath)
-	if err != nil {
-		return err
-	}
-	sig, err := os.ReadFile(*manifestPath + ".sig")
-	if err != nil {
-		return err
-	}
-	if err := webapp.Verify(pub, raw, sig); err != nil {
-		return err
-	}
-	var m webapp.Manifest
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return err
-	}
-	if !strings.Contains(m.URL, "://") {
-		bundle, err := os.ReadFile(filepath.Join(filepath.Dir(*manifestPath), m.URL))
+	var pub ed25519.PublicKey
+	switch {
+	case *pubText != "" && *keyFile != "":
+		return fmt.Errorf("give -pub or -key, not both")
+	case *pubText != "":
+		var err error
+		if pub, err = webapp.LoadPublicKey(*pubText); err != nil {
+			return err
+		}
+	case *keyFile != "":
+		priv, err := loadPrivateKey(*keyFile)
 		if err != nil {
 			return err
 		}
-		if sum := sha256.Sum256(bundle); hex.EncodeToString(sum[:]) != m.SHA256 {
-			return fmt.Errorf("%s does not match the manifest's sha256", m.URL)
-		}
+		pub = priv.Public().(ed25519.PublicKey)
+	default:
+		return fmt.Errorf("-pub (or -key) is required")
+	}
+	m, err := readRelease(pub, *manifestPath)
+	if err != nil {
+		return err
 	}
 	fmt.Printf("ok: %s %s, signature and bundle verified\n", m.Name, m.Version)
 	return nil
+}
+
+// readRelease checks a manifest as myweb would: its signature, its fields and,
+// when the bundle sits next to it, the bundle's size and hash.
+func readRelease(pub ed25519.PublicKey, manifestPath string) (*webapp.Manifest, error) {
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return nil, err
+	}
+	sig, err := os.ReadFile(manifestPath + ".sig")
+	if err != nil {
+		return nil, err
+	}
+	if err := webapp.Verify(pub, raw, sig); err != nil {
+		return nil, fmt.Errorf("%v (public key %s); was it signed with another key, or edited after signing?", err, webapp.EncodePublicKey(pub))
+	}
+	var m webapp.Manifest
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, fmt.Errorf("manifest: %v", err)
+	}
+	if err := m.Validate(); err != nil {
+		return nil, err
+	}
+	if !strings.Contains(m.URL, "://") {
+		bundle, err := os.ReadFile(filepath.Join(filepath.Dir(manifestPath), filepath.FromSlash(m.URL)))
+		if err != nil {
+			return nil, err
+		}
+		if int64(len(bundle)) != m.Size {
+			return nil, fmt.Errorf("%s is %d bytes, the manifest says %d", m.URL, len(bundle), m.Size)
+		}
+		if sum := sha256.Sum256(bundle); hex.EncodeToString(sum[:]) != m.SHA256 {
+			return nil, fmt.Errorf("%s does not match the manifest's sha256", m.URL)
+		}
+	}
+	return &m, nil
 }

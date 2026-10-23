@@ -20,7 +20,7 @@ type Flags struct {
 func AddFlags(fs *flag.FlagSet) *Flags {
 	f := &Flags{}
 	fs.StringVar(&f.From, "web-from", "", "install the web app at / from this signed manifest URL and keep it updated")
-	fs.StringVar(&f.Key, "web-key", "", "public key that signs the -web-from manifest (from myweb-publish keygen)")
+	fs.StringVar(&f.Key, "web-key", "", "public key (or a file holding it, e.g. app.key.pub) that signs the -web-from manifest")
 	fs.StringVar(&f.Version, "web-version", "", "with -web-from: serve this installed version and don't update (rollback)")
 	fs.BoolVar(&f.NoUpdate, "no-update", false, "with -web-from: serve the installed version, don't check for updates")
 	fs.DurationVar(&f.Check, "web-check", defaultInterval, "with -web-from: how often to check for updates")
@@ -39,7 +39,7 @@ func (f *Flags) Installer(mywebVersion, appsDir string, onUpdate func(name, vers
 	if f.Key == "" {
 		return nil, errors.New("-web-from needs -web-key: the app is only installed if its signature matches")
 	}
-	pub, err := ParsePublicKey(f.Key)
+	pub, err := LoadPublicKey(f.Key)
 	if err != nil {
 		return nil, err
 	}
