@@ -5,6 +5,10 @@ prints after installing it.
 
 ## 0.0.2
 
+From 0.0.1, which can't upgrade itself, download your system's binary below
+(or `go install github.com/nimezhu/myweb@v0.0.2`); from then on, `myweb
+upgrade` does it.
+
 **Changes to know about before upgrading**
 
 - While an installed app is served at `/`, the file manager moves to

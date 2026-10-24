@@ -56,8 +56,14 @@ func (u *Updater) client() *http.Client {
 
 // Latest is the newest release (GitHub's "latest": not a draft or prerelease).
 func (u *Updater) Latest(ctx context.Context) (*Release, error) {
-	return u.release(ctx, "/repos/"+Repo+"/releases/latest")
+	rel, err := u.release(ctx, "/repos/"+Repo+"/releases/latest")
+	if errors.Is(err, errNoRelease) {
+		return nil, errors.New("no release on github.com/" + Repo + " yet (prereleases are installed by version only)")
+	}
+	return rel, err
 }
+
+var errNoRelease = errors.New("no such release on github.com/" + Repo)
 
 // Get is the release of one version, e.g. 0.0.2 or v0.0.2.
 func (u *Updater) Get(ctx context.Context, version string) (*Release, error) {
@@ -78,7 +84,7 @@ func (u *Updater) release(ctx context.Context, path string) (*Release, error) {
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		return nil, errors.New("no such release on github.com/" + Repo)
+		return nil, errNoRelease
 	case resp.StatusCode != http.StatusOK:
 		return nil, fmt.Errorf("github: %s", resp.Status)
 	}
