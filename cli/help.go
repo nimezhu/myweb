@@ -228,9 +228,11 @@ folder; leave it out when only one server runs. Every command takes -home DIR.
   %[1]s upgrade VERSION         that release, newer or older (e.g. 0.0.2)
   %[1]s upgrade -check          only tell whether a newer release exists
   %[1]s upgrade -rollback       back to the binary the last upgrade replaced
+  %[1]s upgrade -no-restart     leave installed services on the old binary
 
 The download is checked against the release's checksums.txt and must run
-before it replaces the binary; the old one is kept next to it as .old. Running
+before it replaces the binary; the old one is kept next to it as .old. The
+services running it (%[1]s service install) are restarted; other running
 servers keep the old version until restarted. A running server tells once a
 day when a newer release is out (-no-upgrade-check: don't).
 `,

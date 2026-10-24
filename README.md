@@ -87,8 +87,9 @@ token in `myweb config set token …`, not in the service's flags.
 [release](https://github.com/nimezhu/myweb/releases) for your system, checks
 it against the release's `checksums.txt` and that it runs, and replaces the
 binary, keeping the old one next to it as `myweb.old` (`myweb upgrade
--rollback` swaps them back). Servers already running keep the old version
-until restarted. A running server tells, at most once a day, when a newer
+-rollback` swaps them back). Services installed with `myweb service install`
+are restarted on the new binary (`-no-restart`: they aren't); other running
+servers keep the old version until restarted. A running server tells, at most once a day, when a newer
 release is out; `-no-upgrade-check` (or `myweb config set no-upgrade-check
 true`) turns that off. A binary in a folder you can't write to (e.g.
 `/usr/local/bin`) is upgraded with the rights to write there.
@@ -511,8 +512,9 @@ go test ./...           # add -race to check for data races
 go vet ./...
 ```
 
-**Releasing:** set the version in `myserver/server.go`, commit, then tag and
-push it:
+**Releasing:** write the version's section in [CHANGELOG.md](CHANGELOG.md)
+(it becomes the release notes), set the version in `myserver/server.go`,
+commit, then tag and push it:
 
 ```sh
 git tag -a v0.0.2 -m "myweb 0.0.2" && git push origin main v0.0.2

@@ -300,7 +300,7 @@ func Serve(spec Spec) int {
 		fmt.Fprintf(os.Stderr, "port %d is busy, using %d\n", *port, srv.Port())
 	}
 	self := &instance{ID: instanceID, PID: os.Getpid(), Port: srv.Port(), Root: root, Source: source,
-		Version: myserver.VERSION, Started: time.Now().UTC()}
+		Version: myserver.VERSION, Args: os.Args[1:], Started: time.Now().UTC()}
 	if srv.ServesRoot() {
 		self.URL = srv.LoginURL()
 	}

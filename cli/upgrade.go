@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -21,6 +22,10 @@ import (
 //	upgrade VERSION      that release, newer or older
 //	upgrade -check       only tell whether there is a newer one
 //	upgrade -rollback    go back to the binary the last upgrade replaced
+//	upgrade -no-restart  leave the installed services running the old binary
+//
+// Afterwards the services running this binary are restarted; other running
+// servers are listed, to restart by hand.
 
 // executable is the binary to replace; replaced in tests.
 var executable = defaultExecutable
@@ -44,6 +49,7 @@ func upgradeCmd(spec Spec, args []string, w io.Writer) error {
 	fl := newAppFlags(spec.Name, "upgrade")
 	check := fl.Bool("check", false, "")
 	rollback := fl.Bool("rollback", false, "")
+	noRestart := fl.Bool("no-restart", false, "")
 	pos, err := fl.parse(args)
 	if err != nil {
 		return err
@@ -63,6 +69,9 @@ func upgradeCmd(spec Spec, args []string, w io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(w, "%s is back to the previous version (run %s version)\n", exe, spec.Name)
+		if !*noRestart {
+			restartServices(w, spec, *fl.home, exe, "")
+		}
 		return nil
 	}
 
@@ -97,17 +106,65 @@ func upgradeCmd(spec Spec, args []string, w io.Writer) error {
 	if notes := strings.TrimSpace(rel.Notes); notes != "" && len(pos) == 0 {
 		fmt.Fprintf(w, "\n%s\n", notes)
 	}
-	if dirs, err := homeFor(spec.Name, *fl.home); err == nil {
-		if old := runningServers(dirs); len(old) > 0 {
-			fmt.Fprintf(w, "\nstill running the old version until restarted:\n")
-			for _, s := range old {
-				fmt.Fprintf(w, "  pid %d  %s  %s\n", s.PID, s.address(), tildePath(s.Root))
-			}
-			fmt.Fprintf(w, "(%s stop -all stops them; a service restarts with %s service install, with its flags)\n", spec.Name, spec.Name)
-		}
+	if *noRestart {
+		restartServices(w, spec, *fl.home, "", rel.Version)
+	} else {
+		restartServices(w, spec, *fl.home, exe, rel.Version)
 	}
 	return nil
 }
+
+// restartServices restarts the services that run exe (none when exe is ""),
+// then lists the servers still running another version than version (when
+// given), to restart by hand.
+func restartServices(w io.Writer, spec Spec, homeDir, exe, version string) {
+	dirs, err := homeFor(spec.Name, homeDir)
+	if err != nil {
+		return
+	}
+	before := runningServers(dirs)
+	restarted := 0
+	if exe != "" {
+		for _, s := range services(runtime.GOOS, exe) {
+			ok, err := s.restart(before)
+			switch {
+			case err != nil:
+				fmt.Fprintf(w, "could not restart the service %s: %v\n", s.name, err)
+			case ok:
+				fmt.Fprintf(w, "restarted the service %s\n", s.name)
+				restarted++
+			}
+		}
+	}
+	if version == "" {
+		return
+	}
+	old := func(list []server) []server {
+		var out []server
+		for _, s := range list {
+			if s.Version != version {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	// the restarted ones come back with the new version
+	want := max(0, len(old(before))-restarted)
+	stale := old(runningServers(dirs))
+	for deadline := time.Now().Add(10 * time.Second); len(stale) > want && time.Now().Before(deadline); stale = old(runningServers(dirs)) {
+		time.Sleep(200 * time.Millisecond)
+	}
+	if len(stale) > 0 {
+		fmt.Fprintf(w, "\nstill running the old version until restarted:\n")
+		for _, s := range stale {
+			fmt.Fprintf(w, "  pid %d  %s  %s\n", s.PID, s.address(), tildePath(s.Root))
+		}
+		fmt.Fprintf(w, "(%s stop -all stops them)\n", spec.Name)
+	}
+}
+
+// services is replaced in tests.
+var services = installedServices
 
 // noticeUpgrade logs, once the server runs, that a newer release exists.
 // GitHub is asked at most once a day.

@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -75,5 +78,71 @@ func TestServiceArgs(t *testing.T) {
 		if _, err := checkServeArgs(spec, bad); err == nil {
 			t.Errorf("%v accepted", bad)
 		}
+	}
+}
+
+func TestServiceRestart(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("APPDATA", t.TempDir())
+	var ran []string
+	old := runCmd
+	defer func() { runCmd = old }()
+	runCmd = func(name string, args ...string) (string, error) {
+		ran = append(ran, name+" "+strings.Join(args, " "))
+		if len(args) > 1 && args[1] == "is-active" {
+			if args[2] == "myweb.service" {
+				return "active", nil
+			}
+			return "inactive", nil
+		}
+		return "", nil
+	}
+	dirs := home.Dirs{Root: t.TempDir()}
+	write := func(s *service) {
+		f, _ := s.file()
+		os.MkdirAll(filepath.Dir(f), 0o755)
+		os.WriteFile(f, []byte(s.definition()), 0o644)
+	}
+	write(newService("linux", "myweb", "myweb", "/usr/bin/myweb", dirs, nil))
+	write(newService("linux", "myweb", "myweb-off", "/usr/bin/myweb", dirs, nil))
+	write(newService("linux", "myweb", "other", "/opt/myweb", dirs, nil))
+	got := installedServices("linux", "/usr/bin/myweb")
+	if len(got) != 2 || got[0].name+","+got[1].name != "myweb-off,myweb" {
+		t.Fatalf("services: %+v", got)
+	}
+	for _, s := range got {
+		ok, err := s.restart(nil)
+		if err != nil || ok != (s.name == "myweb") {
+			t.Errorf("%s: %v %v", s.name, ok, err)
+		}
+	}
+	if !strings.Contains(strings.Join(ran, "\n"), "systemctl --user restart myweb.service") || strings.Contains(strings.Join(ran, "\n"), "restart myweb-off") {
+		t.Errorf("ran: %v", ran)
+	}
+
+	// Windows: the server the service started is stopped, then started again
+	exe := `C:\myweb\myweb.exe`
+	svc := newService("windows", "myweb", "myweb", exe, dirs, []string{"-app=hello"})
+	write(svc)
+	stopped := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/cmd/stopServer" {
+			stopped++
+		}
+	}))
+	defer ts.Close()
+	port, _ := strconv.Atoi(ts.URL[strings.LastIndex(ts.URL, ":")+1:])
+	mine := server{instance: &instance{Port: port, Args: svc.args}, file: filepath.Join(t.TempDir(), "gone.json")}
+	other := server{instance: &instance{Port: port, Args: []string{"-d=/x"}}, file: mine.file}
+	found := installedServices("windows", exe)
+	if len(found) != 1 {
+		t.Fatalf("windows services: %+v", found)
+	}
+	ran = nil
+	if ok, err := found[0].restart([]server{other, mine}); !ok || err != nil || stopped != 1 || len(ran) != 1 || !strings.HasPrefix(ran[0], "wscript ") {
+		t.Errorf("windows: %v %v stopped %d ran %v", ok, err, stopped, ran)
+	}
+	if ok, _ := found[0].restart([]server{other}); ok {
+		t.Error("windows: restarted a service that wasn't running")
 	}
 }

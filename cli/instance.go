@@ -25,6 +25,7 @@ type instance struct {
 	Source  string      `json:"source"` // what is served at "/"
 	Version string      `json:"version,omitempty"`
 	Apps    []servedApp `json:"apps,omitempty"` // other apps, on ports of their own
+	Args    []string    `json:"args,omitempty"` // its command line, after the program
 	Started time.Time   `json:"started"`
 }
 

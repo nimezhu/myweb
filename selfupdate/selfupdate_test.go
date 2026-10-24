@@ -176,3 +176,29 @@ func TestNewer(t *testing.T) {
 		}
 	}
 }
+
+func TestSwapOldInUse(t *testing.T) {
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "myweb")
+	os.WriteFile(exe, []byte("two"), 0o755)
+	os.WriteFile(exe+".new", []byte("three"), 0o755)
+	// an .old that can't be removed (as a running binary on Windows): a
+	// folder that isn't empty
+	os.MkdirAll(filepath.Join(exe+".old", "x"), 0o755)
+	os.MkdirAll(exe+".old.1.del", 0o755) // from an earlier upgrade, no longer running
+	if err := swap(exe, exe+".new"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(exe); string(b) != "three" {
+		t.Errorf("exe: %q", b)
+	}
+	if b, _ := os.ReadFile(exe + ".old"); string(b) != "two" {
+		t.Errorf("old: %q", b)
+	}
+	if _, err := os.Stat(exe + ".old.1.del"); !os.IsNotExist(err) {
+		t.Error("the earlier one was not removed")
+	}
+	if aside, _ := filepath.Glob(exe + ".old.*.del"); len(aside) != 1 {
+		t.Errorf("moved aside: %v", aside)
+	}
+}

@@ -25,5 +25,9 @@ jobs:
         run: |
           pre=
           case "$GITHUB_REF_NAME" in *-*) pre=--prerelease ;; esac
-          gh release create "$GITHUB_REF_NAME" dist/release/* $pre \
-            --verify-tag --title "myweb ${GITHUB_REF_NAME#v}" --generate-notes
+          # the version's section of CHANGELOG.md, else GitHub's list of commits
+          scripts/release-notes.sh "$GITHUB_REF_NAME" > notes.md
+          notes="--notes-file notes.md"
+          [ -s notes.md ] || notes=--generate-notes
+          gh release create "$GITHUB_REF_NAME" dist/release/* $pre $notes \
+            --verify-tag --title "myweb ${GITHUB_REF_NAME#v}"

@@ -176,10 +176,20 @@ func (u *Updater) check(bin, version string) error {
 }
 
 // swap moves exe to exe.old and next to exe. Renaming works on a running
-// binary, even on Windows.
+// binary, even on Windows; removing it doesn't there, so an exe.old that a
+// server not restarted since the last upgrade still runs is moved aside, to
+// remove at a later upgrade.
 func swap(exe, next string) error {
 	old := exe + ".old"
-	os.Remove(old)
+	stale, _ := filepath.Glob(old + ".*.del")
+	for _, f := range stale {
+		os.Remove(f) // may still run
+	}
+	if err := os.Remove(old); err != nil && !os.IsNotExist(err) {
+		if err := os.Rename(old, fmt.Sprintf("%s.%d.del", old, time.Now().UnixNano())); err != nil {
+			return fmt.Errorf("could not move the previous binary aside: %w", err)
+		}
+	}
 	if err := os.Rename(exe, old); err != nil {
 		return err
 	}

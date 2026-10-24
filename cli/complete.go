@@ -240,7 +240,7 @@ func completions(spec Spec, words []string) []string {
 		}
 		return []string{"-as", "-dry-run"}
 	case "upgrade":
-		return []string{"-check", "-rollback", "-home"}
+		return []string{"-check", "-rollback", "-no-restart", "-home"}
 	case "status", "ps":
 		return []string{"-json", "-home"}
 	case "open", "stop":

@@ -431,3 +431,84 @@ func windowsQuote(a string) string {
 func xmlEscape(s string) string {
 	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;").Replace(s)
 }
+
+// installedServices lists this user's services that run exe.
+func installedServices(goos, exe string) []*service {
+	probe := &service{goos: goos, name: "x"}
+	file, err := probe.file()
+	if err != nil {
+		return nil
+	}
+	var pattern, prefix, suffix, runs string
+	switch goos {
+	case "linux":
+		pattern, suffix, runs = "*.service", ".service", "ExecStart="+systemdQuote(exe)+" "
+	case "darwin":
+		prefix = strings.TrimSuffix(probe.label(), "x")
+		pattern, suffix, runs = prefix+"*.plist", ".plist", "<string>"+xmlEscape(exe)+"</string>"
+	case "windows":
+		pattern, suffix, runs = "*.vbs", ".vbs", `Run "`+strings.ReplaceAll(windowsQuote(exe), `"`, `""`)+" "
+	}
+	files, _ := filepath.Glob(filepath.Join(filepath.Dir(file), pattern))
+	var out []*service
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil || !strings.Contains(string(b), runs) {
+			continue
+		}
+		name := strings.TrimSuffix(strings.TrimPrefix(filepath.Base(f), prefix), suffix)
+		out = append(out, &service{goos: goos, name: name, exe: exe})
+	}
+	return out
+}
+
+// restart restarts the service, if it runs, so it runs the binary now at
+// its exe. running are the servers that run; on Windows, which has no
+// service manager to ask, the one the service started is stopped first.
+func (s *service) restart(running []server) (bool, error) {
+	switch s.goos {
+	case "linux":
+		if out, _ := runCmd("systemctl", "--user", "is-active", s.name+".service"); out != "active" {
+			return false, nil
+		}
+		if out, err := runCmd("systemctl", "--user", "restart", s.name+".service"); err != nil {
+			return false, fmt.Errorf("%v\n%s", err, out)
+		}
+		return true, nil
+	case "darwin":
+		target := "gui/" + strconv.Itoa(os.Getuid()) + "/" + s.label()
+		if _, err := runCmd("launchctl", "print", target); err != nil {
+			return false, nil // not loaded
+		}
+		if out, err := runCmd("launchctl", "kickstart", "-k", target); err != nil {
+			return false, fmt.Errorf("%v\n%s", err, out)
+		}
+		return true, nil
+	case "windows":
+		file, err := s.file()
+		if err != nil {
+			return false, err
+		}
+		b, err := os.ReadFile(file)
+		if err != nil {
+			return false, err
+		}
+		stopped := false
+		for _, r := range running {
+			if len(r.Args) > 0 && (&service{goos: s.goos, name: s.name, exe: s.exe, args: r.Args}).definition() == string(b) {
+				if err := stopServer(r); err != nil {
+					return false, err
+				}
+				stopped = true
+			}
+		}
+		if !stopped {
+			return false, nil
+		}
+		if out, err := runCmd("wscript", file); err != nil {
+			return false, fmt.Errorf("%v\n%s", err, out)
+		}
+		return true, nil
+	}
+	return false, nil
+}
