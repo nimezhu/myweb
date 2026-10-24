@@ -67,6 +67,9 @@ func (s *Server) requestToken(r *http.Request) string {
 	if c, err := r.Cookie(s.cookieName()); err == nil {
 		return c.Value
 	}
+	if _, pw, ok := r.BasicAuth(); ok && isDAVPath(r.URL.Path) { // see dav.go
+		return pw
+	}
 	return ""
 }
 

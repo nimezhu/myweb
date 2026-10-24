@@ -99,6 +99,7 @@ type Config struct {
 	Port      int      // preferred port; the next free one is used if taken
 	Global    bool     // listen on all interfaces instead of 127.0.0.1
 	ReadOnly  bool     // initial read-only state (can be toggled at runtime)
+	NoDAV     bool     // don't serve the data folder over WebDAV at /dav/
 	CORS      []string // allowed origins; none: only the server's own pages
 
 	// Versions and trash (see versions.go). 0 means the default
@@ -223,6 +224,11 @@ func (s *Server) routes() {
 	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(s.handleLs))))
 	m.Handle("/zip/", s.authedReads(http.StripPrefix("/zip", http.HandlerFunc(s.handleZip))))
 	m.HandleFunc("/_s/", s.handleShare) // share links: their secret is the key (share.go)
+	if !s.cfg.NoDAV {
+		dav := s.davHandler() // the data folder as a drive (dav.go)
+		m.Handle(DAVPath, dav)
+		m.Handle(strings.TrimSuffix(DAVPath, "/"), dav)
+	}
 
 	// Write routes are always registered and gated at request time so that
 	// read-only mode can be toggled while running.

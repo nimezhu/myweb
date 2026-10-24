@@ -39,7 +39,7 @@ type serveFlags struct {
 	global, readOnly                  *bool
 	homeDir, directory, web           *string
 	noManager, noTUI, noOpen, newCopy *bool
-	noUpgradeCheck, otherApps         *bool
+	noUpgradeCheck, otherApps, noDAV  *bool
 	auth                              *bool   // nil when spec.Access is set
 	token                             *string // nil when spec.Access is set
 	versions, trashDays               *int
@@ -62,6 +62,7 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f.directory = fs.String("d", "", "the folder of data files to serve (default <home>/data;\n-d . for the current folder)")
 	f.web = fs.String("web", "", "serve this web app at / (the file manager stays at "+myserver.ManagerPath+")")
 	f.noManager = fs.Bool("no-manager", false, "don't serve the built-in file manager")
+	f.noDAV = fs.Bool("no-dav", false, "don't serve the data folder as a network drive (WebDAV at /dav/)")
 	f.noTUI = fs.Bool("no-tui", false, "plain log output instead of the interactive TUI")
 	f.noOpen = fs.Bool("no-open", false, "do not open the browser on start")
 	f.newCopy = fs.Bool("new", false, "start another copy even if one already serves this folder and app")
@@ -258,6 +259,7 @@ func Serve(spec Spec) int {
 		Port:      *port,
 		Global:    *global,
 		ReadOnly:  *readOnly,
+		NoDAV:     *f.noDAV,
 		CORS:      append(append([]string{}, myserver.DefaultCORS...), f.cors...),
 		Token:     tok,
 		Access:    access,
@@ -272,6 +274,12 @@ func Serve(spec Spec) int {
 	})
 	if len(f.cors) > 0 {
 		con.AddRow("CORS", "+ "+f.cors.String())
+	}
+	if u := srv.DAVURL(); u != "" && spec.Access == nil {
+		if tok != "" {
+			u += "  (password: the token)"
+		}
+		con.AddRow("WebDAV", u)
 	}
 	apps := &appSet{dirs: dirs, root: root, srv: srv, main: app, flags: *webFlags, ctx: context.Background(),
 		on: *f.otherApps && spec.Access == nil}

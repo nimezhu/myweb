@@ -56,6 +56,9 @@ func (s *Server) Authorized(r *http.Request) bool {
 	if c, err := r.Cookie(s.cookieName()); err == nil {
 		return s.tokenOK(c.Value)
 	}
+	if _, pw, ok := r.BasicAuth(); ok && isDAVPath(r.URL.Path) { // see dav.go
+		return s.tokenOK(pw)
+	}
 	return false
 }
 

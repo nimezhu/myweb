@@ -3,6 +3,13 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## Unreleased
+
+- The data folder is a network drive: WebDAV at `/dav/` for Finder,
+  Explorer, Linux file managers, rclone and phone apps. Saves keep versions,
+  deletes go to the trash, `.myweb` is hidden; the token is the password.
+  `-no-dav` turns it off.
+
 ## 0.0.3
 
 - Share links: `myweb share PATH` (or **share** in the file manager) makes a

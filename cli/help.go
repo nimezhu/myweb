@@ -16,7 +16,7 @@ var flagGroups = []struct {
 	title string
 	names []string
 }{
-	{"Files", []string{"d", "p", "global", "r", "home"}},
+	{"Files", []string{"d", "p", "global", "r", "home", "no-dav"}},
 	{"Web app at /", []string{"app", "web", "web-from", "web-key", "web-version", "no-update", "web-check", "other-apps", "no-manager"}},
 	{"Access", []string{"auth", "token", "cors"}},
 	{"Safety", []string{"versions", "trash-days", "upload-max"}},
@@ -74,6 +74,7 @@ examples:
   %[1]s                          serve ~/.%[1]s/data and open the browser
   %[1]s -d ~/data -p 9000        serve another folder on another port
   %[1]s -web ./dist              your own web app at /, the file manager at /_myweb/
+                                 (the data folder is also a network drive: WebDAV at /dav/)
   %[1]s app run myapp            an app installed with -web-from (see %[1]s help app)
 `, name)
 }

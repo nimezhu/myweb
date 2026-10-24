@@ -311,6 +311,30 @@ installed app keeps the key it was installed with, so a later change to the
 catalog can't redirect its updates. Catalogs and manifests must be https (http
 only for localhost).
 
+## Network drive (WebDAV)
+
+The data folder is also served as a network drive at
+`http://127.0.0.1:PORT/dav/` (the terminal UI shows the address; `-no-dav`
+turns it off). Connect to it from:
+
+- **macOS Finder:** Go › Connect to Server, `http://127.0.0.1:8433/dav/`
+- **Linux:** Files › Other Locations, `dav://127.0.0.1:8433/dav/`, or `davfs2`
+- **Windows Explorer:** Map network drive, `http://127.0.0.1:8433/dav/`
+  (Windows sends a password only over HTTPS, so with a token use HTTPS or a
+  WebDAV app)
+- **rclone, Cyberduck, phone file apps:** a WebDAV remote at that address
+
+With a token, the password is the token (any user name). Reading needs no
+password on a server that only this machine reaches, as with `/f/`. Through
+an SSH tunnel (`ssh -L 8433:127.0.0.1:8433 server`) the remote data folder
+becomes a drive on your machine; forward the same port number.
+
+It keeps the rules of the rest of myweb: a saved file lands whole and the
+one it replaces is kept as a version, deleted files (and a deleted folder's
+files) go to the trash, `.myweb` is hidden, read-only mode refuses changes,
+and on myweb-team people's permissions apply. Apps' pages and share links
+can't use it.
+
 ## Share links
 
 A share link opens one folder or file for someone who has nothing else, no
@@ -389,6 +413,7 @@ Paths below are relative to the served folder. Errors are JSON:
 | `POST /w/<path>` | write the request body to the file (creates folders); `{success, file:{url, name, size, etag}}` |
 | `POST /rm/<path>` | delete a file (into the trash) or an empty folder |
 | `POST /up/<dir>` | multipart upload of any number of files; file names may contain sub-folders; `?onconflict=rename` (default, `a (1).txt`) \| `overwrite` \| `fail` |
+| `/dav/<path>` | the data folder over WebDAV (`PROPFIND`, `GET`, `PUT`, `MKCOL`, `MOVE`, `COPY`, `DELETE`, `LOCK`); see Network drive |
 | `GET /zip/<dir>` | the folder as a `.zip`, streamed; `?f=name&f=…` only those entries of it. Leaves out `.myweb` and symbolic links |
 | `POST /cmd/uploadFile` | one file (field `myFile`) into `uploads/<md5>_<name>` (for editor.js) |
 
