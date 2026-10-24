@@ -15,10 +15,14 @@ package myserver
 // Config.Access, people's own permissions apply.
 
 import (
+	"errors"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -146,6 +150,52 @@ func appAllows(folders []Folder, act Action, p string) bool {
 		}
 	}
 	return allowed
+}
+
+// appAllowsReal: may the app do act on where p really is? A symbolic link
+// in one of its folders may lead elsewhere in the data folder, or out of
+// it: what it leads to must be the app's too. (The app can't make links;
+// they are the user's.)
+func (s *Server) appAllowsReal(folders []Folder, act Action, p string) bool {
+	root, err := filepath.EvalSymlinks(s.cfg.Root)
+	if err != nil {
+		return false
+	}
+	real, err := realPath(s.ResolvePath(p))
+	if err != nil {
+		return false
+	}
+	rel, err := filepath.Rel(root, real)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return false // out of the data folder
+	}
+	rp := path.Clean("/" + filepath.ToSlash(rel))
+	return rp == path.Clean("/"+p) || appAllows(folders, act, rp)
+}
+
+// realPath is p with the symbolic links of its longest existing part
+// resolved; the rest, still to be made, is appended. A link to nothing is
+// refused: writing through it would make its target.
+func realPath(p string) (string, error) {
+	rest := ""
+	for {
+		r, err := filepath.EvalSymlinks(p)
+		if err == nil {
+			return filepath.Join(r, rest), nil
+		}
+		if !errors.Is(err, fs.ErrNotExist) {
+			return "", err
+		}
+		if _, lerr := os.Lstat(p); lerr == nil {
+			return "", err // a link to nothing
+		}
+		parent := filepath.Dir(p)
+		if parent == p {
+			return "", err
+		}
+		rest = filepath.Join(filepath.Base(p), rest)
+		p = parent
+	}
 }
 
 // appTraverses: is dir on the way to one of the app's folders?

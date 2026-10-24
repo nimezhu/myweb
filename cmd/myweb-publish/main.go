@@ -16,6 +16,8 @@
 //	    lists what the output folder publishes
 //	myweb-publish verify -pub app.key.pub -manifest release/stable.json
 //	    checks the signature and the bundle before uploading
+//	myweb-publish sign -key release.key checksums.txt
+//	    writes checksums.txt.sig (myweb's own releases are signed this way)
 //	myweb-publish catalog add -manifest URL -app-key app.key.pub
 //	    adds an app to apps.json, the signed list myweb installs apps from
 //	    by name (see catalog.go)
@@ -63,6 +65,8 @@ func main() {
 		err = verify(os.Args[2:])
 	case "catalog":
 		err = catalogCmd(os.Args[2:])
+	case "sign":
+		err = signCmd(os.Args[2:])
 	case "-h", "-help", "--help", "help":
 		usage()
 	default:
@@ -90,6 +94,7 @@ func usage() {
   myweb-publish verify -pub app.key.pub|KEY -manifest OUTDIR/stable.json   (or -key app.key)
   myweb-publish catalog init|add|remove|sign|list   the signed list of apps myweb installs
                                            by name; see catalog.go
+  myweb-publish sign -key app.key|env:VAR FILE...   writes FILE.sig for each file
   myweb-publish keygen -out app.key        writes app.key (secret) and app.key.pub
   myweb-publish pubkey -key app.key        prints the public key of app.key
 `)
@@ -160,6 +165,47 @@ func pubkey(args []string) error {
 		return err
 	}
 	fmt.Println(webapp.EncodePublicKey(priv.Public().(ed25519.PublicKey)))
+	return nil
+}
+
+// signCmd writes FILE.sig for each FILE, as myweb verifies them: myweb's
+// releases sign checksums.txt. -key env:VAR reads the key from $VAR (a CI
+// secret), so it is never written to disk.
+func signCmd(args []string) error {
+	fs := flag.NewFlagSet("sign", flag.ExitOnError)
+	keyFile := fs.String("key", "", "private key file, or env:VAR")
+	fs.Parse(args)
+	if *keyFile == "" || fs.NArg() == 0 {
+		return fmt.Errorf("usage: myweb-publish sign -key app.key|env:VAR FILE...")
+	}
+	var priv ed25519.PrivateKey
+	var err error
+	if v, ok := strings.CutPrefix(*keyFile, "env:"); ok {
+		if os.Getenv(v) == "" {
+			return fmt.Errorf("$%s is empty", v)
+		}
+		priv, err = webapp.ParsePrivateKey(os.Getenv(v))
+	} else {
+		priv, err = loadPrivateKey(*keyFile)
+	}
+	if err != nil {
+		return err
+	}
+	pub := priv.Public().(ed25519.PublicKey)
+	for _, f := range fs.Args() {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return err
+		}
+		sig := webapp.Sign(b, priv)
+		if _, err := webapp.Verify(b, sig, pub); err != nil {
+			return err
+		}
+		if err := os.WriteFile(f+".sig", sig, 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("signed %s (%s.sig) with %s\n", f, f, webapp.EncodePublicKey(pub))
+	}
 	return nil
 }
 

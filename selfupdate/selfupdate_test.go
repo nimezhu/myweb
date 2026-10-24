@@ -2,6 +2,8 @@ package selfupdate
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,10 +16,25 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/nimezhu/myweb/webapp"
 )
 
-// fakeGitHub serves one release, v0.0.2, with the binaries given by asset name.
+// testKey signs the fake releases; the Updaters of the tests trust it.
+var testPub, testKey, _ = ed25519.GenerateKey(rand.Reader)
+
+func updater(goos, goarch string) *Updater {
+	return &Updater{Program: "myweb", Current: "0.0.1", GOOS: goos, GOARCH: goarch, Keys: []string{webapp.EncodePublicKey(testPub)}}
+}
+
+// fakeGitHub serves one release, v0.0.2, with the binaries given by asset
+// name, and checksums.txt signed with testKey.
 func fakeGitHub(t *testing.T, bins map[string]string, sums string) *httptest.Server {
+	return fakeSigned(t, bins, sums, string(webapp.Sign([]byte(sums), testKey)))
+}
+
+// fakeSigned is fakeGitHub with the signature given ("" for none).
+func fakeSigned(t *testing.T, bins map[string]string, sums, sig string) *httptest.Server {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -27,12 +44,17 @@ func fakeGitHub(t *testing.T, bins map[string]string, sums string) *httptest.Ser
 				URL  string `json:"browser_download_url"`
 			}
 			assets := []asset{{"checksums.txt", srv.URL + "/dl/checksums.txt"}}
+			if sig != "" {
+				assets = append(assets, asset{"checksums.txt.sig", srv.URL + "/dl/checksums.txt.sig"})
+			}
 			for n := range bins {
 				assets = append(assets, asset{n, srv.URL + "/dl/" + n})
 			}
 			json.NewEncoder(w).Encode(map[string]any{"tag_name": "v0.0.2", "body": "notes", "html_url": "page", "assets": assets})
 		case r.URL.Path == "/dl/checksums.txt":
 			fmt.Fprint(w, sums)
+		case r.URL.Path == "/dl/checksums.txt.sig":
+			fmt.Fprint(w, sig)
 		case strings.HasPrefix(r.URL.Path, "/dl/"):
 			b, ok := bins[strings.TrimPrefix(r.URL.Path, "/dl/")]
 			if !ok {
@@ -59,7 +81,7 @@ func TestInstallAndRollback(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a shell script as the new binary")
 	}
-	u := &Updater{Program: "myweb", Current: "0.0.1"}
+	u := updater("", "")
 	name := u.AssetName("0.0.2")
 	bin := "#!/bin/sh\necho myweb 0.0.2\n"
 	fakeGitHub(t, map[string]string{name: bin}, sum(bin)+"  "+name+"\n"+sum("x")+"  other\n")
@@ -100,7 +122,7 @@ func TestInstallRefuses(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("uses a shell script as the new binary")
 	}
-	u := &Updater{Program: "myweb", Current: "0.0.1"}
+	u := updater("", "")
 	name := u.AssetName("0.0.2")
 	for _, c := range []struct{ what, bin, sums, err string }{
 		{"bad checksum", "#!/bin/sh\necho myweb 0.0.2\n", sum("other") + "  " + name + "\n", "checksum"},
@@ -130,7 +152,7 @@ func TestInstallRefuses(t *testing.T) {
 }
 
 func TestNoAssetForPlatform(t *testing.T) {
-	u := &Updater{Program: "myweb", Current: "0.0.1", GOOS: "plan9", GOARCH: "386"}
+	u := updater("plan9", "386")
 	fakeGitHub(t, map[string]string{"myweb_0.0.2_linux_amd64": "x"}, "")
 	rel, _ := u.Latest(context.Background())
 	err := u.Install(context.Background(), rel, filepath.Join(t.TempDir(), "myweb"))
@@ -144,7 +166,7 @@ func TestNoAssetForPlatform(t *testing.T) {
 
 func TestCached(t *testing.T) {
 	fakeGitHub(t, nil, "")
-	u := &Updater{Program: "myweb", Current: "0.0.1"}
+	u := updater("", "")
 	file := filepath.Join(t.TempDir(), "check.json")
 	if v := u.Cached(context.Background(), file, time.Hour); v != "0.0.2" {
 		t.Fatalf("Cached = %q", v)
@@ -200,5 +222,34 @@ func TestSwapOldInUse(t *testing.T) {
 	}
 	if aside, _ := filepath.Glob(exe + ".old.*.del"); len(aside) != 1 {
 		t.Errorf("moved aside: %v", aside)
+	}
+}
+
+func TestInstallRefusesUnsigned(t *testing.T) {
+	u := updater("", "")
+	name := u.AssetName("0.0.2")
+	bin := "#!/bin/sh\necho myweb 0.0.2\n"
+	sums := sum(bin) + "  " + name + "\n"
+	_, otherKey, _ := ed25519.GenerateKey(rand.Reader)
+	for what, sig := range map[string]string{
+		"unsigned":        "",
+		"another key":     string(webapp.Sign([]byte(sums), otherKey)),
+		"other checksums": string(webapp.Sign([]byte(sums+"x"), testKey)),
+		"not a signature": "nope\n",
+	} {
+		fakeSigned(t, map[string]string{name: bin}, sums, sig)
+		exe := filepath.Join(t.TempDir(), "myweb")
+		os.WriteFile(exe, []byte("old"), 0o755)
+		rel, _ := u.Latest(context.Background())
+		err := u.Install(context.Background(), rel, exe)
+		if err == nil || !strings.Contains(err.Error(), "not installing it") {
+			t.Errorf("%s: err = %v", what, err)
+		}
+		if b, _ := os.ReadFile(exe); string(b) != "old" {
+			t.Errorf("%s: exe was replaced", what)
+		}
+	}
+	if len(Keys) == 0 {
+		t.Error("no release key built in")
 	}
 }

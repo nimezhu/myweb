@@ -192,3 +192,51 @@ func TestAppCantBorrowManagerHost(t *testing.T) {
 		t.Errorf("app host: CSP %q", h.Get("Content-Security-Policy"))
 	}
 }
+
+func TestAppSymlinks(t *testing.T) {
+	a := newAppTest(t)
+	app := "http://127.0.0.1:" + a.port
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "o.txt"), []byte("outside"), 0o644)
+	os.MkdirAll(filepath.Join(a.root, "demo", "sub"), 0o755)
+	os.WriteFile(filepath.Join(a.root, "demo", "sub", "b.txt"), []byte("sub"), 0o644)
+	for link, target := range map[string]string{
+		"demo/secret":   filepath.Join(a.root, "secret"),
+		"demo/x.txt":    filepath.Join(a.root, "secret", "x.txt"),
+		"demo/out":      outside,
+		"demo/inside":   filepath.Join(a.root, "demo", "sub"),
+		"demo/relative": "sub",
+		"demo/shared":   filepath.Join(a.root, "shared"),
+		"demo/nothing":  filepath.Join(outside, "new.txt"),
+	} {
+		if err := os.Symlink(target, filepath.Join(a.root, link)); err != nil {
+			t.Skip("no symlinks here:", err)
+		}
+	}
+	for p, want := range map[string]int{
+		"/f/demo/secret/x.txt": 404, "/f/demo/x.txt": 404, "/f/demo/out/o.txt": 404,
+		"/f/demo/inside/b.txt": 200, "/f/demo/relative/b.txt": 200, "/f/demo/shared/s.txt": 200,
+	} {
+		if st, _, _ := a.as(app, "GET", p, "127.0.0.1"); st != want {
+			t.Errorf("app GET %s: %d, want %d", p, st, want)
+		}
+	}
+	for p, want := range map[string]int{
+		"/w/demo/out/new.txt": 403, "/w/demo/secret/new.txt": 403, "/w/demo/shared/new.txt": 403,
+		"/w/demo/nothing": 403, "/w/demo/inside/new.txt": 200,
+	} {
+		if st, body, _ := a.as(app, "POST", p, "127.0.0.1"); st != want {
+			t.Errorf("app POST %s: %d %s, want %d", p, st, body, want)
+		}
+	}
+	if st, body, _ := a.as(app, "GET", "/ls/demo/out/", "127.0.0.1"); st == 200 || strings.Contains(body, "o.txt") {
+		t.Errorf("app lists a linked folder: %d %s", st, body)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "new.txt")); err == nil {
+		t.Error("wrote outside the data folder")
+	}
+	// the user, at the file manager, still follows their links
+	if st, body, _ := a.as("http://localhost:"+a.port, "GET", "/f/demo/out/o.txt", "localhost"); st != 200 || body != "outside" {
+		t.Errorf("manager: %d %q", st, body)
+	}
+}

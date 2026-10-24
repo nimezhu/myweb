@@ -1,12 +1,16 @@
 // Package selfupdate replaces the running binary with one from a GitHub
 // release. A release (built by .github/workflows/release.yml from a v* tag)
-// holds one binary per platform, named PROGRAM_VERSION_OS_ARCH[.exe], and a
-// checksums.txt with their SHA-256 sums.
+// holds one binary per platform, named PROGRAM_VERSION_OS_ARCH[.exe], a
+// checksums.txt with their SHA-256 sums, and checksums.txt.sig, its
+// signature by a release key (myweb-publish sign). A release that isn't
+// signed by one of Keys is not installed, so a GitHub account or release
+// taken over can't hand out other binaries.
 package selfupdate
 
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -21,6 +25,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/nimezhu/myweb/webapp"
 )
 
 // API is GitHub's REST API; replaced in tests.
@@ -28,6 +34,10 @@ var API = "https://api.github.com"
 
 // Repo is where releases are published.
 const Repo = "nimezhu/myweb"
+
+// Keys are the public keys releases may be signed with. To move to a new
+// key, add it here a release before signing with it.
+var Keys = []string{"xQ9MITXRSaiCi7Yr1Lt4fSjN9FolXFPdGN5dYKgmQTQ="}
 
 // Release is one published version.
 type Release struct {
@@ -45,6 +55,7 @@ type Updater struct {
 	Client  *http.Client
 	GOOS    string // default: runtime.GOOS
 	GOARCH  string
+	Keys    []string // default: Keys
 }
 
 func (u *Updater) client() *http.Client {
@@ -137,6 +148,9 @@ func (u *Updater) Install(ctx context.Context, rel *Release, exe string) error {
 	if err != nil {
 		return fmt.Errorf("checksums: %w", err)
 	}
+	if err := u.verify(ctx, rel, sums); err != nil {
+		return err
+	}
 	want, err := findSum(sums, name)
 	if err != nil {
 		return err
@@ -161,6 +175,32 @@ func (u *Updater) Install(ctx context.Context, rel *Release, exe string) error {
 		return err
 	}
 	return swap(exe, tmp)
+}
+
+// verify checks checksums.txt's signature.
+func (u *Updater) verify(ctx context.Context, rel *Release, sums []byte) error {
+	sigURL, ok := rel.Assets["checksums.txt.sig"]
+	if !ok {
+		return fmt.Errorf("release %s is not signed (no checksums.txt.sig): not installing it", rel.Tag)
+	}
+	sig, err := u.get(ctx, sigURL, 64<<10)
+	if err != nil {
+		return fmt.Errorf("checksums.txt.sig: %w", err)
+	}
+	keys := u.Keys
+	if keys == nil {
+		keys = Keys
+	}
+	var pubs []ed25519.PublicKey
+	for _, k := range keys {
+		if pub, err := webapp.ParsePublicKey(k); err == nil {
+			pubs = append(pubs, pub)
+		}
+	}
+	if _, err := webapp.Verify(sums, sig, pubs...); err != nil {
+		return fmt.Errorf("release %s is not signed with %s's release key: not installing it", rel.Tag, u.Program)
+	}
+	return nil
 }
 
 // check runs the new binary's version command: it must start on this

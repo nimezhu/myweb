@@ -19,6 +19,12 @@ jobs:
           go-version-file: go.mod
       - run: go test ./...
       - run: scripts/release-build.sh "$GITHUB_REF_NAME"
+      # myweb upgrade installs only releases whose checksums.txt is signed
+      # with a key built into myweb (selfupdate.Keys)
+      - name: sign
+        env:
+          MYWEB_RELEASE_KEY: ${{ secrets.MYWEB_RELEASE_KEY }}
+        run: go run ./cmd/myweb-publish sign -key env:MYWEB_RELEASE_KEY dist/release/checksums.txt
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}

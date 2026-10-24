@@ -92,7 +92,7 @@ func (s *Server) MultiUser() bool { return s.cfg.Access != nil }
 // single-user (the token, if any, was checked already).
 func (s *Server) allowed(u *User, act Action, p string) bool {
 	if u.IsApp() {
-		return appAllows(u.app, act, p)
+		return appAllows(u.app, act, p) && s.appAllowsReal(u.app, act, p)
 	}
 	if s.cfg.Access == nil {
 		return true
