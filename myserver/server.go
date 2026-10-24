@@ -214,6 +214,7 @@ func New(cfg Config) *Server {
 	s.registerSafetyCmds()
 	s.registerZipCmds()
 	s.registerShareCmds()
+	s.registerRemoveCmd()
 	return s
 }
 

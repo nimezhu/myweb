@@ -245,3 +245,37 @@ func TestReservedFolder(t *testing.T) {
 		t.Fatal(".myweb listed in the root")
 	}
 }
+
+func TestRmCmd(t *testing.T) {
+	x := newVersionServer(t, Config{})
+	x.do("POST", "/w/a/one.txt", "1", nil)
+	x.do("POST", "/w/a/b/two.txt", "2", nil)
+	x.do("POST", "/w/c.txt", "3", nil)
+	code, res := x.cmd("rm", `{"paths":["/a","/c.txt"]}`)
+	if code != 200 || res["files"].(float64) != 3 {
+		t.Fatalf("rm: %d %v", code, res)
+	}
+	if x.read("a/b/two.txt") != "<missing>" || x.read("c.txt") != "<missing>" {
+		t.Fatal("not removed")
+	}
+	if _, err := os.Stat(filepath.Join(x.root, "a")); !os.IsNotExist(err) {
+		t.Fatal("the emptied folder stays")
+	}
+	_, res = x.cmd("trash", "")
+	if items, _ := res["items"].([]interface{}); len(items) != 3 {
+		t.Fatalf("trash: %v", res)
+	}
+	for _, c := range []struct {
+		params string
+		want   int
+	}{
+		{`{"paths":["/"]}`, 400},
+		{`{"paths":["/.myweb"]}`, 403},
+		{`{"paths":["/nope"]}`, 404},
+		{`{"paths":[]}`, 400},
+	} {
+		if code, _ := x.cmd("rm", c.params); code != c.want {
+			t.Errorf("%s: %d, want %d", c.params, code, c.want)
+		}
+	}
+}

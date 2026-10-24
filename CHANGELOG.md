@@ -17,6 +17,17 @@ prints after installing it.
   when no app does).
 - Browsers that don't send `Sec-Fetch-Site` (Safari before 16.4, or plain
   http on a LAN) are no longer taken for the file manager on an app's address.
+- `myweb backup` puts the home (config, apps, catalogs) and the data folder
+  with its versions, trash and share links in one `.zip`; `myweb restore`
+  puts it back, never replacing a file that differs unless `-force`.
+- The file manager makes folders, moves files by dragging them onto a folder,
+  moves or deletes several ticked files and folders at once (a folder with
+  everything in it, to the trash), and shows image thumbnails. `/cmd/rm`
+  deletes files and folders.
+- `?` in the terminal UI lists every key.
+- `myweb doctor -fix` also fixes what is safe to: makes the home folder,
+  removes old binaries left by upgrades, restarts services that stopped or
+  run an old version, installs an app's missing version.
 - An upload link takes at most 1024 MB and 500 files in all (`share -upload
   -max-mb N -max-files N`); `share list` shows what each has received.
 

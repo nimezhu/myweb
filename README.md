@@ -54,7 +54,9 @@ The other commands manage installed web apps (see
 | `myweb config` | show the saved defaults for the flags |
 | `myweb config set NAME VALUE` / `unset NAME` | e.g. `config set p 9000`, `config set d ~/data` |
 | `myweb share PATH [-upload] [-days N]` | a link to a folder or file that opens without the token (see below); `share list`, `share revoke ID` |
-| `myweb doctor [-offline]` | check the binary, home, config, data folder, port, servers, services, apps and catalogs, and say what to fix |
+| `myweb doctor [-offline] [-fix]` | check the binary, home, config, data folder, port, servers, services, apps and catalogs, and say what to fix; `-fix` also does what is safe to |
+| `myweb backup [FILE.zip] [-no-files]` | the home (config, apps, catalogs) and the data folder with its versions, trash and share links, in one `.zip` |
+| `myweb restore FILE.zip [-force] [-dry-run] [-d DIR]` | put a backup back; files that differ are kept and listed unless `-force` |
 | `myweb upgrade [VERSION]` | install the latest release from GitHub, or that version; `-check` only tells, `-rollback` goes back |
 | `myweb completion bash\|zsh\|fish` | shell completion of commands, flags, app names and versions |
 | `myweb version`, `myweb help` | |
@@ -133,6 +135,7 @@ true`) turns that off. A binary in a folder you can't write to (e.g.
 
 | Key | |
 |---|---|
+| `?` | every key, and what it does here |
 | `o` | open the browser (signed in when auth is on) |
 | `y` | copy the startup URL (includes the login token when auth is on) |
 | `m` | open the file manager (when `-web` serves an app at `/`) |
@@ -154,8 +157,11 @@ At `/` (or `/_myweb/` when `-web` is set): browse folders, preview files
 (images, video, audio, PDF, Markdown, CSV/TSV, JSON, text; HTML is shown as
 source and never run; opened at `/f/`, an HTML or SVG file runs in a sandbox
 with no rights on the server, unless `-trust-html`), search names and contents, upload files and whole
-folders by dropping them on the list, rename, delete, browse and restore
-previous versions, and restore files from the trash. Download a folder, or the
+folders by dropping them on the list, make folders, rename, move files by
+dragging them onto a folder (or a folder in the path above), tick several to
+move or delete them at once (a folder with everything in it), browse and
+restore previous versions, and restore files from the trash. Images show a
+thumbnail. Download a folder, or the
 files and folders you tick, as one `.zip`, and extract a `.zip` into a new
 folder next to it. It updates live as files
 change, and lists and runs the plugin commands.
@@ -366,6 +372,24 @@ link only when the server listens on the network (`-global`, or a tunnel).
 Links are at `/_s/<secret>/`; the commands are `/cmd/shareCreate`, `/cmd/shares`
 and `/cmd/shareRevoke`, which apps may not use.
 
+## Backup and restore
+
+```sh
+myweb backup                       # myweb-backup-DATE-TIME.zip in this folder
+myweb backup ~/b.zip -no-files     # settings, versions, trash and share links only
+myweb restore ~/b.zip -dry-run     # what it would do
+myweb restore ~/b.zip              # e.g. on a new machine
+```
+
+A backup holds the home folder (config, installed apps, catalogs; not the
+records of running servers) and the data folder, with its `.myweb` (versions,
+trash, share links). The home's own data folder goes back into the home it is
+restored to; a data folder elsewhere goes back where it was, or to `-d DIR`.
+Restore writes each file whole, keeps its time, and never replaces a file that
+differs unless `-force` (it lists them); it refuses while a server runs from
+the home. The zip is readable only by you, and holds the token: keep it
+private. Symbolic links are left out.
+
 ## Several people: myweb-team
 
 `myweb-team` is myweb for a team or lab: everyone signs in with a personal link,
@@ -439,6 +463,7 @@ changed.
 | `stat` | `{path}` | exists, size, modification time |
 | `mkdir` | `{path}` | create a folder and its parents |
 | `mv` | `{from, to, overwrite}` | move or rename a file or folder |
+| `rm` | `{paths}` | delete files and folders; everything in them goes to the trash |
 | `find` | `{dir, pattern, limit}` | files whose name matches a glob |
 | `grep` | `{pattern, dir, glob, regex, ignoreCase, limit}` | lines in text files that contain the pattern |
 | `history` | `{path}` | previous versions of a file, newest first |

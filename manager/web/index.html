@@ -82,6 +82,10 @@
   .bar .sub { margin: 0; }
   .files td.sel, .files th.sel { width: 1.6em; padding-right: 0; }
   .files tr.picked td { background: var(--accent-soft); }
+  .files tr.target td { background: var(--accent-soft); box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent); }
+  .crumbs a.target { background: var(--accent-soft); outline: 2px solid var(--accent); }
+  .files tr.dragged td { opacity: .5; }
+  .files img.thumb { width: 1.9em; height: 1.9em; object-fit: cover; border-radius: 4px; vertical-align: middle; margin: -4px .5em -4px -.2em; background: var(--accent-soft); }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
   @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
   .grid section { margin-bottom: 0; }
@@ -262,6 +266,9 @@
       <div class="crumbs" id="crumbs"></div>
       <span class="sub" id="selNote"></span>
       <button class="link plain" type="button" id="selClear" hidden>clear</button>
+      <button class="writable" type="button" id="selMove" hidden title="move them into another folder (or drag them onto one)">Move…</button>
+      <button class="writable" type="button" id="selDel" hidden title="folders with everything in them; it all goes to the trash">Delete</button>
+      <button class="writable" type="button" id="mkdirBtn" title="POST /cmd/mkdir">New folder</button>
       <a class="btn" id="zipBtn" href="/zip/" download title="GET /zip/&lt;folder&gt;">Download folder as .zip</a>
     </div>
     <div class="table-wrap">
@@ -606,7 +613,7 @@
     $("zipBtn").href = "/zip" + enc(cwd) + (q ? "?" + q : "");
     $("zipBtn").textContent = n ? `Download ${n} as .zip` : "Download folder as .zip";
     $("selNote").textContent = n ? `${n} selected` : "";
-    $("selClear").hidden = !n;
+    $("selClear").hidden = $("selMove").hidden = $("selDel").hidden = !n;
     const boxes = document.querySelectorAll("#files [data-pick]");
     $("selAll").checked = n > 0 && n === boxes.length;
     $("selAll").indeterminate = n > 0 && n < boxes.length;
@@ -642,21 +649,26 @@
       for (const n of [...chosen]) if (!items.some((f) => f.name === n)) chosen.delete(n);
       updateSelection();
       if (!items.length) { body.innerHTML = `<tr><td colspan="5" class="empty">This folder is empty.</td></tr>`; return; }
+      const thumbs = items.filter((f) => KIND[ext(f.name)] === "image").length <= MAX_THUMBS;
       body.innerHTML = items.map((f) => {
         const p = join(cwd, f.name);
+        const thumb = thumbs && KIND[ext(f.name)] === "image" && f.size <= THUMB_BYTES
+          ? `<img class="thumb" src="/f${esc(enc(p))}" alt="" loading="lazy" decoding="async">` : `<span class="icon">·</span>`;
         const link = f.isdir
-          ? `<a href="#${esc(p)}" data-dir="${esc(p)}"><span class="icon">▸</span>${esc(f.name)}/</a>`
-          : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener" data-preview="${esc(p)}"><span class="icon">·</span>${esc(f.name)}</a>`;
+          ? `<a href="#${esc(p)}" data-dir="${esc(p)}" draggable="false"><span class="icon">▸</span>${esc(f.name)}/</a>`
+          : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener" data-preview="${esc(p)}" draggable="false">${thumb}${esc(f.name)}</a>`;
         const off = readOnly || !authed ? "disabled" : "";
         const mv = `<button class="link plain writable" data-mv="${esc(p)}" ${off}>rename</button>`;
         const hist = f.isdir || !keepsVersions ? "" : `<button class="link plain" data-hist="${esc(p)}">history</button>`;
-        const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${off}>delete</button>`;
+        const rm = `<button class="link writable" data-rm="${esc(p)}" data-isdir="${f.isdir ? 1 : ""}" ${off}>delete</button>`;
         const share = `<button class="link plain authed" data-share="${esc(p)}" data-isdir="${f.isdir ? 1 : ""}" ${authed ? "" : "disabled"} title="a link that opens it without the token">share</button>`;
         const zip = f.isdir ? `<a class="link" href="/zip${esc(enc(p))}" download title="download as .zip">zip</a>`
           : /\.zip$/i.test(f.name) ? `<button class="link plain writable" data-unzip="${esc(p)}" ${off} title="unpack into a new folder next to it">extract</button>` : "";
         const on = chosen.has(f.name);
         const sel = `<input type="checkbox" data-pick="${esc(f.name)}" ${on ? "checked" : ""} aria-label="Select ${esc(f.name)}">`;
-        return `<tr${on ? ' class="picked"' : ""}><td class="sel">${sel}</td><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${zip}${share}${hist}${mv}${rm}</td></tr>`;
+        const drag = readOnly || !authed ? "" : ` draggable="true" data-drag="${esc(f.name)}"`;
+        const into = f.isdir ? ` data-into="${esc(p)}"` : "";
+        return `<tr${on ? ' class="picked"' : ""}${drag}${into}><td class="sel">${sel}</td><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${zip}${share}${hist}${mv}${rm}</td></tr>`;
       }).join("");
       applyLocks();
       loadTrash();
@@ -737,11 +749,99 @@
     }
     const rm = e.target.closest("[data-rm]");
     if (rm) {
+      if (rm.dataset.isdir) { removePaths([rm.dataset.rm]); return; }
       const r = await fetch("/rm" + enc(rm.dataset.rm), { method: "POST" });
       if (!r.ok) { msg($("wmsg"), "Delete failed: " + await errText(r), false); onFail(r); }
       load(cwd);
     }
   });
+
+  // ---- new folder, move, delete several ----
+  $("mkdirBtn").onclick = async () => {
+    const name = (prompt("New folder in " + cwd + ":", "") || "").trim();
+    if (!name) return;
+    const r = await post("/cmd/mkdir", { path: name.startsWith("/") ? name : join(cwd, name) });
+    if (r.ok) msg($("fmsg"), "Made " + (name.startsWith("/") ? name : join(cwd, name)), true);
+    else { msg($("fmsg"), "New folder failed: " + await errText(r), false); onFail(r); }
+    load(cwd);
+  };
+  // moveInto moves names (in the folder shown) into the folder dest.
+  async function moveInto(names, dest) {
+    dest = dest.replace(/\/+$/, "") || "/";
+    let moved = 0; const failed = [];
+    for (const n of names) {
+      const from = join(cwd, n), to = join(dest, n);
+      if (dest === cwd || dest === from || dest.startsWith(from + "/")) continue; // where it is, or into itself
+      const r = await post("/cmd/mv", { from, to });
+      if (r.ok) moved++;
+      else { failed.push(n + ": " + await errText(r)); onFail(r); }
+    }
+    for (const n of names) chosen.delete(n);
+    if (failed.length) msg($("fmsg"), `Moved ${moved}; not moved: ${failed.join("; ")}`, false);
+    else if (moved) msg($("fmsg"), `Moved ${moved} into ${dest}`, true);
+    load(cwd);
+  }
+  $("selMove").onclick = () => {
+    const dest = (prompt(`Move ${chosen.size} into which folder? (made if it doesn't exist)`, cwd) || "").trim();
+    if (dest) moveInto([...chosen], dest.startsWith("/") ? dest : join(cwd, dest));
+  };
+  // removePaths deletes files and folders; everything goes to the trash.
+  async function removePaths(paths) {
+    const what = paths.length === 1 ? paths[0] : `${paths.length} items`;
+    if (!confirm(`Delete ${what}, with everything in ${paths.length === 1 ? "it" : "them"}? It all goes to the trash.`)) return;
+    const r = await post("/cmd/rm", { paths });
+    if (r.ok) {
+      const { result: x } = await r.json();
+      x.failed = x.failed || [];
+      msg($("fmsg"), `Moved ${x.files} file${x.files === 1 ? "" : "s"} to the trash` + (x.failed.length ? `; could not remove ${x.failed.join(", ")}` : ""), !x.failed.length);
+    } else { msg($("fmsg"), "Delete failed: " + await errText(r), false); onFail(r); }
+    for (const p of paths) chosen.delete(p.split("/").pop());
+    load(cwd);
+  }
+  $("selDel").onclick = () => removePaths([...chosen].map((n) => join(cwd, n)));
+
+  // drag rows onto a folder row, or a folder in the path above, to move them
+  const DRAG = "application/x-myweb-names";
+  let dragging = null;
+  $("files").addEventListener("dragstart", (e) => {
+    const row = e.target.closest("[data-drag]");
+    if (!row) return;
+    const n = row.dataset.drag;
+    dragging = chosen.has(n) ? [...chosen] : [n];
+    e.dataTransfer.setData(DRAG, JSON.stringify(dragging));
+    e.dataTransfer.effectAllowed = "move";
+    for (const r of document.querySelectorAll("#files [data-drag]")) r.classList.toggle("dragged", dragging.includes(r.dataset.drag));
+  });
+  $("files").addEventListener("dragend", () => {
+    dragging = null;
+    document.querySelectorAll(".dragged, .target").forEach((x) => x.classList.remove("dragged", "target"));
+  });
+  const dropTarget = (e) => {
+    if (!dragging) return null;
+    const t = e.target.closest("#files [data-into], #crumbs [data-dir]");
+    if (!t) return null;
+    const dest = t.dataset.into || t.dataset.dir;
+    return dragging.some((n) => join(cwd, n) === dest) || dest === cwd ? null : t;
+  };
+  for (const zone of [$("files"), $("crumbs")]) {
+    zone.addEventListener("dragover", (e) => {
+      const t = dropTarget(e);
+      document.querySelectorAll(".target").forEach((x) => x !== t && x.classList.remove("target"));
+      if (!t) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      t.classList.add("target");
+    });
+    zone.addEventListener("drop", (e) => {
+      const t = dropTarget(e);
+      if (!t) return;
+      e.preventDefault();
+      e.stopPropagation(); // not an upload
+      const names = dragging;
+      t.classList.remove("target");
+      moveInto(names, t.dataset.into || t.dataset.dir);
+    });
+  }
 
   // the app catalog
   let catalog = [];
@@ -1044,6 +1144,7 @@
 
   // ---- previews ----
   const PREVIEW_BYTES = 512 * 1024;
+  const THUMB_BYTES = 8 * 1024 * 1024, MAX_THUMBS = 300; // thumbnails in the list: small enough images, not too many
   const ext = (p) => (p.match(/\.([^./]+)$/) || [, ""])[1].toLowerCase();
   const KIND = {};
   for (const [kind, exts] of Object.entries({

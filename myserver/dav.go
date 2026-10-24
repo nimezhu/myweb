@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"io"
-	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -148,52 +147,12 @@ func (d davFS) OpenFile(ctx context.Context, name string, flag int, perm os.File
 // RemoveAll moves name's files to the trash, then removes the folders they
 // leave empty. A file that can't be moved stays, and so does its folder.
 func (d davFS) RemoveAll(ctx context.Context, name string) error {
-	p, fp, err := d.check(ctx, name, ActWrite)
+	p, _, err := d.check(ctx, name, ActWrite)
 	if err != nil {
 		return err
 	}
-	by := userName(UserFrom(ctx))
-	fi, err := os.Lstat(fp)
-	if err != nil {
-		return err
-	}
-	if !fi.IsDir() {
-		return d.remove(p, fp, fi, by)
-	}
-	var dirs []string
-	var firstErr error
-	filepath.WalkDir(fp, func(f string, e fs.DirEntry, err error) error {
-		if err != nil {
-			firstErr = errors.Join(firstErr, err)
-			return nil
-		}
-		if e.IsDir() {
-			dirs = append(dirs, f)
-			return nil
-		}
-		rel, _ := filepath.Rel(d.s.cfg.Root, f)
-		info, err := e.Info()
-		if err == nil {
-			err = d.remove("/"+filepath.ToSlash(rel), f, info, by)
-		}
-		if err != nil {
-			firstErr = errors.Join(firstErr, err)
-		}
-		return nil
-	})
-	for i := len(dirs) - 1; i >= 0; i-- { // deepest first; never with contents
-		os.Remove(dirs[i])
-	}
-	return firstErr
-}
-
-func (d davFS) remove(p, fp string, fi os.FileInfo, by string) error {
-	unlock := d.s.locks.lock(fp)
-	defer unlock()
-	if fi.Mode().IsRegular() {
-		return d.s.trashFile(p, by)
-	}
-	return os.Remove(fp) // a symbolic link, not what it leads to
+	_, err = d.s.removeTree(p, userName(UserFrom(ctx)))
+	return err
 }
 
 func (d davFS) Rename(ctx context.Context, oldName, newName string) error {

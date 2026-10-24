@@ -51,6 +51,10 @@ func Main(spec Spec) int {
 		return finish(spec, "share", shareCmd(spec, args, os.Stdout))
 	case "doctor":
 		return finish(spec, "doctor", doctorCmd(spec, args, os.Stdout))
+	case "backup":
+		return finish(spec, "backup", backupCmd(spec, args, os.Stdout))
+	case "restore":
+		return finish(spec, "backup", restoreCmd(spec, args, os.Stdout))
 	case "version":
 		fmt.Println(spec.Name, myserver.VERSION)
 		return 0

@@ -63,6 +63,7 @@ type model struct {
 	top        int  // first visible row while an entry is selected
 	detail     bool // show the selected entry in full
 	qr         bool // show a QR code of the URL
+	help       bool // the list of keys ('?')
 
 	appView  bool              // the app view ('a')
 	appSel   int               // selected row in it
@@ -285,6 +286,15 @@ func (m model) filterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.help { // any key closes it; q still quits
+		m.help = false
+		if msg.String() != "q" {
+			return m, nil
+		}
+	} else if msg.String() == "?" {
+		m.help = true
+		return m, nil
+	}
 	if m.catView {
 		if mm, cmd, done := m.catKey(msg); done {
 			return mm, cmd
@@ -531,8 +541,10 @@ func (m model) footerLines() []string {
 		keys = []key{{"↑↓", "prev/next"}, {"y", "copy URL"}, {"esc", "back"}, {"q", "quit"}}
 	case m.qr:
 		keys = []key{{"u", "close"}, {"o", "open"}, {"y", "copy URL"}, {"q", "quit"}}
+	case m.help:
+		keys = []key{{"any key", "close"}, {"q", "quit"}}
 	default:
-		keys = []key{{"o", "open"}, {"y", "copy URL"}}
+		keys = []key{{"?", "help"}, {"o", "open"}, {"y", "copy URL"}}
 		if m.srv.ManagerURL() != "" && !m.srv.ManagerAtRoot() {
 			keys = append(keys, key{"m", "files"})
 		}
@@ -731,6 +743,8 @@ func (m model) View() string {
 	var title string
 	var body []string
 	switch {
+	case m.help:
+		title, body = "Keys", m.helpLines(h)
 	case m.catView:
 		title, body = "Apps", m.catLines(h)
 	case m.appView:
@@ -808,4 +822,62 @@ func (m model) liveClients(sep string) string {
 		return ""
 	}
 	return sep + badge(fmt.Sprintf("%d live", n), cyan)
+}
+
+// helpLines lists every key, those that do nothing here marked so.
+func (m model) helpLines(h int) []string {
+	type k struct{ k, d, off string }
+	noApp, noCat, noMgr := "", "", ""
+	if m.opts.App == nil {
+		noApp = "no auto-updated app (-web-from, -app)"
+	}
+	if m.opts.Catalog == nil {
+		noCat = "no app catalogs"
+	}
+	if m.srv.ManagerURL() == "" || m.srv.ManagerAtRoot() {
+		noMgr = "the file manager is what o opens"
+	}
+	groups := []struct {
+		name string
+		keys []k
+	}{
+		{"Server", []k{
+			{"o", "open the address in the browser", ""},
+			{"y", "copy the address (to the terminal's clipboard)", ""},
+			{"u", "show the address as a QR code, for a phone", ""},
+			{"m", "open the file manager", noMgr},
+			{"r", "read-only on/off: refuse writes, removes and uploads", ""},
+			{"q, ctrl+c", "stop the server and quit", ""},
+		}},
+		{"Request log", []k{
+			{"↑↓ j k", "select a request (new ones keep coming in below)", ""},
+			{"pgup pgdn", "a page up or down (also ctrl+u, ctrl+d, space)", ""},
+			{"g, G f", "the oldest; follow the newest again", ""},
+			{"⏎", "the selected request in full", ""},
+			{"/", "filter by text (⏎ applies, esc clears)", ""},
+			{"e", "only errors", ""},
+			{"c", "clear the log and the counts", ""},
+			{"esc", "back: details, then selection, then filter", ""},
+		}},
+		{"Apps", []k{
+			{"a", "the app: versions, use one, follow updates (l), check (c), all published (p)", noApp},
+			{"i", "install or open apps from the catalogs (r refreshes)", noCat},
+		}},
+	}
+	var out []string
+	for _, g := range groups {
+		out = append(out, " "+valueStyle.Bold(true).Render(g.name))
+		for _, x := range g.keys {
+			d := valueStyle.Render(x.d)
+			if x.off != "" {
+				d = dimStyle.Render(x.d + " (" + x.off + ")")
+			}
+			out = append(out, fmt.Sprintf("   %s %s", keyStyle.Render(fmt.Sprintf("%-10s", x.k)), d))
+		}
+		out = append(out, "")
+	}
+	if len(out) > h {
+		out = out[:h]
+	}
+	return out
 }

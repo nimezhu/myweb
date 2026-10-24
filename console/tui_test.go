@@ -180,3 +180,23 @@ func TestAppRowAndKey(t *testing.T) {
 		t.Fatal("a should check now")
 	}
 }
+
+func TestHelp(t *testing.T) {
+	m := testModel(t, 40)
+	m = send(m, key("?"))
+	v := m.View()
+	if !m.help || !strings.Contains(v, "Keys") || !strings.Contains(v, "read-only on/off") || !strings.Contains(v, "no app catalogs") {
+		t.Fatalf("help not shown:\n%s", v)
+	}
+	m = send(m, key("r")) // closes help, does nothing else
+	if m.help || m.srv.ReadOnly() {
+		t.Fatal("a key in help should only close it")
+	}
+	if !strings.Contains(m.View(), "? help") {
+		t.Fatal("footer doesn't mention ?")
+	}
+	m = send(m, key("?"), key("q"))
+	if !m.quitting {
+		t.Fatal("q in help should quit")
+	}
+}

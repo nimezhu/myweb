@@ -59,7 +59,9 @@ commands:
   service      run %[1]s in the background, started at login
   config       saved defaults for the flags below
   upgrade      install the latest release from GitHub (or -check, VERSION, -rollback)
-  doctor       check the setup and say what to fix
+  doctor       check the setup and say what to fix (-fix: fix what is safe to)
+  backup       the home and data folder, with versions and trash, in one .zip;
+               restore FILE.zip puts it back
   completion   shell completion for bash, zsh and fish
   version      print the version
   help [CMD]   this help, or a command's
@@ -259,9 +261,30 @@ server listens on the network (-global).
                                 folder, port, running servers and services,
                                 installed apps, catalogs (fetched and checked)
   %[1]s doctor -offline            without asking GitHub or the catalogs
+  %[1]s doctor -fix                also fix what is safe to: make the home folder,
+                                remove old binaries left by upgrades, restart
+                                services that stopped or run an old version,
+                                install an app's missing version
 
-It changes nothing. The exit status is 1 when something is broken (✗);
-warnings (!) are things to know.
+Without -fix it changes nothing. The exit status is 1 when something is
+broken (✗); warnings (!) are things to know.
+`,
+	"backup": `the home folder and the data folder in one .zip, and back:
+
+  %[1]s backup [FILE.zip]          config, installed apps, catalogs, and the data
+                                folder with its versions, trash and share links
+                                (default name: %[1]s-backup-DATE-TIME.zip)
+  %[1]s backup -no-files           only the data folder's versions, trash and links
+  %[1]s restore FILE.zip           put it back; files that differ are kept as
+                                they are and listed
+  %[1]s restore FILE.zip -force    replace them
+  %[1]s restore FILE.zip -dry-run  say what it would do
+  %[1]s restore FILE.zip -d DIR    the data folder somewhere else
+
+The data folder of the home (-home DIR) goes back into the home it is
+restored to; another data folder goes back where it was, unless -d. The zip
+holds the token: keep it private. Symbolic links are left out. Restore
+refuses while a server runs from the home.
 `,
 	"completion": `shell completion of commands, flags, app names and versions:
 
@@ -279,10 +302,12 @@ func helpTopic(w io.Writer, spec Spec, topic string) error {
 		return nil
 	case "apps":
 		topic = "app"
+	case "restore":
+		topic = "backup"
 	}
 	t, ok := helpTopics[topic]
 	if !ok {
-		return fmt.Errorf("no help for %q; topics: app, status, share, doctor, config, service, upgrade, completion", topic)
+		return fmt.Errorf("no help for %q; topics: app, status, share, doctor, backup, config, service, upgrade, completion", topic)
 	}
 	fmt.Fprintf(w, t, spec.Name)
 	return nil

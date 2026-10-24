@@ -23,14 +23,19 @@ import (
 
 // "doctor" checks what myweb needs and says what to do about what's wrong:
 //
-//	doctor [-offline] [-home DIR]
+//	doctor [-offline] [-fix] [-home DIR]
 //
-// It changes nothing. Its exit status is 1 when something is broken.
+// It changes nothing, unless -fix: then it also does what is safe to do
+// (makes the home folder, removes what upgrades left behind, restarts
+// services, installs an app's missing version). Its exit status is 1 when
+// something is still broken.
 
 // doctor collects the results.
 type doctor struct {
 	w        io.Writer
 	problems int
+	fix      bool // -fix
+	fixable  int  // found, and -fix would fix
 }
 
 func (d *doctor) section(name string) { fmt.Fprintf(d.w, "\n%s\n", name) }
@@ -56,9 +61,30 @@ func (d *doctor) bad(hint, format string, a ...interface{}) {
 	}
 }
 
+// repair is a finding -fix can fix: what is wrong (bad, or just a warning),
+// and how fix fixes it ("did" says what it did).
+func (d *doctor) repair(bad bool, did string, fix func() error, format string, a ...interface{}) {
+	what := fmt.Sprintf(format, a...)
+	if !d.fix {
+		d.fixable++
+		if bad {
+			d.bad("doctor -fix fixes it", "%s", what)
+		} else {
+			d.warn("doctor -fix fixes it", "%s", what)
+		}
+		return
+	}
+	if err := fix(); err != nil {
+		d.bad("", "%s; could not fix it: %v", what, err)
+		return
+	}
+	fmt.Fprintf(d.w, "  ✓ %s: %s\n", what, did)
+}
+
 func doctorCmd(spec Spec, args []string, w io.Writer) error {
 	fl := newAppFlags(spec.Name, "doctor")
 	offline := fl.Bool("offline", false, "")
+	fix := fl.Bool("fix", false, "")
 	pos, err := fl.parse(args)
 	if err != nil {
 		return err
@@ -67,7 +93,7 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 		return usageError{fmt.Errorf("doctor takes no arguments")}
 	}
 	name := spec.Name
-	d := &doctor{w: w}
+	d := &doctor{w: w, fix: *fix}
 	ctx := context.Background()
 
 	// the binary
@@ -87,6 +113,15 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 		}
 		if err := canWrite(filepath.Dir(exe)); err != nil {
 			d.warn(name+" upgrade needs to run as a user who may write there (e.g. sudo)", "can't write %s, where upgrades go", tildePath(filepath.Dir(exe)))
+		}
+		if left, _ := filepath.Glob(exe + ".old.*.del"); len(left) > 0 {
+			d.repair(false, "removed", func() error {
+				var errs []error
+				for _, f := range left {
+					errs = append(errs, os.RemoveAll(f))
+				}
+				return errors.Join(errs...)
+			}, "%d old binar%s left by upgrades (%s.old.*.del)", len(left), map[bool]string{true: "y", false: "ies"}[len(left) == 1], filepath.Base(exe))
 		}
 	}
 	if !*offline {
@@ -112,7 +147,11 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 	}
 	d.section("home " + tildePath(dirs.Root))
 	if fi, err := os.Stat(dirs.Root); err != nil {
-		d.warn("", "not made yet: the first %s makes it", name)
+		if d.fix {
+			d.repair(false, "made", func() error { return os.MkdirAll(dirs.Root, 0o755) }, "not made yet")
+		} else {
+			d.warn("", "not made yet: the first %s makes it", name)
+		}
 	} else if !fi.IsDir() {
 		d.bad("move it away", "%s is not a folder", tildePath(dirs.Root))
 	} else if err := canWrite(dirs.Root); err != nil {
@@ -173,26 +212,41 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 	if len(running) == 0 {
 		d.ok("no server running")
 	}
+	real := exeErr == nil && !strings.Contains(exe, "go-build")
+	var svcs []*service
+	if real {
+		svcs = services(runtime.GOOS, exe)
+	}
+	stale := 0
 	for _, s := range running {
 		if s.Version != "" && s.Version != myserver.VERSION {
-			d.warn(name+" stop "+strconv.Itoa(s.PID)+", then start it again (a service: "+name+" upgrade restarts it)",
+			stale++
+			d.warn(name+" stop "+strconv.Itoa(s.PID)+", then start it again (a service: doctor -fix restarts it)",
 				"pid %d %s runs %s %s, not this %s", s.PID, s.address(), name, s.Version, myserver.VERSION)
 		} else {
 			d.ok("pid %d  %s  %s", s.PID, s.address(), tildePath(s.Root))
 		}
 	}
-	if exeErr == nil && !strings.Contains(exe, "go-build") {
-		for _, svc := range installedServices(runtime.GOOS, exe) {
-			switch runtime.GOOS {
-			case "linux":
-				if out, _ := runCmd("systemctl", "--user", "is-active", svc.name+".service"); out == "active" {
-					d.ok("service %s is running", svc.name)
-				} else {
-					d.warn("journalctl --user -u "+svc.name+" says why; "+name+" service status", "service %s is installed but %s", svc.name, orUnknown(out))
-				}
-			default:
-				d.ok("service %s is installed (%s service status -as %s)", svc.name, name, svc.name)
+	if stale > 0 && len(svcs) > 0 && d.fix {
+		fmt.Fprintf(d.w, "  restarting the services, so they run %s:\n", myserver.VERSION)
+		restartServices(indent{d.w}, spec, *fl.home, exe, myserver.VERSION)
+	}
+	for _, svc := range svcs {
+		switch runtime.GOOS {
+		case "linux":
+			if out, _ := runCmd("systemctl", "--user", "is-active", svc.name+".service"); out == "active" {
+				d.ok("service %s is running", svc.name)
+			} else {
+				svc := svc
+				d.repair(false, "started it (if it stops again: journalctl --user -u "+svc.name+")", func() error {
+					if out, err := runCmd("systemctl", "--user", "restart", svc.name+".service"); err != nil {
+						return fmt.Errorf("%v %s", err, out)
+					}
+					return nil
+				}, "service %s is installed but %s", svc.name, orUnknown(out))
 			}
+		default:
+			d.ok("service %s is installed (%s service status -as %s)", svc.name, name, svc.name)
 		}
 	}
 
@@ -206,8 +260,13 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 	}
 	for _, a := range apps {
 		switch {
-		case a.Current == "":
+		case a.Current == "" && (a.Key == "" || *offline):
 			d.bad(name+" app update "+a.Name+" (or remove it)", "%s: no version installed", a.Name)
+		case a.Current == "":
+			a := a
+			d.repair(true, "installed it", func() error {
+				return update(name, dirs.Apps(), &webapp.Flags{From: a.Manifest, Key: a.Key})
+			}, "%s: no version installed", a.Name)
 		case a.Key == "":
 			d.warn(name+" app remove "+a.Name+", then install it again with its key", "%s %s: installed before keys were kept, so its updates can't be checked", a.Name, a.Current)
 		case a.Pin != "":
@@ -247,12 +306,30 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 }
 
 func (d *doctor) result() error {
+	fixes := ""
+	if d.fixable > 0 {
+		fixes = fmt.Sprintf(" (doctor -fix fixes %d thing%s)", d.fixable, plural(d.fixable))
+	}
 	if d.problems > 0 {
-		fmt.Fprintf(d.w, "\n%d problem%s\n", d.problems, plural(d.problems))
+		fmt.Fprintf(d.w, "\n%d problem%s%s\n", d.problems, plural(d.problems), fixes)
 		return silentExit(1)
 	}
-	fmt.Fprintln(d.w, "\nno problems")
+	fmt.Fprintf(d.w, "\nno problems%s\n", fixes)
 	return nil
+}
+
+// indent writes under a doctor line.
+type indent struct{ w io.Writer }
+
+func (i indent) Write(b []byte) (int, error) {
+	for _, l := range strings.SplitAfter(string(b), "\n") {
+		if l != "" && l != "\n" {
+			fmt.Fprint(i.w, "      "+l)
+		} else {
+			fmt.Fprint(i.w, l)
+		}
+	}
+	return len(b), nil
 }
 
 func plural(n int) string {
