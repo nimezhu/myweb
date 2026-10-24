@@ -26,6 +26,7 @@ type instance struct {
 	Version string      `json:"version,omitempty"`
 	Apps    []servedApp `json:"apps,omitempty"` // other apps, on ports of their own
 	Args    []string    `json:"args,omitempty"` // its command line, after the program
+	Cert    string      `json:"cert,omitempty"` // HTTPS: its certificate's SHA-256 (hex)
 	Started time.Time   `json:"started"`
 }
 
@@ -52,8 +53,7 @@ func running(file string) *instance {
 		return nil
 	}
 	// the port may have been reused since: ask the server who it is
-	c := http.Client{Timeout: time.Second}
-	resp, err := c.Get("http://127.0.0.1:" + strconv.Itoa(in.Port) + "/cmd/status")
+	resp, err := in.client(time.Second).Get(in.base() + "/cmd/status")
 	if err != nil {
 		return nil
 	}
@@ -65,6 +65,24 @@ func running(file string) *instance {
 		return nil
 	}
 	return &in
+}
+
+// base is where this machine reaches the server: http(s)://127.0.0.1:PORT.
+func (in *instance) base() string {
+	scheme := "http"
+	if in.Cert != "" {
+		scheme = "https"
+	}
+	return scheme + "://127.0.0.1:" + strconv.Itoa(in.Port)
+}
+
+// client talks to the server; over HTTPS, only with its certificate.
+func (in *instance) client(timeout time.Duration) *http.Client {
+	c := &http.Client{Timeout: timeout}
+	if in.Cert != "" {
+		c.Transport = &http.Transport{TLSClientConfig: pinnedTLS(in.Cert)}
+	}
+	return c
 }
 
 func newInstanceID() string {

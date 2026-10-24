@@ -5,6 +5,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -32,6 +33,10 @@ type Spec struct {
 	// program's folder and the data folder once flags are parsed, and may add
 	// console rows. The single-token flags (-auth, -token) are not offered then.
 	Access func(dirs home.Dirs, root string) (myserver.Access, []console.Row, error)
+
+	// NoServers: the program runs no servers (myweb-publish), so "upgrade"
+	// has no services or servers to restart.
+	NoServers bool
 }
 
 // serveFlags are serve's command-line options.
@@ -41,7 +46,8 @@ type serveFlags struct {
 	homeDir, directory, web           *string
 	noManager, noTUI, noOpen, newCopy *bool
 	noUpgradeCheck, otherApps, noDAV  *bool
-	trustHTML                         *bool
+	trustHTML, https, tunnel          *bool
+	certFile, keyFile                 *string
 	auth                              *bool   // nil when spec.Access is set
 	token                             *string // nil when spec.Access is set
 	versions, trashDays               *int
@@ -59,6 +65,10 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f := &serveFlags{}
 	f.port = fs.Int("p", 8433, "port to serve on (next free port is used if taken)")
 	f.global = fs.Bool("global", false, "listen on all interfaces (visible to your network)")
+	f.https = fs.Bool("https", false, "serve HTTPS, with a certificate made for this machine (kept in <home>/tls;\nbrowsers warn until you trust it)")
+	f.certFile = fs.String("cert", "", "serve HTTPS with this certificate (PEM; e.g. from mkcert or tailscale cert)")
+	f.keyFile = fs.String("key", "", "the private key of -cert (PEM)")
+	f.tunnel = fs.Bool("tunnel", false, "also reach it from anywhere at an https://….trycloudflare.com address (needs\ncloudflared; turns on -auth)")
 	f.readOnly = fs.Bool("r", false, "read only (can be toggled in the TUI with 'r')")
 	f.homeDir = fs.String("home", "", fmt.Sprintf("%s's own folder, holding data/ and apps/ (default $%s_HOME, or ~/.%s)", name, env, name))
 	f.directory = fs.String("d", "", "the folder of data files to serve (default <home>/data;\n-d . for the current folder)")
@@ -138,6 +148,10 @@ func Serve(spec Spec) int {
 	}
 	if *web != "" && (webFlags.From != "" || webFlags.App != "") {
 		return fail(fmt.Errorf("use -web, -web-from or -app, not several"))
+	}
+
+	if (*f.certFile == "") != (*f.keyFile == "") {
+		return fail(fmt.Errorf("-cert and -key go together"))
 	}
 
 	if webFlags.List {
@@ -235,8 +249,19 @@ func Serve(spec Spec) int {
 	tok := ""
 	if token != nil {
 		tok = *token
-		if *auth && tok == "" {
+		if (*auth || *f.tunnel) && tok == "" { // a tunnel: anyone may find the address
 			tok = myserver.NewToken()
+		}
+	}
+	var tlsConf *tls.Config
+	certSum, certMade := "", madeTLS{}
+	var trustCert []byte
+	if *f.https || *f.certFile != "" {
+		if tlsConf, certSum, certMade, err = loadTLS(dirs, expandHome(*f.certFile), expandHome(*f.keyFile), *global); err != nil {
+			return fail(fmt.Errorf("https: %w", err))
+		}
+		if *f.certFile == "" {
+			trustCert, _ = os.ReadFile(caFile(dirs))
 		}
 	}
 
@@ -272,6 +297,9 @@ func Serve(spec Spec) int {
 		Manager:   managerFS,
 		Port:      *port,
 		Global:    *global,
+		Public:    *f.tunnel,
+		TLS:       tlsConf,
+		TrustCert: trustCert,
 		ReadOnly:  *readOnly,
 		NoDAV:     *f.noDAV,
 		TrustHTML: *f.trustHTML,
@@ -290,17 +318,54 @@ func Serve(spec Spec) int {
 	if len(f.cors) > 0 {
 		con.AddRow("CORS", "+ "+f.cors.String())
 	}
-	if u := srv.DAVURL(); u != "" && spec.Access == nil {
-		if tok != "" {
-			u += "  (password: the token)"
+	switch {
+	case *f.certFile != "":
+		con.AddRow("HTTPS", tildePath(*f.certFile))
+	case tlsConf != nil:
+		trusted := trustedHere(dirs)
+		if trusted {
+			con.AddRow("HTTPS", "signed by this home's CA, which this machine trusts")
+		} else {
+			con.AddRow("HTTPS", "signed by this home's CA; SHA-256 "+fingerprint(certSum))
 		}
-		con.AddRow("WebDAV", u)
+		if *global {
+			con.AddRowFunc("Trust it", func() string {
+				u := srv.URL()
+				if lan := srv.LANURLs(); len(lan) > 0 {
+					u = lan[0]
+				}
+				return strings.TrimSuffix(u, "/") + myserver.CertPath + " on other devices"
+			})
+		}
+		switch {
+		case certMade.ca:
+			con.Note("https: made a CA for this home's certificates (%s): %s tls trust makes this machine's browsers trust it; other devices open %s", tildePath(caFile(dirs)), name, myserver.CertPath)
+		case !trusted:
+			con.Note("https: browsers here warn until you run %s tls trust (or check the SHA-256 shown)", name)
+		}
+	}
+	if *f.tunnel {
+		con.AddRowFunc("Tunnel", func() string {
+			if u := srv.PublicURL(); u != "" {
+				return u
+			}
+			return "starting…"
+		})
+	}
+	if srv.DAVURL() != "" && spec.Access == nil {
+		con.AddRowFunc("WebDAV", func() string { // the port is known once started
+			if tok != "" {
+				return srv.DAVURL() + "  (password: the token)"
+			}
+			return srv.DAVURL()
+		})
 	}
 	apps := &appSet{dirs: dirs, root: root, srv: srv, main: app, flags: *webFlags, ctx: context.Background(),
 		on: *f.otherApps && spec.Access == nil}
 	plugins.RegisterFileOps(srv)
 	registerCatalogCmd(srv, spec, apps)
 	registerAppCmd(srv, apps)
+	registerAppsCmd(srv, spec, apps)
 	if spec.Access == nil {
 		con.SetCatalog(catalogUI{spec, apps})
 	}
@@ -341,11 +406,24 @@ func Serve(spec Spec) int {
 	if app != nil {
 		app.Start(context.Background())
 	}
+	if *f.tunnel {
+		tun, err := startTunnel(srv.URL(), func(u string) {
+			srv.SetPublicURL(u)
+			if u != "" {
+				log.Printf("tunnel: %s (sign in with the token: %s/?token=…)", u, u)
+			}
+		})
+		if err != nil {
+			srv.Shutdown(context.Background())
+			return fail(err)
+		}
+		defer tun.stop()
+	}
 	if srv.Port() != *port {
 		fmt.Fprintf(os.Stderr, "port %d is busy, using %d\n", *port, srv.Port())
 	}
 	self := &instance{ID: instanceID, PID: os.Getpid(), Port: srv.Port(), Root: root, Source: source,
-		Version: myserver.VERSION, Args: os.Args[1:], Started: time.Now().UTC()}
+		Version: myserver.VERSION, Args: os.Args[1:], Started: time.Now().UTC(), Cert: certSum}
 	if srv.ServesRoot() {
 		self.URL = srv.LoginURL()
 	}

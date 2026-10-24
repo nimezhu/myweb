@@ -2,6 +2,7 @@ package myserver
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
@@ -96,8 +97,17 @@ type Config struct {
 	// AppServer, if set, enables /io/<app> pages that load the app's
 	// main.js and style.css from this base URL.
 	AppServer string
-	Port      int      // preferred port; the next free one is used if taken
-	Global    bool     // listen on all interfaces instead of 127.0.0.1
+	Port      int  // preferred port; the next free one is used if taken
+	Global    bool // listen on all interfaces instead of 127.0.0.1
+	// Public: reachable from beyond this machine although it listens on
+	// 127.0.0.1 (a tunnel): reads need the token too, as with Global, and
+	// any host name is answered (see checkHost)
+	Public bool
+	// TLS, if set, serves HTTPS (the apps' ports too)
+	TLS *tls.Config
+	// TrustCert is the CA certificate (PEM) that signed TLS's, offered at
+	// /_myweb/cert for other devices to trust
+	TrustCert []byte
 	ReadOnly  bool     // initial read-only state (can be toggled at runtime)
 	NoDAV     bool     // don't serve the data folder over WebDAV at /dav/
 	TrustHTML bool     // let HTML files of the data folder run as the server (not while apps are limited)
@@ -155,11 +165,12 @@ type RequestEvent struct {
 
 // Server is a running myweb file server.
 type Server struct {
-	cfg      Config
-	srv      *http.Server
-	ln       net.Listener
-	port     int
-	readOnly atomic.Bool
+	cfg       Config
+	srv       *http.Server
+	ln        net.Listener
+	port      int
+	readOnly  atomic.Bool
+	publicURL atomic.Value // string: see SetPublicURL
 
 	cmds   cmdRegistry
 	locks  pathLocks
@@ -262,6 +273,9 @@ func (s *Server) routes() {
 			"instance":  s.cfg.Instance,
 		})
 	})
+	if len(s.cfg.TrustCert) > 0 {
+		m.HandleFunc(CertPath, s.serveCert) // cert.go
+	}
 	m.HandleFunc("/events", s.serveEvents)
 	m.HandleFunc("/echo", s.echo)
 	m.HandleFunc("/echotest", echoHome)
@@ -324,7 +338,7 @@ func (s *Server) writable(h http.HandlerFunc) http.Handler {
 func (s *Server) Handler() http.Handler { return s.handler() }
 
 func (s *Server) handler() http.Handler {
-	return recoverer(s.cors.Handler(s.logRequests(s.guardWrites(s.login(s.cfg.Mux)))))
+	return recoverer(s.checkHost(s.cors.Handler(s.logRequests(s.guardWrites(s.login(s.cfg.Mux))))))
 }
 
 func (s *Server) host() string {
@@ -355,6 +369,9 @@ func (s *Server) Start() error {
 	ln, port, err := s.listen()
 	if err != nil {
 		return err
+	}
+	if s.cfg.TLS != nil {
+		ln = tls.NewListener(ln, s.cfg.TLS)
 	}
 	s.ln = ln
 	s.port = port
@@ -401,7 +418,29 @@ func (s *Server) ReadOnly() bool      { return s.readOnly.Load() }
 func (s *Server) Mux() *http.ServeMux { return s.cfg.Mux }
 func (s *Server) URL() string         { return s.urlFor("127.0.0.1") }
 func (s *Server) urlFor(h string) string {
-	return "http://" + net.JoinHostPort(h, strconv.Itoa(s.port))
+	return s.Scheme() + "://" + net.JoinHostPort(h, strconv.Itoa(s.port))
+}
+
+// Scheme is "https" when the server serves TLS, else "http".
+func (s *Server) Scheme() string {
+	if s.cfg.TLS != nil {
+		return "https"
+	}
+	return "http"
+}
+
+// exposed: others than this machine's users may reach it (-global, or a
+// tunnel), so reading needs the token too.
+func (s *Server) exposed() bool { return s.cfg.Global || s.cfg.Public }
+
+// SetPublicURL sets the address from outside (a tunnel's), used for share
+// links; "" when it goes away.
+func (s *Server) SetPublicURL(u string) { s.publicURL.Store(strings.TrimSuffix(u, "/")) }
+
+// PublicURL is the address from outside set by SetPublicURL, or "".
+func (s *Server) PublicURL() string {
+	u, _ := s.publicURL.Load().(string)
+	return u
 }
 
 // LANURLs lists URLs reachable from other machines (only when Global).

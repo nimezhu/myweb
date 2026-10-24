@@ -13,8 +13,12 @@ package myserver
 // not seen, up to its quota (DefaultShareMaxMB and DefaultShareMaxFiles
 // unless given), so a link can't fill the disk before it expires. A link reaches only its folder, as an installed app does (see
 // appaccess.go): not .myweb, and not where a symbolic link in it leads
-// elsewhere. Links are kept in .myweb/shares.json by the SHA-256 of their
-// secret, so the link itself is shown only when it is made.
+// elsewhere. Links are kept in .myweb/shares.json, with their secret so the
+// person who made one can copy it again.
+//
+// A link may have a password: then its pages ask for it once per browser
+// (only a salted PBKDF2 hash of it is kept; wrong guesses are slowed down).
+// A link to read may also end after so many downloads (files and zips).
 //
 // Commands (with the token, not from apps):
 //
@@ -25,6 +29,8 @@ package myserver
 import (
 	"archive/zip"
 	"context"
+	"crypto/hmac"
+	"crypto/pbkdf2"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
@@ -48,8 +54,8 @@ import (
 
 // Share is one share link.
 type Share struct {
-	ID      string    `json:"id"`   // names it in lists, to revoke it
-	Hash    string    `json:"hash"` // SHA-256 of its secret, hex
+	ID      string    `json:"id"`             // names it in lists, to revoke it
+	Hash    string    `json:"hash,omitempty"` // SHA-256 of its secret, hex
 	Path    string    `json:"path"`
 	Upload  bool      `json:"upload,omitempty"` // a drop box
 	Created time.Time `json:"created"`
@@ -61,6 +67,25 @@ type Share struct {
 	MaxFiles int   `json:"maxFiles,omitempty"`
 	Bytes    int64 `json:"bytes,omitempty"`
 	Files    int   `json:"files,omitempty"`
+
+	// a link to read: how many files and zips were downloaded, and after how
+	// many it ends (0: no limit)
+	Downloads    int `json:"downloads,omitempty"`
+	MaxDownloads int `json:"maxDownloads,omitempty"`
+
+	Secret   string `json:"secret,omitempty"`   // to show the link again
+	PassSalt string `json:"passSalt,omitempty"` // a password: hex salt and PBKDF2-SHA256
+	PassHash string `json:"passHash,omitempty"`
+}
+
+// usedUp reports whether a link has had its downloads.
+func (sh *Share) usedUp() bool { return sh.MaxDownloads > 0 && sh.Downloads >= sh.MaxDownloads }
+
+const sharePassIter = 210_000
+
+func sharePassHash(pw string, salt []byte) string {
+	k, _ := pbkdf2.Key(sha256.New, pw, salt, sharePassIter, 32)
+	return hex.EncodeToString(k)
 }
 
 // The quota of an upload link when none is given.
@@ -76,6 +101,9 @@ type ShareOptions struct {
 	MaxMB    int64 // an upload link's quota
 	MaxFiles int
 	By       string
+
+	Password     string // "": none
+	MaxDownloads int    // a link to read: ends after so many downloads (0: no limit)
 }
 
 // MaxShareDays is the longest a share link may last.
@@ -140,8 +168,11 @@ func (s *Server) CreateShare(p string, o ShareOptions) (Share, string, error) {
 	if o.MaxFiles == 0 {
 		o.MaxFiles = DefaultShareMaxFiles
 	}
-	if o.MaxMB < 0 || o.MaxFiles < 0 {
-		return Share{}, "", errors.New("a quota can't be negative")
+	if o.MaxMB < 0 || o.MaxFiles < 0 || o.MaxDownloads < 0 {
+		return Share{}, "", errors.New("a limit can't be negative")
+	}
+	if o.Password != "" && len([]rune(o.Password)) < 4 {
+		return Share{}, "", errors.New("a password needs at least 4 characters")
 	}
 	p = path.Clean("/" + p)
 	if IsReserved(p) {
@@ -167,6 +198,14 @@ func (s *Server) CreateShare(p string, o ShareOptions) (Share, string, error) {
 		Created: now, Expires: now.Add(time.Duration(days) * 24 * time.Hour), By: o.By}
 	if upload {
 		sh.MaxBytes, sh.MaxFiles = o.MaxMB<<20, o.MaxFiles
+	} else {
+		sh.MaxDownloads = o.MaxDownloads
+	}
+	sh.Secret = secret
+	if o.Password != "" {
+		salt := make([]byte, 16)
+		rand.Read(salt)
+		sh.PassSalt, sh.PassHash = hex.EncodeToString(salt), sharePassHash(o.Password, salt)
 	}
 	sharesMu.Lock()
 	defer sharesMu.Unlock()
@@ -204,7 +243,9 @@ func (s *Server) RevokeShare(id string) error {
 // reach (with -global), else this machine's.
 func (s *Server) ShareURL(secret string) string {
 	base := s.URL()
-	if lan := s.LANURLs(); len(lan) > 0 {
+	if u := s.PublicURL(); u != "" { // a tunnel
+		base = u
+	} else if lan := s.LANURLs(); len(lan) > 0 {
 		base = strings.TrimSuffix(lan[0], "/")
 	}
 	return base + "/_s/" + secret + "/"
@@ -263,6 +304,13 @@ func (s *Server) handleShare(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, secret+"/", http.StatusMovedPermanently)
 		return
 	}
+	if sh.usedUp() {
+		sharePage(w, http.StatusGone, "Link used up", "<p>This link has had all its downloads.</p>")
+		return
+	}
+	if sh.PassHash != "" && !s.shareUnlocked(w, r, sh, secret) {
+		return
+	}
 	u := shareUser(sh)
 	if sh.Upload {
 		s.shareUpload(w, r, sh, u)
@@ -299,6 +347,9 @@ func (s *Server) handleShare(w http.ResponseWriter, r *http.Request) {
 		defer f.Close()
 		// a shared page must not run as this server
 		h.Set("Content-Security-Policy", "sandbox")
+		if rg := r.Header.Get("Range"); r.Method == http.MethodGet && (rg == "" || strings.HasPrefix(rg, "bytes=0-")) {
+			s.countShareDownload(sh.ID) // not each piece of one download
+		}
 		http.ServeContent(w, r, fi.Name(), fi.ModTime(), f)
 		return
 	}
@@ -307,6 +358,9 @@ func (s *Server) handleShare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, ok := r.URL.Query()["zip"]; ok {
+		if r.Method == http.MethodGet {
+			s.countShareDownload(sh.ID)
+		}
 		s.shareZip(w, r, u, p)
 		return
 	}
@@ -503,8 +557,87 @@ func (s *Server) shareByID(id string) *Share {
 	return nil
 }
 
-// countShareUpload adds a received file to its link's total.
-func (s *Server) countShareUpload(id string, size int64) {
+// shareUnlocked reports whether r's browser gave the link's password; if
+// not, it answers: the form, or the password just sent checked.
+func (s *Server) shareUnlocked(w http.ResponseWriter, r *http.Request, sh *Share, secret string) bool {
+	key := shareKey(sh)
+	if c, err := r.Cookie(shareCookie); err == nil && hmac.Equal([]byte(c.Value), []byte(key)) {
+		return true
+	}
+	form := `<form method="post" action="?unlock"><p><input type="password" name="password" autofocus required aria-label="Password" placeholder="Password"></p><p><button>Open</button></p></form>`
+	if _, ok := r.URL.Query()["unlock"]; !ok || r.Method != http.MethodPost {
+		sharePage(w, http.StatusUnauthorized, "Password", "<p>This link needs a password.</p>"+form)
+		return false
+	}
+	if !shareTries.allow(sh.ID) {
+		sharePage(w, http.StatusTooManyRequests, "Password", "<p>Too many wrong passwords. Try again in a few minutes.</p>")
+		return false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, 4096)
+	salt, _ := hex.DecodeString(sh.PassSalt)
+	if r.ParseForm() != nil || !hmac.Equal([]byte(sharePassHash(r.PostForm.Get("password"), salt)), []byte(sh.PassHash)) {
+		shareTries.fail(sh.ID)
+		log.Printf("share %s: wrong password", sh.ID)
+		sharePage(w, http.StatusUnauthorized, "Password", "<p>That is not the password.</p>"+form)
+		return false
+	}
+	http.SetCookie(w, &http.Cookie{Name: shareCookie, Value: key, Path: "/_s/" + secret + "/",
+		HttpOnly: true, Secure: s.cfg.TLS != nil, SameSite: http.SameSiteLaxMode, Expires: sh.Expires})
+	http.Redirect(w, r, r.URL.Path, http.StatusSeeOther)
+	return false
+}
+
+const shareCookie = "myweb_share"
+
+// shareKey is what a browser that gave the password keeps: it can't be
+// made without the password's hash, which never leaves the server.
+func shareKey(sh *Share) string {
+	k, _ := hex.DecodeString(sh.PassHash)
+	m := hmac.New(sha256.New, k)
+	m.Write([]byte("unlock " + sh.ID))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// shareTries limits wrong passwords: 10 per link per 10 minutes.
+var shareTries = &tries{max: 10, window: 10 * time.Minute, fails: map[string][]time.Time{}}
+
+type tries struct {
+	mu     sync.Mutex
+	max    int
+	window time.Duration
+	fails  map[string][]time.Time
+}
+
+func (t *tries) recent(id string) []time.Time {
+	var keep []time.Time
+	for _, at := range t.fails[id] {
+		if time.Since(at) < t.window {
+			keep = append(keep, at)
+		}
+	}
+	t.fails[id] = keep
+	return keep
+}
+
+func (t *tries) allow(id string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.recent(id)) < t.max
+}
+
+func (t *tries) fail(id string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.fails[id] = append(t.recent(id), time.Now())
+}
+
+// countShareDownload adds a download to its link's count.
+func (s *Server) countShareDownload(id string) {
+	s.updateShare(id, func(sh *Share) { sh.Downloads++ })
+}
+
+// updateShare changes the link id with f, and saves it.
+func (s *Server) updateShare(id string, f func(*Share)) {
 	sharesMu.Lock()
 	defer sharesMu.Unlock()
 	list, err := s.loadShares()
@@ -514,13 +647,20 @@ func (s *Server) countShareUpload(id string, size int64) {
 	}
 	for i := range list {
 		if list[i].ID == id {
-			list[i].Bytes += size
-			list[i].Files++
+			f(&list[i])
 		}
 	}
 	if err := s.saveShares(list); err != nil {
 		log.Printf("shares: %v", err)
 	}
+}
+
+// countShareUpload adds a received file to its link's total.
+func (s *Server) countShareUpload(id string, size int64) {
+	s.updateShare(id, func(sh *Share) {
+		sh.Bytes += size
+		sh.Files++
+	})
 }
 
 func (sh *Share) byName() string {
@@ -582,11 +722,13 @@ func (s *Server) registerShareCmds() {
 			return nil, err
 		}
 		var p struct {
-			Path     string `json:"path"`
-			Upload   bool   `json:"upload"`
-			Days     int    `json:"days"`
-			MaxMB    int64  `json:"maxMB"`
-			MaxFiles int    `json:"maxFiles"`
+			Path         string `json:"path"`
+			Upload       bool   `json:"upload"`
+			Days         int    `json:"days"`
+			MaxMB        int64  `json:"maxMB"`
+			MaxFiles     int    `json:"maxFiles"`
+			Password     string `json:"password"`
+			MaxDownloads int    `json:"maxDownloads"`
 		}
 		if err := req.Bind(&p); err != nil {
 			return nil, err
@@ -598,13 +740,15 @@ func (s *Server) registerShareCmds() {
 		if !req.Can(act, p.Path) {
 			return nil, Errorf(http.StatusForbidden, "no %s permission for %s", act, path.Clean("/"+p.Path))
 		}
-		sh, secret, err := s.CreateShare(p.Path, ShareOptions{Upload: p.Upload, Days: p.Days, MaxMB: p.MaxMB, MaxFiles: p.MaxFiles, By: userName(req.User)})
+		sh, secret, err := s.CreateShare(p.Path, ShareOptions{Upload: p.Upload, Days: p.Days, MaxMB: p.MaxMB, MaxFiles: p.MaxFiles, By: userName(req.User),
+			Password: p.Password, MaxDownloads: p.MaxDownloads})
 		if err != nil {
 			return nil, Errorf(http.StatusBadRequest, "%v", err)
 		}
 		return map[string]interface{}{"id": sh.ID, "url": s.ShareURL(secret), "path": sh.Path,
-			"upload": sh.Upload, "expires": sh.Expires, "maxBytes": sh.MaxBytes, "maxFiles": sh.MaxFiles, "local": !s.Global()}, nil
-	}, Describe(`make a link that opens a folder or file without the token: {"path":"/photos","upload":false,"days":7}; upload: a drop box for files, taking up to maxMB (default 1024) and maxFiles (500)`))
+			"upload": sh.Upload, "expires": sh.Expires, "maxBytes": sh.MaxBytes, "maxFiles": sh.MaxFiles,
+			"maxDownloads": sh.MaxDownloads, "password": sh.PassHash != "", "local": !s.exposed()}, nil
+	}, Describe(`make a link that opens a folder or file without the token: {"path":"/photos","upload":false,"days":7,"password":"","maxDownloads":0}; upload: a drop box for files, taking up to maxMB (default 1024) and maxFiles (500)`))
 	s.RegisterCmd("shares", func(ctx context.Context, req *CmdRequest) (interface{}, error) {
 		if err := notApp(req); err != nil {
 			return nil, err
@@ -613,15 +757,26 @@ func (s *Server) registerShareCmds() {
 		if err != nil {
 			return nil, err
 		}
-		out := []Share{}
+		type view struct {
+			Share
+			URL      string `json:"url,omitempty"` // for whoever made it
+			Password bool   `json:"password,omitempty"`
+		}
+		out := []view{}
 		for _, sh := range list {
-			if s.cfg.Access == nil || sh.By == userName(req.User) || req.Can(ActAdmin, "/") {
-				sh.Hash = ""
-				out = append(out, sh)
+			mine := s.cfg.Access == nil || sh.By == userName(req.User)
+			if !mine && !req.Can(ActAdmin, "/") {
+				continue
 			}
+			v := view{Share: sh, Password: sh.PassHash != ""}
+			if mine && sh.Secret != "" {
+				v.URL = s.ShareURL(sh.Secret)
+			}
+			v.Hash, v.Secret, v.PassSalt, v.PassHash = "", "", "", ""
+			out = append(out, v)
 		}
 		return out, nil
-	}, Describe("the share links (their secrets are only shown when made)"))
+	}, Describe("the share links; each one's url for whoever made it"))
 	s.RegisterCmd("shareRevoke", func(ctx context.Context, req *CmdRequest) (interface{}, error) {
 		if err := notApp(req); err != nil {
 			return nil, err

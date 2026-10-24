@@ -76,7 +76,7 @@ func (s *Server) authed(h http.Handler) http.Handler {
 // authedReads protects read endpoints when the server is network-visible,
 // and always when multi-user.
 func (s *Server) authedReads(h http.Handler) http.Handler {
-	if !s.cfg.Global && s.cfg.Access == nil {
+	if !s.exposed() && s.cfg.Access == nil {
 		return h
 	}
 	return s.authed(h)
@@ -105,6 +105,7 @@ func (s *Server) login(next http.Handler) http.Handler {
 			Value:    t,
 			Path:     "/",
 			HttpOnly: true,
+			Secure:   s.cfg.TLS != nil,
 			SameSite: http.SameSiteStrictMode,
 		})
 		q.Del("token")

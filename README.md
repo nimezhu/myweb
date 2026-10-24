@@ -98,6 +98,8 @@ servers keep the old version until restarted. A running server tells, at most on
 release is out; `-no-upgrade-check` (or `myweb config set no-upgrade-check
 true`) turns that off. A binary in a folder you can't write to (e.g.
 `/usr/local/bin`) is upgraded with the rights to write there.
+`myweb-team upgrade` and `myweb-publish upgrade` do the same for those
+tools, from the same releases (from 0.0.4 on; `version` prints theirs).
 
 ## Options
 
@@ -120,6 +122,9 @@ true`) turns that off. A binary in a folder you can't write to (e.g.
 | `-auth` | | require an access token for writes and commands |
 | `-token T` | `$MYWEB_TOKEN` | the token to use (implies `-auth`); otherwise a random one per start |
 | `-cors ORIGIN` | `$MYWEB_CORS` | extra browser origins allowed to call the API; repeat or comma-separate |
+| `-https` | | serve HTTPS with a certificate made for this machine (see [HTTPS](#https-and-tunnels)) |
+| `-cert FILE`, `-key FILE` | | serve HTTPS with your own certificate |
+| `-tunnel` | | also reach it from anywhere through a Cloudflare quick tunnel (turns on `-auth`) |
 | `-versions N` | `20` | previous versions kept per file on overwrite (`0`: off) |
 | `-trash-days N` | `30` | days deleted files stay in the trash (`0`: delete immediately) |
 | `-upload-max MIB` | `100` | largest file accepted by an upload |
@@ -161,10 +166,20 @@ folders by dropping them on the list, make folders, rename, move files by
 dragging them onto a folder (or a folder in the path above), tick several to
 move or delete them at once (a folder with everything in it), browse and
 restore previous versions, and restore files from the trash. Images show a
-thumbnail. Download a folder, or the
+thumbnail. Text files (Markdown, CSV, JSON, code) can be edited in their
+preview: a save keeps the old content as a version, and if someone changed
+the file meanwhile it asks before replacing their change. Files whose name
+starts with a dot (`.DS_Store`, the `._name` files macOS leaves over WebDAV)
+are hidden unless **hidden files** is ticked. Download a folder, or the
 files and folders you tick, as one `.zip`, and extract a `.zip` into a new
 folder next to it. It updates live as files
 change, and lists and runs the plugin commands.
+
+**Installed apps** lists every installed app with its version, the folders
+it may use and where this server serves it; there you open one, check it
+for updates, allow it a folder (read only, or read and write) or take one
+back, and remove it, as `myweb app …` does in a terminal. Changes are for
+this server's own pages (and, on myweb-team, admins).
 
 ## Install the app from a distribution server
 
@@ -331,8 +346,8 @@ turns it off). Connect to it from:
 - **macOS Finder:** Go › Connect to Server, `http://127.0.0.1:8433/dav/`
 - **Linux:** Files › Other Locations, `dav://127.0.0.1:8433/dav/`, or `davfs2`
 - **Windows Explorer:** Map network drive, `http://127.0.0.1:8433/dav/`
-  (Windows sends a password only over HTTPS, so with a token use HTTPS or a
-  WebDAV app)
+  (Windows sends a password only over HTTPS, so with a token use `-https`
+  with a certificate Windows trusts, or a WebDAV app)
 - **rclone, Cyberduck, phone file apps:** a WebDAV remote at that address
 
 With a token, the password is the token (any user name). Reading needs no
@@ -356,21 +371,75 @@ year) or you revoke it:
 myweb share /photos                # browse it, or download it all as a .zip
 myweb share ~/data/report.pdf      # a file on disk inside the data folder works too
 myweb share /inbox -upload         # a drop box: people send files, can't see any
-myweb share list                   # ID, path, kind, expiry
+myweb share /report.pdf -password  # asks for a password before opening (prompted)
+myweb share /data.zip -max-downloads 3   # ends after 3 downloads
+myweb share list                   # ID, path, kind, expiry, downloads / what it received
+myweb share url 3f9c1e07ab         # the link again
 myweb share revoke 3f9c1e07ab
 ```
 
 In the file manager, **share** on a row fills in the **Share links** panel,
-which also lists and revokes them. A link is shown once, when it is made:
-myweb keeps only its SHA-256 (in `.myweb/shares.json`), and keeps it out of
-the request log. A link reaches only its folder, never `.myweb` or where a
+which also lists them, copies them again and revokes them. Links are kept in
+`.myweb/shares.json` (with their secret, so whoever made one can copy it
+again; on myweb-team others, admins included, can't) and out of the request
+log. A password is kept only as a salted PBKDF2 hash; a browser that gives it
+gets a cookie for that link only, and after 10 wrong passwords in 10 minutes a
+link refuses more for a while. A link reaches only its folder, never `.myweb` or where a
 symbolic link inside leads elsewhere; shared HTML runs in a sandbox; an upload
 never replaces a file (it becomes `name (1).ext`), and a drop box takes at
 most 1024 MB and 500 files in all (`-max-mb N`, `-max-files N`; `share list`
-shows what it has taken). Other machines can open a
-link only when the server listens on the network (`-global`, or a tunnel).
+shows what it has taken). Other machines can open a link only when the
+server listens on the network (`-global`) or through `-tunnel`, whose
+address links then use.
 Links are at `/_s/<secret>/`; the commands are `/cmd/shareCreate`, `/cmd/shares`
 and `/cmd/shareRevoke`, which apps may not use.
+
+## HTTPS and tunnels
+
+On your own machine plain HTTP is fine. On a network, the token, sign-in
+links, share links and WebDAV passwords would travel in clear text, so serve
+HTTPS:
+
+```sh
+myweb -global -https -auth               # a certificate made for this machine
+myweb -global -cert c.pem -key k.pem     # yours: mkcert, `tailscale cert`, a CA
+```
+
+`-https` makes a certificate for `localhost`, `127.0.0.1` and, with
+`-global`, this machine's name and network addresses, and makes a new one
+before it ends or when the addresses change. It is signed by a small CA of
+myweb's own, made once and kept ten years in `~/.myweb/tls/`, so you trust
+that once per device and browsers stop warning:
+
+```sh
+myweb tls            # the CA, its SHA-256, whether this machine trusts it
+myweb tls trust      # this machine trusts it (asks for your password / sudo)
+myweb tls untrust    # and no longer
+```
+
+On other devices (phones, other computers) open
+`https://<this machine>:PORT/_myweb/cert` (the terminal UI shows it), check
+the SHA-256 against `myweb tls`, and follow the steps there for macOS,
+Windows, iPhone, Android and Firefox. Windows needs it for WebDAV over HTTPS.
+The CA can sign only local names (`localhost`, `.local`, `.lan`, `.internal`,
+`home.arpa` and this machine's name), so even its key can't stand in for a
+website; keep `~/.myweb/tls` private all the same. Until a device trusts it,
+check that the SHA-256 the browser shows matches the one myweb prints.
+`myweb status`, `stop`, `share` and the other commands talk to an HTTPS
+server by its certificate's fingerprint.
+
+`-tunnel` also makes the server reachable from anywhere, through a
+[Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/)
+(install `cloudflared`; no account needed). The terminal UI and the log show
+its `https://….trycloudflare.com` address, which changes every start and
+ends with the server. The token is always on then, and reading needs it too;
+share links use the tunnel's address. Only the main port is tunnelled: while
+an app runs at `/`, the file manager through the tunnel is limited to the
+app's folders, since it is the same site as the app there.
+
+Without `-global` or `-tunnel`, myweb answers only requests addressed to
+`localhost` or `127.0.0.1`, so a web page can't reach it by pointing its own
+name at `127.0.0.1` (DNS rebinding).
 
 ## Backup and restore
 
@@ -418,9 +487,10 @@ myweb-team serve -global                                          # same flags a
   command). `user reset` replaces a link,
   `user remove` revokes it. The running server picks up changes within a second,
   also for connections already open. Requests are logged with the user's name.
-- **HTTPS:** over a network, links and cookies travel in clear text unless HTTPS
-  is in front, e.g. [Caddy](https://caddyserver.com) as a reverse proxy, or a
-  private network such as Tailscale.
+- **HTTPS:** over a network, links and cookies travel in clear text unless
+  you serve HTTPS: `myweb-team serve -global -https` (or `-cert`/`-key`, see
+  [HTTPS](#https-and-tunnels)), a reverse proxy such as
+  [Caddy](https://caddyserver.com), or a private network such as Tailscale.
 
 ## Folders
 
@@ -523,7 +593,10 @@ is a hard link to the replaced file, so it costs no space until the file changes
 
 ## Access and security
 
-- **Local by default.** Only `127.0.0.1` can connect unless `-global` is given.
+- **Local by default.** Only `127.0.0.1` can connect unless `-global` is given,
+  and only requests addressed to `localhost` or `127.0.0.1` are answered
+  (against DNS rebinding). `-https` encrypts, `-tunnel` reaches it from
+  outside with the token always on (see [HTTPS](#https-and-tunnels)).
 - **Auth** (`-auth`, `-token`, `MYWEB_TOKEN`) protects writes, uploads and
   commands, and with `-global` also reads. Scripts send
   `Authorization: Bearer <token>`. Browsers sign in through the link the server

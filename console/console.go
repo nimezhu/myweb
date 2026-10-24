@@ -110,6 +110,12 @@ func (c *Console) AddRow(label, value string) {
 	c.opts.Rows = append(c.opts.Rows, Row{Label: label, Value: value})
 }
 
+// AddRowFunc appends a line whose value f gives on every redraw (call
+// before Run).
+func (c *Console) AddRowFunc(label string, f func() string) {
+	c.opts.Rows = append(c.opts.Rows, Row{Label: label, Func: f})
+}
+
 // OpenLog also appends requests and server messages to path, one JSON object
 // per line (see accesslog.go). Call before Run.
 func (c *Console) OpenLog(path string) error {

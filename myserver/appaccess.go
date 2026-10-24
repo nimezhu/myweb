@@ -69,7 +69,7 @@ func (s *Server) appFrom(r *http.Request) *AppAccess {
 	if origin == "" {
 		switch r.Header.Get("Sec-Fetch-Site") {
 		case "same-origin":
-			origin = "http://" + r.Host // a page of the address it asks
+			origin = s.Scheme() + "://" + r.Host // a page of the address it asks
 		case "same-site", "cross-site":
 			return unknownPage // some other page: the least it may do
 		case "none":

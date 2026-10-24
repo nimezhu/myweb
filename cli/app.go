@@ -12,7 +12,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -436,15 +435,14 @@ func tellRescan(dirs home.Dirs) int { return postRunning(dirs, `{"rescan":true}`
 func postRunning(dirs home.Dirs, body string) int {
 	n := 0
 	for _, s := range runningServers(dirs) {
-		req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(s.Port)+"/cmd/app", strings.NewReader(body))
+		req, err := http.NewRequest(http.MethodPost, s.base()+"/cmd/app", strings.NewReader(body))
 		if err != nil {
 			continue
 		}
 		if t := s.token(); t != "" {
 			req.Header.Set("Authorization", "Bearer "+t)
 		}
-		c := http.Client{Timeout: 5 * time.Second}
-		if resp, err := c.Do(req); err == nil {
+		if resp, err := s.client(5 * time.Second).Do(req); err == nil {
 			resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				n++

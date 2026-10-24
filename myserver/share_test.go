@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -274,4 +275,120 @@ func TestShareUploadQuota(t *testing.T) {
 	if left, _ := filepath.Glob(filepath.Join(st.root, "drop", ".*")); len(left) != 0 {
 		t.Errorf("temporary files left: %v", left)
 	}
+}
+
+func TestSharePassword(t *testing.T) {
+	st := newShareTest(t, Config{})
+	_, res := st.share(`{"path":"/photos","password":"open sesame"}`, "")
+	base := st.url + st.path(res["url"].(string))
+	jar := &cookieJar{}
+	c := http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return nil }}
+	get := func(u string) (int, string) {
+		resp, err := c.Get(u)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	unlock := func(pw string) (int, string) {
+		resp, err := c.PostForm(base+"?unlock", map[string][]string{"password": {pw}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if code, body := get(base + "a.jpg"); code != 401 || strings.Contains(body, "jpeg") {
+		t.Fatalf("without the password: %d %s", code, body)
+	}
+	if code, _ := unlock("wrong"); code != 401 {
+		t.Errorf("a wrong password: %d", code)
+	}
+	if code, body := unlock("open sesame"); code != 200 || !strings.Contains(body, "a.jpg") {
+		t.Errorf("the password: %d %s", code, body)
+	}
+	if code, body := get(base + "sub/b.txt"); code != 200 || body != "bee" {
+		t.Errorf("after it: %d %s", code, body)
+	}
+	// the cookie of one link doesn't open another
+	_, res2 := st.share(`{"path":"/notes.txt","password":"other one"}`, "")
+	if code, _ := get(st.url + st.path(res2["url"].(string)) + "notes.txt"); code != 401 {
+		t.Errorf("another link: %d", code)
+	}
+	b, _ := os.ReadFile(filepath.Join(st.root, ".myweb", "shares.json"))
+	if strings.Contains(string(b), "open sesame") {
+		t.Error("the password is stored")
+	}
+	// too many wrong ones
+	c.Jar = &cookieJar{}
+	for range 10 {
+		unlock("nope")
+	}
+	if code, _ := unlock("open sesame"); code != http.StatusTooManyRequests {
+		t.Errorf("after 10 wrong: %d", code)
+	}
+	if code, _ := st.share(`{"path":"/photos","password":"abc"}`, ""); code != 400 {
+		t.Errorf("a short password: %d", code)
+	}
+}
+
+func TestShareDownloadsAndCopy(t *testing.T) {
+	st := newShareTest(t, Config{})
+	_, res := st.share(`{"path":"/photos","maxDownloads":2}`, "")
+	base := st.url + st.path(res["url"].(string))
+	get := func(u string, hdr ...string) int {
+		req, _ := http.NewRequest("GET", u, nil)
+		if len(hdr) == 2 {
+			req.Header.Set(hdr[0], hdr[1])
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, resp.Body)
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	get(base) // a listing isn't a download
+	get(base + "a.jpg")
+	get(base+"a.jpg", "Range", "bytes=2-3") // the rest of the same download
+	if code := get(base + "?zip"); code != 200 {
+		t.Fatalf("zip: %d", code)
+	}
+	if code := get(base + "a.jpg"); code != http.StatusGone {
+		t.Errorf("after 2 downloads: %d", code)
+	}
+	// the list says how many, and gives the link again
+	req, _ := http.NewRequest("POST", st.url+"/cmd/shares", nil)
+	resp, _ := http.DefaultClient.Do(req)
+	var out struct {
+		Result []map[string]interface{} `json:"result"`
+	}
+	json.NewDecoder(resp.Body).Decode(&out)
+	resp.Body.Close()
+	if len(out.Result) != 1 || out.Result[0]["downloads"].(float64) != 2 || out.Result[0]["url"] != res["url"] {
+		t.Errorf("list: %v", out.Result)
+	}
+	for _, k := range []string{"secret", "hash", "passHash", "passSalt"} {
+		if _, ok := out.Result[0][k]; ok {
+			t.Errorf("the list shows %s", k)
+		}
+	}
+}
+
+// cookieJar keeps cookies by path, enough for these tests.
+type cookieJar struct{ cookies []*http.Cookie }
+
+func (j *cookieJar) SetCookies(_ *url.URL, cs []*http.Cookie) { j.cookies = append(j.cookies, cs...) }
+func (j *cookieJar) Cookies(u *url.URL) []*http.Cookie {
+	var out []*http.Cookie
+	for _, c := range j.cookies {
+		if strings.HasPrefix(u.Path, c.Path) {
+			out = append(out, c)
+		}
+	}
+	return out
 }

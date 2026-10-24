@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"time"
 )
 
@@ -116,6 +117,34 @@ func userName(u *User) string {
 // asking first, so without this any page could write to the data folder of a
 // server without a token. Allowed: the server's own pages, the -cors origins,
 // and clients that aren't browsers (no Origin header).
+// checkHost answers only requests sent to this machine's own names, unless
+// it is reachable from elsewhere (-global, a tunnel), where reads need the
+// token. A web page whose name an attacker points at 127.0.0.1 (DNS
+// rebinding) would otherwise be the same site as this server, and read it.
+func (s *Server) checkHost(next http.Handler) http.Handler {
+	if s.exposed() {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !localHost(requestHostname(r)) {
+			writeError(w, http.StatusMisdirectedRequest, "this server answers only to localhost and 127.0.0.1 (start it with -global for other names)")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// localHost reports whether h names this machine: localhost, *.localhost,
+// or a loopback address.
+func localHost(h string) bool {
+	h = strings.ToLower(strings.TrimSuffix(h, "."))
+	if h == "localhost" || strings.HasSuffix(h, ".localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
+}
+
 func (s *Server) guardWrites(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -135,6 +164,9 @@ func (s *Server) originAllowed(r *http.Request) bool {
 		// browsers send Origin on every cross-site POST; Sec-Fetch-Site
 		// catches the rare one that doesn't
 		return r.Header.Get("Sec-Fetch-Site") != "cross-site"
+	}
+	if u := s.PublicURL(); u != "" && r.Header.Get("Origin") == u {
+		return true // a page from the tunnel's address
 	}
 	return sameOrigin(r) || s.cors.OriginAllowed(r)
 }

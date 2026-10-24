@@ -73,7 +73,7 @@ func runningServers(dirs home.Dirs) []server {
 // address is the server's URL without its token.
 func (s server) address() string {
 	if s.URL == "" {
-		return "http://127.0.0.1:" + strconv.Itoa(s.Port) + "/_myweb/"
+		return s.base() + "/_myweb/"
 	}
 	u, err := url.Parse(s.URL)
 	if err != nil {
@@ -230,11 +230,11 @@ func stopCmd(spec Spec, args []string, w io.Writer) error {
 // stopServer asks the server to stop (as its own page does), else signals
 // it, and waits until it is gone.
 func stopServer(s server) error {
-	req, _ := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(s.Port)+"/cmd/stopServer", nil)
+	req, _ := http.NewRequest(http.MethodPost, s.base()+"/cmd/stopServer", nil)
 	if t := s.token(); t != "" {
 		req.Header.Set("Authorization", "Bearer "+t)
 	}
-	c := http.Client{Timeout: 3 * time.Second}
+	c := s.client(3 * time.Second)
 	asked := false
 	if resp, err := c.Do(req); err == nil {
 		resp.Body.Close()

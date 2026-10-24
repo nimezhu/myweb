@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
@@ -26,6 +27,22 @@ import (
 //
 // Afterwards the services running this binary are restarted; other running
 // servers are listed, to restart by hand.
+
+// Upgrade runs "upgrade" for another program of this module (myweb-team,
+// myweb-publish): its releases are published with myweb's, under its name.
+func Upgrade(spec Spec, args []string) int {
+	err := upgradeCmd(spec, args, os.Stdout)
+	var ue usageError
+	switch {
+	case errors.Is(err, flag.ErrHelp):
+		helpTopic(os.Stdout, spec, "upgrade")
+		return 0
+	case errors.As(err, &ue):
+		fmt.Fprintf(os.Stderr, "%s: %v (run '%s upgrade -h')\n", spec.Name, err, spec.Name)
+		return 2
+	}
+	return finish(spec, "upgrade", err)
+}
 
 // executable is the binary to replace; replaced in tests.
 var executable = defaultExecutable
@@ -69,7 +86,7 @@ func upgradeCmd(spec Spec, args []string, w io.Writer) error {
 			return err
 		}
 		fmt.Fprintf(w, "%s is back to the previous version (run %s version)\n", exe, spec.Name)
-		if !*noRestart {
+		if !*noRestart && !spec.NoServers {
 			restartServices(w, spec, *fl.home, exe, "")
 		}
 		return nil
@@ -106,9 +123,11 @@ func upgradeCmd(spec Spec, args []string, w io.Writer) error {
 	if notes := strings.TrimSpace(rel.Notes); notes != "" && len(pos) == 0 {
 		fmt.Fprintf(w, "\n%s\n", notes)
 	}
-	if *noRestart {
+	switch {
+	case spec.NoServers:
+	case *noRestart:
 		restartServices(w, spec, *fl.home, "", rel.Version)
-	} else {
+	default:
 		restartServices(w, spec, *fl.home, exe, rel.Version)
 	}
 	return nil

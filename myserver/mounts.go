@@ -10,6 +10,7 @@ package myserver
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log"
@@ -60,6 +61,9 @@ func (s *Server) Mount(m *Mount, port int) (int, error) {
 		return 0, err
 	}
 	p := ln.Addr().(*net.TCPAddr).Port
+	if s.cfg.TLS != nil {
+		ln = tls.NewListener(ln, s.cfg.TLS)
+	}
 	srv := &http.Server{
 		Handler:           s.handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -160,7 +164,7 @@ func (s *Server) mountURL(port int) string {
 			host = u.Hostname()
 		}
 	}
-	return "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/"
+	return s.Scheme() + "://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/"
 }
 
 func (s *Server) mountCount() int {
@@ -224,7 +228,7 @@ func (s *Server) serveRoot(main http.Handler) http.Handler {
 		if rest, ok := strings.CutPrefix(r.URL.Path, "/apps/"); ok {
 			name, sub, _ := strings.Cut(rest, "/")
 			if m := s.mountNamed(name); m != nil {
-				target := "http://" + net.JoinHostPort(requestHostname(r), strconv.Itoa(m.port)) + "/" + sub
+				target := s.Scheme() + "://" + net.JoinHostPort(requestHostname(r), strconv.Itoa(m.port)) + "/" + sub
 				if r.URL.RawQuery != "" {
 					target += "?" + r.URL.RawQuery
 				}

@@ -36,6 +36,13 @@ func main() {
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		cmd, args = args[0], args[1:]
 	}
+	switch cmd {
+	case "upgrade": // takes -home itself: the servers to restart
+		os.Exit(cli.Upgrade(cli.Spec{Name: name}, args))
+	case "version":
+		fmt.Println(name, myserver.VERSION)
+		return
+	}
 	if cmd != "" && cmd != "serve" {
 		args, homeDir = takeHome(args)
 	}
@@ -54,7 +61,7 @@ func main() {
 	case "help":
 		usage()
 	default:
-		err = fmt.Errorf("unknown command %q (try: user, share, unshare, folders, serve, help)", cmd)
+		err = fmt.Errorf("unknown command %q (try: user, share, unshare, folders, serve, upgrade, version, help)", cmd)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s: %v\n", name, err)
@@ -75,6 +82,8 @@ private folders (/users/<name>) and shared folders.
   myweb-team unshare PATH
   myweb-team folders
   myweb-team [serve] [flags]           run the server; myweb-team serve -h lists flags
+  myweb-team upgrade [-check|VERSION|-rollback]   the latest release from GitHub
+  myweb-team version
 
 Users and folders are kept in ~/.myweb-team/team.json (or $MYWEB_TEAM_HOME,
 or -home DIR, which every command takes);

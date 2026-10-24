@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -348,8 +349,14 @@ func orUnknown(s string) string {
 
 // otherMyweb is the version of a myweb answering on port, if one does.
 func otherMyweb(port int) string {
-	c := http.Client{Timeout: time.Second}
+	c := http.Client{Timeout: time.Second, Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // only its version is asked
+	}}
 	resp, err := c.Get("http://127.0.0.1:" + strconv.Itoa(port) + "/version")
+	if err == nil && resp.StatusCode == http.StatusBadRequest { // "HTTP request to an HTTPS server"
+		resp.Body.Close()
+		resp, err = c.Get("https://127.0.0.1:" + strconv.Itoa(port) + "/version")
+	}
 	if err != nil {
 		return ""
 	}

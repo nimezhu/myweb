@@ -520,8 +520,8 @@ func (m model) infoLines() []string {
 	if m.srv.Global() && !m.srv.ReadOnly() && !m.srv.AuthEnabled() {
 		lines = append(lines, " "+badge("⚠ anyone on your network can modify files in Root (press r for read-only)", yellow))
 	}
-	if m.srv.Global() && m.srv.MultiUser() {
-		lines = append(lines, " "+badge("⚠ plain HTTP: sign-in links can be seen on the network; put HTTPS in front (see README)", yellow))
+	if m.srv.Global() && m.srv.Scheme() == "http" && (m.srv.MultiUser() || m.srv.AuthEnabled()) {
+		lines = append(lines, " "+badge("⚠ plain HTTP: the token and sign-in links can be seen on the network; start with -https", yellow))
 	}
 	return lines
 }

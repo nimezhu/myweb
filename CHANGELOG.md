@@ -3,33 +3,64 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
-## Unreleased
+## 0.0.4
 
+Changes to know before upgrading:
+
+- HTML and SVG files of the data folder always open in a sandbox now, not
+  only while an app runs; `-trust-html` lets them run as the server (when no
+  app does).
+- Without `-global` or `-tunnel`, only requests addressed to localhost or
+  127.0.0.1 are answered, so a web page can't reach the server by pointing
+  its own name at 127.0.0.1 (DNS rebinding).
+- myweb-team limits installed apps too: an app gets a port of its own, and
+  each person uses it with their own permissions, only within the app's
+  folders.
+
+New:
+
+- HTTPS: `-https` serves with a certificate made for this machine, signed by
+  a local CA of myweb's own that may sign only local names; `-cert`/`-key`
+  serve yours. `myweb tls trust` makes this machine trust the CA, and
+  `/_myweb/cert` offers it to phones and other computers with the steps.
+- `-tunnel` also makes the server reachable from anywhere through a
+  Cloudflare quick tunnel (needs cloudflared); the token is always on then,
+  and share links use its address.
 - The data folder is a network drive: WebDAV at `/dav/` for Finder,
   Explorer, Linux file managers, rclone and phone apps. Saves keep versions,
   deletes go to the trash, `.myweb` is hidden; the token is the password.
   `-no-dav` turns it off.
-- myweb-team limits installed apps too: an app gets a port of its own, and
-  each person uses it with their own permissions, only within the app's
-  folders.
-- HTML and SVG files of the data folder always run in a sandbox when opened,
-  not only while an app runs (`-trust-html` lets them run as the server,
-  when no app does).
-- Browsers that don't send `Sec-Fetch-Site` (Safari before 16.4, or plain
-  http on a LAN) are no longer taken for the file manager on an app's address.
 - `myweb backup` puts the home (config, apps, catalogs) and the data folder
   with its versions, trash and share links in one `.zip`; `myweb restore`
   puts it back, never replacing a file that differs unless `-force`.
-- The file manager makes folders, moves files by dragging them onto a folder,
-  moves or deletes several ticked files and folders at once (a folder with
-  everything in it, to the trash), and shows image thumbnails. `/cmd/rm`
-  deletes files and folders.
-- `?` in the terminal UI lists every key.
+- Share links: `-password` (a salted hash is kept; wrong guesses are
+  limited), `-max-downloads N`, `share url ID` and **copy** in the file
+  manager show a link again, and `share list` shows downloads. An upload
+  link takes at most 1024 MB and 500 files in all (`-max-mb N -max-files N`).
+- The file manager:
+  - edits text files in their preview (a save keeps a version and asks
+    before replacing someone else's change);
+  - makes folders, moves files by dragging them onto a folder, moves or
+    deletes several ticked files and folders at once, and shows image
+    thumbnails;
+  - hides dotfiles such as `.DS_Store` and macOS's `._name` unless
+    **hidden files** is ticked;
+  - has an **Installed apps** panel: every app's version, folders and
+    address; open, check for updates, allow or take back folders, remove.
+- `myweb-team upgrade` and `myweb-publish upgrade` install those tools from
+  the same signed releases as `myweb upgrade` (from this version on); both
+  have a `version` command.
 - `myweb doctor -fix` also fixes what is safe to: makes the home folder,
   removes old binaries left by upgrades, restarts services that stopped or
   run an old version, installs an app's missing version.
-- An upload link takes at most 1024 MB and 500 files in all (`share -upload
-  -max-mb N -max-files N`); `share list` shows what each has received.
+- `?` in the terminal UI lists every key; `/cmd/rm` deletes files and
+  folders.
+
+Fixed:
+
+- Browsers that don't send `Sec-Fetch-Site` (Safari before 16.4, or plain
+  http on a LAN) are no longer taken for the file manager on an app's address.
+- The terminal UI showed the WebDAV address with port 0.
 
 ## 0.0.3
 

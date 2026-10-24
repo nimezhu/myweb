@@ -40,6 +40,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nimezhu/myweb/cli"
+	"github.com/nimezhu/myweb/myserver"
 	"github.com/nimezhu/myweb/webapp"
 )
 
@@ -67,6 +69,10 @@ func main() {
 		err = catalogCmd(os.Args[2:])
 	case "sign":
 		err = signCmd(os.Args[2:])
+	case "upgrade":
+		os.Exit(cli.Upgrade(cli.Spec{Name: "myweb-publish", NoServers: true}, os.Args[2:]))
+	case "version", "-version", "--version":
+		fmt.Println("myweb-publish", myserver.VERSION)
 	case "-h", "-help", "--help", "help":
 		usage()
 	default:
@@ -97,6 +103,8 @@ func usage() {
   myweb-publish sign -key app.key|env:VAR FILE...   writes FILE.sig for each file
   myweb-publish keygen -out app.key        writes app.key (secret) and app.key.pub
   myweb-publish pubkey -key app.key        prints the public key of app.key
+  myweb-publish upgrade [-check|VERSION|-rollback]   the latest release from GitHub
+  myweb-publish version
 `)
 	os.Exit(2)
 }

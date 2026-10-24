@@ -62,7 +62,7 @@ func (s *Server) davHandler() http.Handler {
 		case http.MethodGet, http.MethodHead, http.MethodOptions, "PROPFIND":
 			reads = true
 		}
-		if (!reads || s.cfg.Global || s.cfg.Access != nil) && !s.Authorized(r) {
+		if (!reads || s.exposed() || s.cfg.Access != nil) && !s.Authorized(r) {
 			w.Header().Set("WWW-Authenticate", `Basic realm="myweb", charset="UTF-8"`)
 			writeError(w, http.StatusUnauthorized, "the password is the token")
 			return

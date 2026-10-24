@@ -53,6 +53,8 @@ func Main(spec Spec) int {
 		return finish(spec, "doctor", doctorCmd(spec, args, os.Stdout))
 	case "backup":
 		return finish(spec, "backup", backupCmd(spec, args, os.Stdout))
+	case "tls":
+		return finish(spec, "tls", tlsCmd(spec, args, os.Stdout))
 	case "restore":
 		return finish(spec, "backup", restoreCmd(spec, args, os.Stdout))
 	case "version":

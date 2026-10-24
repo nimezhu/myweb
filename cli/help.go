@@ -18,7 +18,7 @@ var flagGroups = []struct {
 }{
 	{"Files", []string{"d", "p", "global", "r", "home", "no-dav"}},
 	{"Web app at /", []string{"app", "web", "web-from", "web-key", "web-version", "no-update", "web-check", "other-apps", "no-manager"}},
-	{"Access", []string{"auth", "token", "cors", "trust-html"}},
+	{"Access", []string{"auth", "token", "cors", "trust-html", "https", "cert", "key", "tunnel"}},
 	{"Safety", []string{"versions", "trash-days", "upload-max"}},
 	{"Running", []string{"no-tui", "no-open", "log", "new", "no-upgrade-check", "v"}},
 }
@@ -29,7 +29,7 @@ var hiddenFlags = map[string]bool{"apps": true, "version": true}
 var placeholders = map[string]string{
 	"d": "DIR", "p": "PORT", "home": "DIR", "app": "NAME", "web": "DIR", "web-from": "URL",
 	"web-key": "KEY", "web-version": "VERSION", "web-check": "DURATION", "token": "TOKEN",
-	"cors": "ORIGINS", "versions": "N", "trash-days": "DAYS", "upload-max": "MIB", "log": "FILE",
+	"cors": "ORIGINS", "cert": "FILE", "key": "FILE", "versions": "N", "trash-days": "DAYS", "upload-max": "MIB", "log": "FILE",
 }
 
 // noDefault are flags whose default is not worth showing (or is secret:
@@ -62,6 +62,7 @@ commands:
   doctor       check the setup and say what to fix (-fix: fix what is safe to)
   backup       the home and data folder, with versions and trash, in one .zip;
                restore FILE.zip puts it back
+  tls          the CA of -https's certificates; tls trust: this machine trusts it
   completion   shell completion for bash, zsh and fish
   version      print the version
   help [CMD]   this help, or a command's
@@ -78,6 +79,14 @@ examples:
   %[1]s -web ./dist              your own web app at /, the file manager at /_myweb/
                                  (the data folder is also a network drive: WebDAV at /dav/)
   %[1]s app run myapp            an app installed with -web-from (see %[1]s help app)
+  %[1]s -global -https -auth     on your network, over HTTPS
+  %[1]s -tunnel                  also from anywhere, at an https://….trycloudflare.com address
+
+-https makes a certificate for this machine (in <home>/tls). Browsers warn
+until it is trusted: check that the SHA-256 they show matches the one %[1]s
+prints, or trust <home>/tls/cert.pem in your system. Or serve one you have:
+-cert and -key (mkcert, tailscale cert, a CA). Without -global or -tunnel,
+%[1]s answers only to localhost and 127.0.0.1.
 `, name)
 }
 
@@ -238,6 +247,7 @@ before it replaces the binary; the old one is kept next to it as .old. The
 services running it (%[1]s service install) are restarted; other running
 servers keep the old version until restarted. A running server tells once a
 day when a newer release is out (-no-upgrade-check: don't).
+myweb-team and myweb-publish upgrade the same way, from the same releases.
 `,
 	"share": `links to a folder or file of a running server's data folder, that open
 without the token, for people who have nothing else:
@@ -246,7 +256,11 @@ without the token, for people who have nothing else:
   %[1]s share PATH -upload         a drop box: files can be sent into the folder, not seen;
                                  at most -max-mb (1024) in all, and -max-files (500)
   %[1]s share PATH -days 30        how long it works (default 7, at most 365)
-  %[1]s share list                 the links (each shown only when made)
+  %[1]s share PATH -password       ask for a password (typed at the prompt, or one line
+                                 on standard input)
+  %[1]s share PATH -max-downloads 3   end after 3 downloads (files or zips)
+  %[1]s share list                 the links, their downloads and what they received
+  %[1]s share url ID               show a link again
   %[1]s share revoke ID            end one
 
 PATH is in the data folder (/photos), or a file or folder on disk inside it.
@@ -268,6 +282,20 @@ server listens on the network (-global).
 
 Without -fix it changes nothing. The exit status is 1 when something is
 broken (✗); warnings (!) are things to know.
+`,
+	"tls": `the CA that signs -https's certificates (kept in <home>/tls):
+
+  %[1]s tls                  where it is, its SHA-256, whether this machine trusts it
+  %[1]s tls trust            add it to this machine's trusted certificates
+                          (the system asks for your password; on Linux, sudo)
+  %[1]s tls untrust          take it out again
+  %[1]s tls trust -print     only show the commands
+
+Other devices (phones, other computers): open /_myweb/cert of a server
+started with -https, check the SHA-256, and follow the steps there. The CA
+can sign only local names (localhost, .local, .lan, .internal, home.arpa and
+this machine's), so its key can't stand in for websites; keep <home>/tls
+private all the same.
 `,
 	"backup": `the home folder and the data folder in one .zip, and back:
 

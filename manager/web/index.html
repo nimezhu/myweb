@@ -139,6 +139,8 @@
   #pvBody { padding: 16px; overflow: auto; max-height: calc(88vh - 60px); }
   #pvBody img, #pvBody video { max-width: 100%; max-height: 72vh; display: block; margin: 0 auto; }
   #pvBody iframe { width: 100%; height: 72vh; border: 0; }
+  #pvBody textarea.editor { width: 100%; min-height: 60vh; font: 12.5px/1.5 var(--mono); resize: vertical; }
+  #pvBody .edit-bar { display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
   #pvBody pre { margin: 0; font: 12.5px/1.5 var(--mono); white-space: pre-wrap; word-break: break-word; }
   #pvBody table { font-size: 13px; }
   #pvBody td, #pvBody th { border: 1px solid var(--line); padding: 4px 8px; white-space: nowrap; }
@@ -238,6 +240,18 @@
     <div class="msg" id="appMsg"></div>
   </section>
 
+  <section id="appsSection" hidden>
+    <details id="appsBox">
+      <summary>Installed apps <span class="sub" id="appsNote"></span></summary>
+      <div class="table-wrap" style="margin-top:10px">
+        <table class="files"><thead><tr><th>App</th><th>Version</th><th>Folders it may use</th><th></th></tr></thead>
+        <tbody id="appsRows"></tbody></table>
+      </div>
+      <p class="sub" style="margin:8px 0 0">Each app is served on a port of its own and reaches only its folders of the data folder. <code>myweb app</code> in a terminal does the same.</p>
+      <div class="msg" id="appsMsg"></div>
+    </details>
+  </section>
+
   <section>
     <details id="catBox">
       <summary>App catalog <span class="sub" id="catNote">web apps you can install and open</span></summary>
@@ -268,6 +282,7 @@
       <button class="link plain" type="button" id="selClear" hidden>clear</button>
       <button class="writable" type="button" id="selMove" hidden title="move them into another folder (or drag them onto one)">Move…</button>
       <button class="writable" type="button" id="selDel" hidden title="folders with everything in them; it all goes to the trash">Delete</button>
+      <label class="check sub" title="files whose name starts with a dot, e.g. .DS_Store and ._name that macOS leaves over WebDAV"><input type="checkbox" id="showHidden"> hidden files<span id="hiddenCount"></span></label>
       <button class="writable" type="button" id="mkdirBtn" title="POST /cmd/mkdir">New folder</button>
       <a class="btn" id="zipBtn" href="/zip/" download title="GET /zip/&lt;folder&gt;">Download folder as .zip</a>
     </div>
@@ -295,6 +310,10 @@
         <select id="shareKind" aria-label="Kind of link"><option value="read">to read</option><option value="upload">to send files (folder)</option></select>
         <select id="shareDays" aria-label="How long it works"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="365">1 year</option></select>
         <button class="authed" id="shareMake">Make link</button>
+      </div>
+      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px;align-items:center">
+        <input type="password" id="sharePass" placeholder="Password (optional)" aria-label="Password (optional)" autocomplete="new-password" style="flex:1;min-width:160px;max-width:260px">
+        <select id="shareMaxDl" aria-label="Downloads allowed"><option value="0" selected>any number of downloads</option><option value="1">1 download</option><option value="3">3 downloads</option><option value="10">10 downloads</option></select>
       </div>
       <div class="row" id="shareNew" hidden style="margin-top:10px;gap:8px;align-items:center">
         <input type="text" id="shareURL" readonly aria-label="The new link" style="flex:1;font-family:var(--mono)">
@@ -409,6 +428,7 @@
   <dialog id="pv">
     <div class="pv-head">
       <strong id="pvTitle"></strong><span class="sub" id="pvMeta"></span><span class="grow"></span>
+      <button class="link plain writable" id="pvEdit" hidden title="change it here; the old content is kept as a version">edit</button>
       <a id="pvRaw" target="_blank" rel="noopener">open raw</a><a id="pvDl" download>download</a>
       <button class="link plain" id="pvClose" autofocus>close</button>
     </div>
@@ -642,7 +662,10 @@
     try {
       const r = await fetch("/ls" + enc(cwd));
       if (!r.ok) throw new Error(await errText(r));
-      const items = await r.json();
+      let items = await r.json();
+      const dotted = items.filter((f) => f.name.startsWith("."));
+      $("hiddenCount").textContent = dotted.length && !showHidden ? ` (${dotted.length})` : "";
+      if (!showHidden) items = items.filter((f) => !f.name.startsWith("."));
       items.sort((a, b) => (b.isdir - a.isdir) || a.name.localeCompare(b.name));
       if (cwd !== shownDir) chosen.clear();
       shownDir = cwd;
@@ -756,6 +779,16 @@
     }
   });
 
+  // dotfiles (.DS_Store, ._name, .git …) are hidden unless asked for, per browser
+  let showHidden = false;
+  try { showHidden = localStorage.getItem("myweb.showHidden") === "1"; } catch {}
+  $("showHidden").checked = showHidden;
+  $("showHidden").onchange = () => {
+    showHidden = $("showHidden").checked;
+    try { localStorage.setItem("myweb.showHidden", showHidden ? "1" : "0"); } catch {}
+    load(cwd);
+  };
+
   // ---- new folder, move, delete several ----
   $("mkdirBtn").onclick = async () => {
     const name = (prompt("New folder in " + cwd + ":", "") || "").trim();
@@ -843,6 +876,68 @@
     });
   }
 
+  // ---- installed apps: POST /cmd/apps (no such command: no panel) ----
+  let appsPoll = null;
+  async function loadApps() {
+    let r;
+    try { r = await post("/cmd/apps", {}); } catch { return; }
+    if (r.status === 404) { $("appsSection").hidden = true; return; }
+    $("appsSection").hidden = false;
+    const rows = $("appsRows");
+    if (!r.ok) { rows.innerHTML = `<tr><td colspan="4" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
+    const list = (await r.json()).result;
+    $("appsNote").textContent = list.length ? `${list.length} app${list.length === 1 ? "" : "s"}` : "none yet: install one from the catalog below";
+    const off = authed ? "" : "disabled";
+    rows.innerHTML = list.length ? list.map((a) => {
+      const granted = new Set((a.grants || []).map((g) => g.path));
+      const folders = (a.access || []).map((f) => `<span class="tag" title="${f.readOnly ? "read only" : "read and write"}${granted.has(f.path) ? ", granted" : ", its own"}">${esc(f.path)}${f.readOnly ? " (read)" : ""}${granted.has(f.path)
+        ? ` <button class="link authed" data-app-deny="${esc(a.name)}" data-folder="${esc(f.path)}" title="take it back" ${off}>✕</button>` : ""}</span>`).join(" ") || `<span class="sub">none</span>`;
+      const ver = esc(a.current || "not installed") + (a.pinned ? ` <span class="sub">(kept)</span>` : "") +
+        (a.latest && a.latest !== a.current ? ` <span class="pill warn">${esc(a.latest)} available</span>` : "") +
+        (a.status && a.status !== "up to date" ? `<div class="sub">${esc(a.status)}</div>` : "");
+      const where = a.main ? "at /" : a.url ? "" : `<span class="sub">not served here</span>`;
+      const open = a.url ? `<a class="link" href="${esc(appLink(a.url))}" target="_blank" rel="noopener">open</a>` : "";
+      return `<tr><td class="name"><strong>${esc(a.name)}</strong>${a.default ? ` <span class="sub">· default</span>` : ""} ${where}</td>
+        <td>${ver}</td><td>${folders}</td>
+        <td class="num">${open}<button class="link plain authed" data-app-update="${esc(a.name)}" ${a.noKey ? "disabled" : off}>check for updates</button><button class="link plain authed" data-app-allow="${esc(a.name)}" ${off}>allow a folder…</button>${a.main ? "" : `<button class="link authed" data-app-remove="${esc(a.name)}" ${off}>remove</button>`}</td></tr>`;
+    }).join("") : `<tr><td colspan="4" class="empty">No apps installed.</td></tr>`;
+    // while an update check runs, look again
+    clearTimeout(appsPoll);
+    if (list.some((a) => /checking|downloading/i.test(a.status || ""))) appsPoll = setTimeout(loadApps, 1500);
+  }
+  // appLink: an app's port at the name this page was opened with (on a
+  // network the server's own guess may not be it)
+  function appLink(u) {
+    try {
+      const x = new URL(u);
+      if (!["localhost", "127.0.0.1"].includes(location.hostname)) x.hostname = location.hostname;
+      return x.href;
+    } catch { return u; }
+  }
+  async function appsDo(body, done) {
+    const r = await post("/cmd/apps", body);
+    if (r.ok) msg($("appsMsg"), done, true);
+    else { msg($("appsMsg"), await errText(r), false); onFail(r); }
+    loadApps();
+  }
+  $("appsRows").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const d = b.dataset;
+    if (d.appUpdate) appsDo({ name: d.appUpdate, update: true }, `Checking ${d.appUpdate} for an update…`);
+    else if (d.appDeny) appsDo({ name: d.appDeny, deny: d.folder }, `${d.appDeny} may no longer use ${d.folder}`);
+    else if (d.appAllow) {
+      const f = (prompt(`Let ${d.appAllow} use which folder of the data folder?`, cwd) || "").trim();
+      if (!f) return;
+      const write = confirm(`May ${d.appAllow} also change files in ${f}?\n\nOK: read and write. Cancel: read only.`);
+      appsDo({ name: d.appAllow, allow: f, write }, `${d.appAllow} may now ${write ? "read and change" : "read"} ${f}`);
+    } else if (d.appRemove) {
+      if (confirm(`Remove ${d.appRemove} and all its installed versions? Its files in the data folder stay.`))
+        appsDo({ name: d.appRemove, remove: true }, `${d.appRemove} removed`);
+    }
+  });
+  $("appsBox").addEventListener("toggle", () => { if ($("appsBox").open) loadApps(); });
+
   // the app catalog
   let catalog = [];
   async function loadCatalog(refresh) {
@@ -899,7 +994,7 @@
       const r = await post("/cmd/catalog", { install: name });
       if (r.ok) {
         const { result } = await r.json();
-        catalog = result.apps; renderCatalog();
+        catalog = result.apps; renderCatalog(); loadApps();
         msg($("catMsg"), `Installed ${name}. Open starts it in the background.`, true);
       } else { msg($("catMsg"), `Install failed: ${await errText(r)}`, false); onFail(r); renderCatalog(); }
     }
@@ -964,29 +1059,42 @@
     if (!r.ok) { rows.innerHTML = `<tr><td colspan="4" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
     const list = (await r.json()).result;
     $("shareNote").textContent = list.length ? `${list.length} link${list.length === 1 ? "" : "s"}` : "open a folder or file without the token";
+    const used = (sh) => sh.upload ? `${sh.files || 0} received, ${size(sh.bytes || 0)} of ${size(sh.maxBytes)}`
+      : sh.maxDownloads ? `${sh.downloads || 0} of ${sh.maxDownloads} downloads` : `${sh.downloads || 0} download${sh.downloads === 1 ? "" : "s"}`;
     rows.innerHTML = list.length ? list.map((sh) => `<tr>
-        <td class="name mono">${esc(sh.path)}</td><td>${sh.upload ? `send files <span class="sub">· ${sh.files || 0} received, ${size(sh.bytes || 0)} of ${size(sh.maxBytes)}</span>` : "read"}</td>
+        <td class="name mono">${esc(sh.path)}</td><td>${sh.upload ? "send files" : "read"}${sh.password ? " · password" : ""} <span class="sub">· ${used(sh)}</span></td>
         <td class="num">${when(sh.expires)}</td>
-        <td class="num"><button class="link authed" data-revoke="${esc(sh.id)}">revoke</button></td></tr>`).join("")
+        <td class="num">${sh.url ? `<button class="link plain" data-copy-link="${esc(sh.url)}">copy</button>` : ""}<button class="link authed" data-revoke="${esc(sh.id)}">revoke</button></td></tr>`).join("")
       : `<tr><td colspan="4" class="empty">No share links. Use “share” on a file or folder.</td></tr>`;
   }
   $("shareBox").addEventListener("toggle", loadShares);
   $("shareMake").onclick = async () => {
     const path = $("sharePath").value.trim();
     if (!path) { msg($("shareMsg"), "Which folder or file? e.g. /photos", false); return; }
-    const r = await post("/cmd/shareCreate", { path: path.startsWith("/") ? path : join(cwd, path), upload: $("shareKind").value === "upload", days: +$("shareDays").value });
+    const upload = $("shareKind").value === "upload";
+    const r = await post("/cmd/shareCreate", { path: path.startsWith("/") ? path : join(cwd, path), upload, days: +$("shareDays").value,
+      password: $("sharePass").value, maxDownloads: upload ? 0 : +$("shareMaxDl").value });
     if (!r.ok) { msg($("shareMsg"), "Could not make the link: " + await errText(r), false); onFail(r); return; }
     const { result: x } = await r.json();
     $("shareURL").value = x.url;
     $("shareNew").hidden = false;
     $("shareURL").select();
-    msg($("shareMsg"), "Copy the link now: it is shown only once." + (x.local ? " This server listens on this machine only; other machines reach the link when it runs with -global." : ""), true);
+    $("sharePass").value = "";
+    msg($("shareMsg"), (x.password ? "Send the password another way than the link. " : "") + (x.local ? "This server listens on this machine only; other machines reach the link when it runs with -global or -tunnel." : ""), true);
     loadShares();
   };
-  $("shareCopy").onclick = async () => {
-    try { await navigator.clipboard.writeText($("shareURL").value); msg($("shareMsg"), "Copied.", true); }
+  async function copyLink(u) {
+    $("shareURL").value = u;
+    $("shareNew").hidden = false;
+    try { await navigator.clipboard.writeText(u); msg($("shareMsg"), "Copied.", true); }
     catch { $("shareURL").select(); msg($("shareMsg"), "Press Ctrl+C (⌘C) to copy.", true); }
-  };
+  }
+  $("shareCopy").onclick = () => copyLink($("shareURL").value);
+  $("shareKind").onchange = () => ($("shareMaxDl").hidden = $("shareKind").value === "upload");
+  $("shareRows").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-copy-link]");
+    if (b) copyLink(b.dataset.copyLink);
+  });
   $("emptyTrash").onclick = async () => {
     if (!confirm("Permanently delete everything in the trash?")) return;
     const r = await post("/cmd/emptyTrash", {});
@@ -1168,7 +1276,9 @@
     const binary = head.includes(0);
     // a cut may split a multi-byte character: drop the broken tail
     const text = new TextDecoder("utf-8", { fatal: false }).decode(buf).replace(/�+$/, "");
-    return { text, binary, fullSize, truncated: buf.byteLength < fullSize };
+    let utf8 = true;
+    try { new TextDecoder("utf-8", { fatal: true }).decode(buf); } catch { utf8 = false; }
+    return { text, binary, utf8, fullSize, truncated: buf.byteLength < fullSize, etag: r.headers.get("ETag") };
   }
 
   function note(t) { return `<div class="pv-note">${esc(t)}</div>`; }
@@ -1268,6 +1378,8 @@
     $("pvDl").href = url;
     $("pvDl").download = filePath.split("/").pop();
     body.innerHTML = note("Loading…");
+    $("pvEdit").hidden = true;
+    editing = null;
     if (!dlg.open) dlg.showModal();
     const kind = KIND[ext(filePath)] || "text";
     const dir = filePath.slice(0, filePath.lastIndexOf("/")) || "/";
@@ -1278,6 +1390,11 @@
       else if (kind === "pdf") body.innerHTML = `<iframe src="${esc(url)}" title="PDF"></iframe>`;
       else {
         const t = await fetchText(url);
+        if (!t.binary && t.utf8 && !t.truncated) { // whole, and text: it may be edited here
+          $("pvEdit").hidden = false;
+          $("pvEdit").onclick = () => editText(filePath, t.text, t.etag, url, label);
+          applyLocks();
+        }
         const cut = t.truncated ? note(`Showing the first ${size(PREVIEW_BYTES)} of ${size(t.fullSize)}.`) : "";
         if (t.binary) {
           body.innerHTML = note(`Binary file, ${size(t.fullSize)}: no preview. Use download or open raw.`);
@@ -1302,9 +1419,50 @@
       body.innerHTML = note("Cannot preview: " + e.message);
     }
   }
-  $("pvClose").onclick = () => $("pv").close();
-  $("pv").addEventListener("click", (e) => { if (e.target === $("pv")) $("pv").close(); }); // backdrop
-  $("pv").addEventListener("close", () => ($("pvBody").innerHTML = "")); // stop media
+  // ---- editing a text file in the preview ----
+  let editing = null; // {path, saved}: the text as last saved, to tell unsaved changes
+  function editText(filePath, text, etag, url, label) {
+    $("pvEdit").hidden = true;
+    editing = { path: filePath, saved: text };
+    const body = $("pvBody");
+    body.innerHTML = `<textarea class="editor" spellcheck="false" aria-label="Contents of ${esc(filePath)}"></textarea>
+      <div class="edit-bar"><button class="primary writable" id="edSave">Save</button><button type="button" id="edCancel">Cancel</button>
+      <span class="sub">Ctrl+S (⌘S) saves; the old content is kept as a version</span><span class="msg" id="edMsg" style="margin:0"></span></div>`;
+    const ta = body.querySelector("textarea");
+    ta.value = text;
+    ta.focus();
+    applyLocks();
+    const save = async (force) => {
+      const headers = { "Content-Type": "text/plain; charset=utf-8" };
+      if (etag && !force) headers["If-Match"] = etag;
+      const r = await fetch("/w" + enc(filePath), { method: "POST", headers, body: ta.value });
+      if (r.status === 412) {
+        msg($("edMsg"), "It was changed since you opened it.", false);
+        $("edMsg").insertAdjacentHTML("beforeend", ` <button class="link plain" type="button" id="edForce">save mine anyway</button>`);
+        $("edForce").onclick = () => save(true); // the other change is kept as a version
+        return;
+      }
+      if (!r.ok) { msg($("edMsg"), "Save failed: " + await errText(r), false); onFail(r); return; }
+      etag = r.headers.get("ETag") || etag;
+      editing.saved = ta.value;
+      msg($("edMsg"), "Saved.", true);
+    };
+    $("edSave").onclick = () => save(false);
+    $("edCancel").onclick = () => { if (unsavedOK()) preview(url, filePath, label); };
+    ta.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(false); }
+    });
+  }
+  // unsavedOK asks before throwing away changes not saved.
+  function unsavedOK() {
+    const ta = $("pvBody").querySelector("textarea.editor");
+    return !editing || !ta || ta.value === editing.saved || confirm("Throw away your changes?");
+  }
+  $("pv").addEventListener("cancel", (e) => { if (!unsavedOK()) e.preventDefault(); }); // esc
+
+  $("pvClose").onclick = () => { if (unsavedOK()) $("pv").close(); };
+  $("pv").addEventListener("click", (e) => { if (e.target === $("pv") && unsavedOK()) $("pv").close(); }); // backdrop
+  $("pv").addEventListener("close", () => { $("pvBody").innerHTML = ""; if (editing) load(cwd); editing = null; }); // stop media
 
   async function loadCmds() {
     const body = $("cmds");
@@ -1348,6 +1506,7 @@
 
   status();
   loadApp(false);
+  loadApps();
   // Live updates over /events: re-list when something in the current folder
   // changes, and follow read-only toggles from the terminal UI.
   let ws = null, watched = null, reloadTimer = null, retry = 1000;
@@ -1360,7 +1519,7 @@
       let m; try { m = JSON.parse(e.data); } catch { return; }
       if (m.type === "hello" || m.type === "status") setMode(m.readOnly);
       if (m.type === "watching") $("live").hidden = false;
-      if (m.type === "app-updated") { loadApp(false); msg($("appMsg"), `Updated to ${m.version}. Open pages of the app can reload now.`, true); }
+      if (m.type === "app-updated") { loadApps(); loadApp(false); msg($("appMsg"), `Updated to ${m.version}. Open pages of the app can reload now.`, true); }
       if (m.type === "change") {
         clearTimeout(reloadTimer);
         reloadTimer = setTimeout(() => load(cwd), 100);

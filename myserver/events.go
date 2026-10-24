@@ -118,7 +118,7 @@ func (s *Server) watchAllowed(c *wsClient) bool {
 	if s.cfg.Access != nil {
 		return c.user != nil
 	}
-	return c.authed || !(s.AuthEnabled() && s.cfg.Global)
+	return c.authed || !(s.AuthEnabled() && s.exposed())
 }
 
 func (s *Server) serveEvents(w http.ResponseWriter, r *http.Request) {
