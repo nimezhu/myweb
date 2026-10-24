@@ -489,6 +489,10 @@
     s.title = st.status;
     let sub = `Served at <a href="/" target="_blank" rel="noopener">/</a>, installed from <code>${esc(st.manifest)}</code>.`;
     if (st.checked) sub += ` Last checked ${esc(when(st.checked))}.`;
+    const grants = new Set((st.grants || []).map((g) => g.path));
+    const access = (st.access || []).map((f) => `<code>${esc(f.path)}</code>${f.readOnly ? " (read only)" : ""}${grants.has(f.path) ? " (granted)" : ""}`);
+    sub += `<br>It may use only ${access.length ? access.join(", ") : "nothing"} in the data folder` +
+      ` (more: <code>myweb app allow ${esc(st.name || "NAME")} FOLDER [-write]</code>).`;
     $("appSub").innerHTML = sub;
     const notes = st.notes || {};
     $("appNotes").textContent = notes[st.current] || "";

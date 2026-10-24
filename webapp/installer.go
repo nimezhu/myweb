@@ -72,15 +72,17 @@ type Installer struct {
 
 // state.json in the app's folder.
 type state struct {
-	Name     string            `json:"name"`
-	Manifest string            `json:"manifest"`
-	Key      string            `json:"key,omitempty"`     // the public key, so -app can start it again
-	Keys     []string          `json:"keys,omitempty"`    // the keys the publisher signs with, from its manifest
-	Retired  []string          `json:"retired,omitempty"` // keys it stopped signing with: never trusted again
-	Current  string            `json:"current"`
-	Pin      string            `json:"pin,omitempty"` // chosen with Use: serve it, don't update
-	Versions []string          `json:"versions"`
-	Notes    map[string]string `json:"notes,omitempty"` // release notes by version
+	Name     string              `json:"name"`
+	Manifest string              `json:"manifest"`
+	Key      string              `json:"key,omitempty"`     // the public key, so -app can start it again
+	Keys     []string            `json:"keys,omitempty"`    // the keys the publisher signs with, from its manifest
+	Retired  []string            `json:"retired,omitempty"` // keys it stopped signing with: never trusted again
+	Current  string              `json:"current"`
+	Pin      string              `json:"pin,omitempty"` // chosen with Use: serve it, don't update
+	Versions []string            `json:"versions"`
+	Notes    map[string]string   `json:"notes,omitempty"`   // release notes by version
+	Folders  map[string][]Folder `json:"folders,omitempty"` // declared by each version's manifest
+	Grants   []Folder            `json:"grants,omitempty"`  // given by the user
 }
 
 // New prepares an installer and, if a version is installed, serves it right
@@ -200,6 +202,8 @@ type Status struct {
 	Pinned      string            `json:"pinned,omitempty"`  // the version chosen with Use or -web-version
 	Installed   []string          `json:"installed"`         // newest first
 	Notes       map[string]string `json:"notes,omitempty"`   // release notes of installed versions
+	Access      []Folder          `json:"access"`            // the folders it may use
+	Grants      []Folder          `json:"grants,omitempty"`  // of those, the ones the user granted
 }
 
 // Status reports the app's state.
@@ -212,6 +216,7 @@ func (in *Installer) Status() Status {
 		Latest: in.latest, LatestNotes: in.notes, Status: in.status, Checking: in.checking,
 		Updates: in.opts.Pin == "" && !in.opts.NoUpdate && in.state.Pin == "", Installed: installed, Notes: map[string]string{},
 		Pinned: in.state.Pin,
+		Access: mergeFolders(in.declaredLocked(), in.state.Grants), Grants: append([]Folder{}, in.state.Grants...),
 	}
 	if in.opts.Pin != "" {
 		st.Pinned = in.opts.Pin
@@ -450,7 +455,12 @@ func (in *Installer) trusted() []ed25519.PublicKey {
 func (in *Installer) Refresh() { in.refresh() }
 
 func (in *Installer) refresh() {
-	if in.opts.Pin != "" {
+	if in.opts.Pin != "" { // only the grants may change
+		in.mu.Lock()
+		cur := in.state.Current
+		in.loadState()
+		in.state.Current = cur
+		in.mu.Unlock()
 		return
 	}
 	in.mu.Lock()
@@ -649,6 +659,12 @@ func (in *Installer) install(ctx context.Context, m *Manifest, base *url.URL) er
 			in.state.Notes = map[string]string{}
 		}
 		in.state.Notes[m.Version] = m.Notes
+	}
+	if len(m.Folders) > 0 {
+		if in.state.Folders == nil {
+			in.state.Folders = map[string][]Folder{}
+		}
+		in.state.Folders[m.Version] = m.Folders
 	}
 	if !contains(in.state.Versions, m.Version) {
 		in.state.Versions = append(in.state.Versions, m.Version)

@@ -48,8 +48,10 @@ func init() {
 }
 
 // DefaultCORS lists the origins allowed to call the API from a browser: the
-// mycellome, youdata and cellcycle sites (and their subdomains) and local
-// pages. Add others per install with -cors.
+// mycellome, youdata and cellcycle sites and their subdomains. Pages of
+// other local servers (e.g. a dev server at http://localhost:5173) are not
+// in it: any app another program serves on this machine would get in too.
+// Add origins per install with -cors.
 var DefaultCORS = []string{
 	"https://mycellome.com",
 	"https://*.mycellome.com",
@@ -57,10 +59,6 @@ var DefaultCORS = []string{
 	"https://*.cellcycle.org",
 	"https://youdata.studio",
 	"https://*.youdata.studio",
-	"http://127.0.0.1:*",
-	"https://127.0.0.1:*",
-	"http://localhost:*",
-	"https://localhost:*",
 }
 
 // ManagerPath is where the file manager is always available, even when a
@@ -101,7 +99,7 @@ type Config struct {
 	Port      int      // preferred port; the next free one is used if taken
 	Global    bool     // listen on all interfaces instead of 127.0.0.1
 	ReadOnly  bool     // initial read-only state (can be toggled at runtime)
-	CORS      []string // allowed origins
+	CORS      []string // allowed origins; none: only the server's own pages
 
 	// Versions and trash (see versions.go). 0 means the default
 	// (20 versions, 64 MiB max file size, 30 days); negative turns it off.
@@ -112,6 +110,11 @@ type Config struct {
 
 	// Access, if set, makes the server multi-user (see access.go).
 	Access Access
+
+	// App, if set, limits the web app at "/" to some folders, and moves the
+	// file manager to http://localhost:PORT/_myweb/ (see appaccess.go).
+	// Single-user only.
+	App *AppAccess
 
 	// Token, if set, is required (Bearer header or login cookie) for writes
 	// and /cmd/*, and also for reads when Global. Empty disables auth.
@@ -187,8 +190,13 @@ func New(cfg Config) *Server {
 	s.readOnly.Store(cfg.ReadOnly)
 	s.events = newEventHub(s)
 	s.proxyClient = newProxyClient(publicOnly)
+	var noOrigins func(string) bool
+	if len(cfg.CORS) == 0 { // rs/cors would allow every origin
+		noOrigins = func(string) bool { return false }
+	}
 	s.cors = cors.New(cors.Options{
 		AllowedOrigins:   cfg.CORS,
+		AllowOriginFunc:  noOrigins,
 		AllowCredentials: true,
 		AllowedMethods:   []string{"GET", "HEAD", "POST", "OPTIONS"},
 		AllowedHeaders: []string{"Authorization", "Content-Type", "If-Match", "If-None-Match",
@@ -207,7 +215,7 @@ func (s *Server) routes() {
 	m := s.cfg.Mux
 	root := s.cfg.Root
 
-	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", s.guardFiles(revalidate(root, http.HandlerFunc(s.serveFiles))))))
+	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", s.guardFiles(revalidate(root, s.sandboxOnManagerHost(http.HandlerFunc(s.serveFiles)))))))
 	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(s.handleLs))))
 	m.Handle("/zip/", s.authedReads(http.StripPrefix("/zip", http.HandlerFunc(s.handleZip))))
 
@@ -218,8 +226,8 @@ func (s *Server) routes() {
 	m.Handle("/cmd/uploadFile", s.writable(s.handleUploadFile))
 	m.Handle("/up/", http.StripPrefix("/up", s.writable(s.handleUp)))
 
-	m.Handle("/ctrl/", http.StripPrefix("/ctrl", http.FileServer(getFS())))
-	m.HandleFunc(ClientPath, func(w http.ResponseWriter, r *http.Request) {
+	m.Handle("/ctrl/", s.managerOnItsHost(http.StripPrefix("/ctrl", http.FileServer(getFS()))))
+	m.HandleFunc(ClientPath, func(w http.ResponseWriter, r *http.Request) { // for the app's pages too
 		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Write(clientJS)
@@ -271,16 +279,16 @@ func (s *Server) routes() {
 	})
 
 	if s.cfg.AppServer != "" {
-		m.Handle("/io/", http.StripPrefix("/io", appHandler(s.cfg.AppServer)))
+		m.Handle("/io/", s.appOnItsHost(http.StripPrefix("/io", appHandler(s.cfg.AppServer))))
 	}
 	if s.cfg.Manager != nil {
-		m.Handle(ManagerPath, noCache(http.StripPrefix(strings.TrimSuffix(ManagerPath, "/"), http.FileServer(s.cfg.Manager))))
+		m.Handle(ManagerPath, noCache(s.managerOnItsHost(http.StripPrefix(strings.TrimSuffix(ManagerPath, "/"), http.FileServer(s.cfg.Manager)))))
 	}
 	// no-cache: after an app update (or an edit with -web) browsers must
 	// check before reusing a cached index.html or script
 	switch {
 	case s.cfg.WebFS != nil:
-		m.Handle("/", noCache(s.webVersion(http.FileServer(s.cfg.WebFS))))
+		m.Handle("/", noCache(s.appOnItsHost(s.webVersion(http.FileServer(s.cfg.WebFS)))))
 	case s.cfg.Manager != nil:
 		m.Handle("/", noCache(http.FileServer(s.cfg.Manager)))
 	}
@@ -433,6 +441,9 @@ func (s *Server) SetReadOnly(v bool) {
 func (s *Server) ManagerURL() string {
 	if s.cfg.Manager == nil {
 		return ""
+	}
+	if s.appLimited() {
+		return s.urlFor(ManagerHost) + ManagerPath
 	}
 	return s.URL() + ManagerPath
 }

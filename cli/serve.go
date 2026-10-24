@@ -175,6 +175,7 @@ func Serve(spec Spec) int {
 		}
 	}
 	app, err = webFlags.Installer(myserver.VERSION, dirs.Apps(), func(n, v string) {
+		makeFolders(app, root) // a new version may use new folders
 		srv.Broadcast(map[string]string{"type": "app-updated", "name": n, "version": v, "notes": app.Status().Notes[v]})
 	})
 	if err != nil {
@@ -238,8 +239,13 @@ func Serve(spec Spec) int {
 	}
 	instanceID := newInstanceID()
 	var webVersion func() string
+	var appAccess *myserver.AppAccess
 	if app != nil {
 		webVersion = app.Current
+		if spec.Access == nil { // an installed app: only its folders (myweb-team: people's own permissions)
+			appAccess = limitApp(app, root)
+			con.Note("%s may use: %s (more: %s app allow %s FOLDER)", app.Status().Name, folderList(app.Access()), name, app.Status().Name)
+		}
 	}
 	srv = myserver.New(myserver.Config{
 		Root:      root,
@@ -258,6 +264,7 @@ func Serve(spec Spec) int {
 		MaxUpload:    *uploadMax << 20,
 		Instance:     instanceID,
 		WebVersion:   webVersion,
+		App:          appAccess,
 	})
 	if len(f.cors) > 0 {
 		con.AddRow("CORS", "+ "+f.cors.String())

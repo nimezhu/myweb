@@ -29,7 +29,13 @@ type User struct {
 	Name string `json:"name"`
 	Role string `json:"role"`
 	Home string `json:"home,omitempty"` // their private folder, e.g. /users/alice
+
+	isApp bool     // the limited web app at "/" (see appaccess.go), not a person
+	app   []Folder // the folders it may use
 }
+
+// IsApp reports whether u is the limited web app rather than a person.
+func (u *User) IsApp() bool { return u != nil && u.isApp }
 
 // Access identifies users and decides permissions. Paths are cleaned URL
 // paths inside the served folder ("/" is its top).
@@ -64,9 +70,13 @@ func (s *Server) requestToken(r *http.Request) string {
 	return ""
 }
 
-// identify attaches the user to the request (multi-user only).
+// identify attaches the user to the request: multi-user, who signed in;
+// with a limited app, the app for requests from its pages.
 func (s *Server) identify(r *http.Request) *http.Request {
 	if s.cfg.Access == nil {
+		if s.fromApp(r) {
+			return r.WithContext(context.WithValue(r.Context(), userKey{}, s.appUser()))
+		}
 		return r
 	}
 	if u := s.cfg.Access.Identify(r, s.requestToken(r)); u != nil {
@@ -81,6 +91,9 @@ func (s *Server) MultiUser() bool { return s.cfg.Access != nil }
 // allowed is the one permission check every route uses: always true when
 // single-user (the token, if any, was checked already).
 func (s *Server) allowed(u *User, act Action, p string) bool {
+	if u.IsApp() {
+		return appAllows(u.app, act, p)
+	}
 	if s.cfg.Access == nil {
 		return true
 	}
@@ -124,6 +137,9 @@ func originalOf(p string) string {
 func (s *Server) visible(u *User, p string, isDir bool) bool {
 	if s.allowed(u, ActRead, p) {
 		return true
+	}
+	if u.IsApp() {
+		return isDir && appTraverses(u.app, p)
 	}
 	return isDir && s.cfg.Access != nil && u != nil && s.cfg.Access.CanTraverse(u, path.Clean("/"+p))
 }

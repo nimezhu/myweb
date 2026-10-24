@@ -83,6 +83,7 @@ func usage() {
                                            with myweb-publish.json; without it also give
                                            -key app.key -name NAME -dir DIR -out OUTDIR
                                            [-channel stable] [-requires-myweb 0.0.1]
+                                           [-folder /myapp ...] the data folders the app uses
   myweb-publish versions                   what the output folder publishes
   myweb-publish rotate [-new FILE]         move to a new signing key: builds sign with both
   myweb-publish rotate -finish             ... until users have updated; then the new one only
@@ -192,6 +193,8 @@ func build(args []string) error {
 	notes := fs.String("notes", "", "release notes")
 	keep := fs.Int("keep", 0, "keep only the newest N versions in the folder and the version list (0: all)")
 	oldKeys := fs.String("old-key", "", "during a key rotation: the previous private key file(s), comma-separated, which sign too")
+	var folders folderFlag
+	fs.Var(&folders, "folder", "a folder of the user's data folder the app uses, e.g. /myapp (add :ro to only read it);\nrepeat for more. myweb lets the app use only these and what the user grants")
 	fs.Parse(args)
 	if err := loadProject(fs, *config); err != nil {
 		return err
@@ -285,7 +288,10 @@ func build(args []string) error {
 		SHA256: hex.EncodeToString(sum[:]), Size: int64(len(bundle)),
 		Requires:  webapp.Requires{Myweb: *requires},
 		Published: time.Now().UTC().Truncate(time.Second), Notes: *notes,
-		Keys: signerKeys,
+		Keys: signerKeys, Folders: folders,
+	}
+	if len(m.Folders) == 0 {
+		fmt.Printf("note: no -folder given: myweb lets %s use only /%s in the user's data folder\n", *name, *name)
 	}
 	if err := m.Validate(); err != nil {
 		return err

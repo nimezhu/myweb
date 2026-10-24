@@ -11,10 +11,14 @@ import (
 // an ETag is sent for a file the user may not read. Without permission the
 // answer is 404: it doesn't reveal whether the file exists.
 func (s *Server) guardFiles(next http.Handler) http.Handler {
-	if s.cfg.Access == nil {
+	if s.cfg.Access == nil && s.cfg.App == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.cfg.Access == nil && !UserFrom(r.Context()).IsApp() {
+			next.ServeHTTP(w, r)
+			return
+		}
 		p := path.Clean("/" + r.URL.Path)
 		fi, err := os.Stat(s.ResolvePath(p))
 		if !s.visible(UserFrom(r.Context()), p, err == nil && fi.IsDir()) {
@@ -29,7 +33,7 @@ func (s *Server) guardFiles(next http.Handler) http.Handler {
 // the folder that hides what the user may not see.
 func (s *Server) serveFiles(w http.ResponseWriter, r *http.Request) {
 	var fsys http.FileSystem = http.Dir(s.cfg.Root)
-	if s.cfg.Access != nil {
+	if s.cfg.Access != nil || UserFrom(r.Context()).IsApp() {
 		fsys = userFS{fsys, s, UserFrom(r.Context())}
 	}
 	http.FileServer(fsys).ServeHTTP(w, r)

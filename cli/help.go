@@ -177,10 +177,16 @@ var helpTopics = map[string]string{
                                           if needed); latest follows updates again
   %[1]s app remove NAME [-y]              delete an installed app
   %[1]s app default [NAME | -clear]       the app that plain "%[1]s" serves
+  %[1]s app access NAME                   the folders an app may use
+  %[1]s app allow NAME FOLDER [-write]    let it read (and with -write change) a folder
+  %[1]s app deny NAME FOLDER              take a folder back
   %[1]s app catalog add URL -key KEY      also read this catalog
   %[1]s app catalog remove URL
 
 Every app command takes -home DIR. NAME may also be the app's manifest URL.
+An installed app may use only its own folders of the data folder (those its
+publisher declares, else /NAME) and those you allow; "allow NAME /" gives it
+everything. While it runs, the file manager is at http://localhost:PORT/_myweb/.
 A catalog is a signed list of apps (apps.json, made with myweb-publish
 catalog). %[1]s reads the ones added and, unless removed,
   %[2]s

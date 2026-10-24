@@ -135,3 +135,20 @@ func TestRotate(t *testing.T) {
 		t.Fatalf("next rotation: %v %+v", err, read())
 	}
 }
+
+func TestFolderFlag(t *testing.T) {
+	var f folderFlag
+	for _, v := range []string{"/myapp", "samples:ro"} {
+		if err := f.Set(v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if f.String() != "/myapp,/samples:ro" {
+		t.Fatalf("%s", f.String())
+	}
+	for _, bad := range []string{"/", "../x", "/.myweb"} {
+		if err := f.Set(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+}

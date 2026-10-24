@@ -36,6 +36,10 @@ func TestCrossSiteWritesRefused(t *testing.T) {
 			t.Errorf("POST %s from another site: %d", path, st)
 		}
 	}
+	// pages of other local servers too, unless given with -cors
+	if st := do("POST", "/w/evil.txt", map[string]string{"Origin": "http://localhost:5173"}); st != http.StatusForbidden {
+		t.Errorf("another local page: %d", st)
+	}
 	if st := do("POST", "/w/evil.txt", map[string]string{"Origin": "null"}); st != http.StatusForbidden {
 		t.Errorf("Origin null: %d", st)
 	}
@@ -59,7 +63,6 @@ func TestCrossSiteWritesRefused(t *testing.T) {
 		"same origin": {"Origin": ts.URL, "Sec-Fetch-Site": "same-origin"},
 		"default":     {"Origin": "https://youdata.studio"},
 		"-cors":       {"Origin": "https://app.example.com"},
-		"local page":  {"Origin": "http://localhost:5173", "Sec-Fetch-Site": "same-site"},
 	} {
 		if st := do("POST", "/w/ok.txt", hdr); st != 200 {
 			t.Errorf("%s: %d", name, st)

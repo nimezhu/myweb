@@ -27,6 +27,39 @@ type project struct {
 	Requires string   `json:"requires-myweb,omitempty"`
 	Keep     int      `json:"keep,omitempty"`
 	OldKeys  []string `json:"old-keys,omitempty"` // still signing during a key rotation
+	Folders  []string `json:"folders,omitempty"`  // the app's folders in the data folder, e.g. "/myapp", "/samples:ro"
+}
+
+// folderFlag collects -folder PATH[:ro].
+type folderFlag []webapp.Folder
+
+func (f *folderFlag) String() string {
+	var s []string
+	for _, x := range *f {
+		s = append(s, folderSpec(x))
+	}
+	return strings.Join(s, ",")
+}
+
+// folderSpec is a folder as -folder takes it.
+func folderSpec(f webapp.Folder) string {
+	if f.ReadOnly {
+		return f.Path + ":ro"
+	}
+	return f.Path
+}
+
+func (f *folderFlag) Set(v string) error {
+	p, ro := strings.CutSuffix(v, ":ro")
+	c, err := webapp.CleanFolder(p)
+	if err != nil {
+		return err
+	}
+	if c == "/" {
+		return fmt.Errorf("-folder /: an app can't ask for the whole data folder (users can grant it)")
+	}
+	*f = append(*f, webapp.Folder{Path: c, ReadOnly: ro})
+	return nil
 }
 
 // loadProject fills in the flags that were not given from the project file.
@@ -70,6 +103,13 @@ func loadProject(fs *flag.FlagSet, path string) error {
 	if p.Keep > 0 && !given["keep"] && fs.Lookup("keep") != nil {
 		fs.Set("keep", strconv.Itoa(p.Keep))
 	}
+	if !given["folder"] && fs.Lookup("folder") != nil {
+		for _, f := range p.Folders {
+			if err := fs.Set("folder", f); err != nil {
+				return fmt.Errorf("%s: folders: %v", path, err)
+			}
+		}
+	}
 	return nil
 }
 
@@ -81,6 +121,8 @@ func initCmd(args []string) error {
 	key := fs.String("key", "app.key", "private key file; created if missing")
 	channel := fs.String("channel", "", "manifest name: <channel>.json (default stable)")
 	keep := fs.Int("keep", 0, "keep only the newest N versions (0: all)")
+	var folders folderFlag
+	fs.Var(&folders, "folder", "a folder of the user's data folder the app uses (default /<name>); :ro to only read; repeatable")
 	fs.Parse(args)
 	if *name == "" || *dir == "" {
 		return fmt.Errorf("usage: myweb-publish init -name NAME -dir DIR [-out release] [-key app.key]")
@@ -92,6 +134,9 @@ func initCmd(args []string) error {
 		return fmt.Errorf("%s exists; edit it instead", projectFile)
 	}
 	p := project{Name: *name, Dir: *dir, Out: *out, Key: *key, Channel: *channel, Keep: *keep}
+	for _, f := range folders {
+		p.Folders = append(p.Folders, folderSpec(f))
+	}
 	b, _ := json.MarshalIndent(p, "", "  ")
 	if err := writeNew(projectFile, string(b)+"\n", 0o644); err != nil {
 		return err

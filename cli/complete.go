@@ -67,7 +67,7 @@ func completionCmd(spec Spec, args []string, w io.Writer) error {
 
 var (
 	topCommands = []string{"serve", "app", "status", "open", "stop", "config", "service", "upgrade", "completion", "version", "help"}
-	appCommands = []string{"list", "run", "install", "update", "versions", "use", "remove", "default", "catalog"}
+	appCommands = []string{"list", "run", "install", "update", "versions", "use", "remove", "default", "catalog", "allow", "deny", "access"}
 )
 
 // completions returns the candidates after words (the command line so far,
@@ -169,6 +169,14 @@ func completions(spec Spec, words []string) []string {
 				}
 				return append(append([]string{}, a.Versions...), "latest")
 			}
+		case "allow", "deny", "access":
+			if len(pos) == 0 {
+				return apps()
+			}
+			if words[1] == "allow" {
+				return []string{"-write", "-home"}
+			}
+			return nil // a folder
 		case "versions":
 			if len(pos) == 0 {
 				return apps()

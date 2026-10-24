@@ -84,6 +84,9 @@ func appCmd(spec Spec, args []string) int {
 		"default": appDefault,
 		"use":     appUse,
 		"catalog": appCatalog,
+		"allow":   appAllow,
+		"deny":    appDeny,
+		"access":  appAccess,
 	}
 	f, ok := cmds[sub]
 	if !ok {
@@ -269,6 +272,7 @@ func update(name, appsDir string, fl *webapp.Flags) error {
 	}
 	switch {
 	case before == "":
+		fmt.Printf("%s may use: %s\n", a.Name, folderList(a.Access))
 		if serveHint {
 			fmt.Printf("%s %s installed; serve it with: %s app run %s\n", a.Name, a.Current, name, a.Name)
 		} else {

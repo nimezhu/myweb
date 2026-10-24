@@ -169,6 +169,8 @@ myweb-publish init -name myapp -dir dist          # -out release -key app.key -k
 # each release: zip dist/, sign the manifest and the list of every version
 myweb-publish build -version 1.0.0                # the first one
 myweb-publish build -bump patch -notes "Fix the export"   # then: patch, minor or major
+# the folders of the user's data folder the app uses: -folder /myapp (repeat;
+# :ro to only read), or "folders": ["/myapp"] in myweb-publish.json
 myweb-publish versions                            # what release/ publishes
 # upload release/ as is (stable.json, stable.versions.json, their .sig, the zips)
 # to any web server; build checks it like myweb will (myweb-publish verify too)
@@ -213,9 +215,30 @@ myweb app use myapp latest      # follow updates again
   `myweb-publish rotate -finish` signs with the new key alone, and from that
   release on myweb no longer trusts the old one, even if given as `-web-key`.
   Users who skipped every release in between need the new public key once.
-- **Safety:** the app runs with full access to your files, so myweb installs it
-  only if the manifest's ed25519 signature matches `-web-key` and the zip matches
-  the signed SHA-256. There is no switch to skip this. It never moves to an older
+- **Only its own folders.** An installed app can read and change only the
+  folders of the data folder its publisher declares (`myweb-publish build
+  -folder /myapp`, signed with the release; without one, `/<name>`), which are
+  created for it, and the ones you give it:
+
+  ```sh
+  myweb app access myapp                 # what it may use
+  myweb app allow myapp /photos          # let it read a folder
+  myweb app allow myapp /reports -write  # read and change one
+  myweb app deny myapp /photos           # take it back
+  myweb app allow myapp /                # everything, as before
+  ```
+
+  The rest of the data folder doesn't exist for it: listings, search, `/f/`,
+  `/zip/`, `/events` and every command hide it, and it can't stop the server or
+  change its own installation. For this the app and the file manager are kept
+  on different addresses: the app at `http://127.0.0.1:PORT/`, the file manager
+  at `http://localhost:PORT/_myweb/` (the old address redirects there). Scripts
+  without a browser (curl), the file manager and `-cors` sites keep full
+  access. This applies to apps installed with `-web-from`, `-app` or a
+  catalog, not to your own `-web DIR`, and not under myweb-team, where
+  people's permissions apply.
+- **Safety:** myweb installs an app only if the manifest's ed25519 signature
+  matches `-web-key` and the zip matches the signed SHA-256. There is no switch to skip this. It never moves to an older
   version by itself, refuses zips with paths that leave the app folder, accepts
   only https (http just for localhost), and keeps serving the installed version
   when the server can't be reached. A manifest can require a myweb version with
@@ -395,9 +418,11 @@ is a hard link to the replaced file, so it costs no space until the file changes
   `Authorization: Bearer <token>`. Browsers sign in through the link the server
   opens (`/?token=…`), which sets a cookie for this server only.
 - **CORS.** Browsers may call the API only from the server's own pages, from
-  localhost, from `https://mycellome.com`, `https://youdata.studio` and
-  `https://cellcycle.org` and their subdomains (`myserver.DefaultCORS`), plus any
-  given with `-cors`. A bare `*` is refused. The same list is checked
+  `https://mycellome.com`, `https://youdata.studio` and `https://cellcycle.org`
+  and their subdomains (`myserver.DefaultCORS`), plus any given with `-cors`.
+  Pages of other local servers are not allowed by default (any app another
+  program serves on this machine would be too): give a dev server with e.g.
+  `-cors http://localhost:5173`. A bare `*` is refused. The same list is checked
   for `/events`, and for every request that can change something (any method
   but GET, HEAD and OPTIONS): browsers send a plain form or text POST to
   another site without asking first, so myweb refuses those itself (403)

@@ -43,6 +43,9 @@ type Manifest struct {
 	// manifest, myweb trusts exactly these, which is how a publisher moves to
 	// a new key (myweb-publish rotate) without users changing -web-key.
 	Keys []string `json:"keys,omitempty"`
+	// Folders are the folders of the user's data folder the app uses (its
+	// own); myweb lets it use only these and those the user grants.
+	Folders []Folder `json:"folders,omitempty"`
 }
 
 // Requires lists what the app needs from the server.
@@ -78,6 +81,15 @@ func (m *Manifest) Validate() error {
 	for _, k := range m.Keys {
 		if _, err := ParsePublicKey(k); err != nil {
 			return fmt.Errorf("manifest: keys: %v", err)
+		}
+	}
+	for _, f := range m.Folders {
+		p, err := CleanFolder(f.Path)
+		if err != nil {
+			return fmt.Errorf("manifest: %v", err)
+		}
+		if p == "/" {
+			return errors.New("manifest: an app can't ask for the whole data folder (users can grant it)")
 		}
 	}
 	return nil
