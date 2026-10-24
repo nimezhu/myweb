@@ -301,7 +301,7 @@ func (s *Server) writable(h http.HandlerFunc) http.Handler {
 func (s *Server) Handler() http.Handler { return s.handler() }
 
 func (s *Server) handler() http.Handler {
-	return recoverer(s.cors.Handler(s.logRequests(s.login(s.cfg.Mux))))
+	return recoverer(s.cors.Handler(s.logRequests(s.guardWrites(s.login(s.cfg.Mux)))))
 }
 
 func (s *Server) host() string {

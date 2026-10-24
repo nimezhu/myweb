@@ -109,3 +109,32 @@ func userName(u *User) string {
 	}
 	return u.Name
 }
+
+// guardWrites refuses requests that can change something (anything but
+// GET, HEAD and OPTIONS) from web pages of other sites. CORS alone doesn't:
+// browsers send a "simple" cross-site POST (a form, or text/plain) without
+// asking first, so without this any page could write to the data folder of a
+// server without a token. Allowed: the server's own pages, the -cors origins,
+// and clients that aren't browsers (no Origin header).
+func (s *Server) guardWrites(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet, http.MethodHead, http.MethodOptions:
+		default:
+			if !s.originAllowed(r) {
+				writeError(w, http.StatusForbidden, "requests from other websites may not change anything here (allow a site with -cors)")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) originAllowed(r *http.Request) bool {
+	if r.Header.Get("Origin") == "" {
+		// browsers send Origin on every cross-site POST; Sec-Fetch-Site
+		// catches the rare one that doesn't
+		return r.Header.Get("Sec-Fetch-Site") != "cross-site"
+	}
+	return sameOrigin(r) || s.cors.OriginAllowed(r)
+}

@@ -398,7 +398,11 @@ is a hard link to the replaced file, so it costs no space until the file changes
   localhost, from `https://mycellome.com`, `https://youdata.studio` and
   `https://cellcycle.org` and their subdomains (`myserver.DefaultCORS`), plus any
   given with `-cors`. A bare `*` is refused. The same list is checked
-  for `/events`.
+  for `/events`, and for every request that can change something (any method
+  but GET, HEAD and OPTIONS): browsers send a plain form or text POST to
+  another site without asking first, so myweb refuses those itself (403)
+  unless they come from one of these pages. Clients that aren't browsers (no
+  `Origin` header) are not affected.
 - **Paths** cannot leave the served folder, and `.myweb` cannot be written.
 
 ## Use it from Go

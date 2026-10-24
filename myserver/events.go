@@ -109,12 +109,7 @@ func (s *Server) upgrader() *websocket.Upgrader {
 	return &websocket.Upgrader{
 		// Browsers don't apply CORS to WebSockets, so check the origin here:
 		// same origin, non-browser clients, or an allowed CORS origin.
-		CheckOrigin: func(r *http.Request) bool {
-			if r.Header.Get("Origin") == "" || sameOrigin(r) {
-				return true
-			}
-			return s.cors != nil && s.cors.OriginAllowed(r)
-		},
+		CheckOrigin: s.originAllowed,
 	}
 }
 
