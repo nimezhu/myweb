@@ -227,3 +227,51 @@ func TestAppCantShare(t *testing.T) {
 		t.Errorf("app made a share link: %v %v", resp.Status, err)
 	}
 }
+
+func TestShareUploadQuota(t *testing.T) {
+	st := newShareTest(t, Config{})
+	sh, secret, err := st.s.CreateShare("/drop", ShareOptions{Upload: true, MaxMB: 1, MaxFiles: 2})
+	if err != nil || sh.MaxBytes != 1<<20 {
+		t.Fatalf("%+v %v", sh, err)
+	}
+	send := func(files map[string]int) (int, string) {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		for name, n := range files {
+			fw, _ := mw.CreateFormFile("files", name)
+			fw.Write(bytes.Repeat([]byte("x"), n))
+		}
+		mw.Close()
+		req, _ := http.NewRequest("POST", st.url+"/_s/"+secret+"/", &buf)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if code, body := send(map[string]int{"big.bin": 2 << 20}); code != 413 || !strings.Contains(body, "can still take") {
+		t.Errorf("over the bytes: %d %s", code, body)
+	}
+	if _, err := os.Stat(filepath.Join(st.root, "drop", "big.bin")); err == nil {
+		t.Error("a file over the quota landed")
+	}
+	if code, _ := send(map[string]int{"a.bin": 100}); code != 200 {
+		t.Errorf("first: %d", code)
+	}
+	if code, _ := send(map[string]int{"b.bin": 100}); code != 200 {
+		t.Errorf("second: %d", code)
+	}
+	if code, body := send(map[string]int{"c.bin": 100}); code != 413 || !strings.Contains(body, "taken all it can") {
+		t.Errorf("over the files: %d %s", code, body)
+	}
+	now := st.s.shareByID(sh.ID)
+	if now.Files != 2 || now.Bytes != 200 {
+		t.Errorf("counted %d files, %d bytes", now.Files, now.Bytes)
+	}
+	if left, _ := filepath.Glob(filepath.Join(st.root, "drop", ".*")); len(left) != 0 {
+		t.Errorf("temporary files left: %v", left)
+	}
+}

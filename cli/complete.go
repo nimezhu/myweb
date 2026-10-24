@@ -244,7 +244,7 @@ func completions(spec Spec, words []string) []string {
 	case "status", "ps":
 		return []string{"-json", "-home"}
 	case "share":
-		return []string{"list", "revoke", "-upload", "-days", "-on", "-home"}
+		return []string{"list", "revoke", "-upload", "-days", "-max-mb", "-max-files", "-on", "-home"}
 	case "doctor":
 		return []string{"-offline", "-home"}
 	case "open", "stop":

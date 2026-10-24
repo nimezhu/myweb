@@ -4,7 +4,9 @@ package myserver
 // more apps, each on a port of its own, so the browser keeps them apart
 // (and apart from the file manager): http://127.0.0.1:PORT/ is the app's
 // pages and the same API as the main port, limited to the app's folders.
-// http://<main address>/apps/NAME/ redirects there. Single-user only.
+// http://<main address>/apps/NAME/ redirects there. Multi-user (myweb-team),
+// the person signed in uses the app with their own rights, within its
+// folders.
 
 import (
 	"context"
@@ -13,6 +15,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -42,9 +45,6 @@ type MountInfo struct {
 // Mount serves m on port, or when that is taken (or 0) on a free port above
 // the main one, and returns the port. Mounting a name again returns its port.
 func (s *Server) Mount(m *Mount, port int) (int, error) {
-	if s.cfg.Access != nil {
-		return 0, errors.New("apps can't be mounted on a multi-user server")
-	}
 	if m.Access == nil || m.FS == nil {
 		return 0, errors.New("mount: Access and FS are required")
 	}
@@ -154,7 +154,13 @@ func (s *Server) MountURL(name string) string {
 }
 
 func (s *Server) mountURL(port int) string {
-	return "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(port)) + "/"
+	host := "127.0.0.1"
+	if lan := s.LANURLs(); len(lan) > 0 { // -global: as other machines reach it
+		if u, err := url.Parse(lan[0]); err == nil {
+			host = u.Hostname()
+		}
+	}
+	return "http://" + net.JoinHostPort(host, strconv.Itoa(port)) + "/"
 }
 
 func (s *Server) mountCount() int {
@@ -218,7 +224,7 @@ func (s *Server) serveRoot(main http.Handler) http.Handler {
 		if rest, ok := strings.CutPrefix(r.URL.Path, "/apps/"); ok {
 			name, sub, _ := strings.Cut(rest, "/")
 			if m := s.mountNamed(name); m != nil {
-				target := s.mountURL(m.port) + sub
+				target := "http://" + net.JoinHostPort(requestHostname(r), strconv.Itoa(m.port)) + "/" + sub
 				if r.URL.RawQuery != "" {
 					target += "?" + r.URL.RawQuery
 				}

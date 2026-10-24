@@ -82,7 +82,11 @@ func (s *Server) identify(r *http.Request) *http.Request {
 		}
 		return r
 	}
-	if u := s.cfg.Access.Identify(r, s.requestToken(r)); u != nil {
+	u := s.cfg.Access.Identify(r, s.requestToken(r))
+	if a := s.appFrom(r); a != nil { // an app's page: the person's rights, within the app's folders
+		u = s.limitTo(u, a)
+	}
+	if u != nil {
 		return r.WithContext(context.WithValue(r.Context(), userKey{}, u))
 	}
 	return r
@@ -95,7 +99,13 @@ func (s *Server) MultiUser() bool { return s.cfg.Access != nil }
 // single-user (the token, if any, was checked already).
 func (s *Server) allowed(u *User, act Action, p string) bool {
 	if u.IsApp() {
-		return appAllows(u.app, act, p) && s.appAllowsReal(u.app, act, p)
+		if !appAllows(u.app, act, p) || !s.appAllowsReal(u.app, act, p) {
+			return false
+		}
+		if s.cfg.Access == nil {
+			return true
+		}
+		// multi-user: and what the person signed in may do
 	}
 	if s.cfg.Access == nil {
 		return true
@@ -142,7 +152,12 @@ func (s *Server) visible(u *User, p string, isDir bool) bool {
 		return true
 	}
 	if u.IsApp() {
-		return isDir && appTraverses(u.app, p)
+		if !isDir || !appTraverses(u.app, p) {
+			return false
+		}
+		if s.cfg.Access == nil {
+			return true
+		}
 	}
 	return isDir && s.cfg.Access != nil && u != nil && s.cfg.Access.CanTraverse(u, path.Clean("/"+p))
 }

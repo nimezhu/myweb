@@ -10,7 +10,8 @@ package myserver
 //	POST /_s/<secret>/             ... the files, into the shared folder
 //
 // An upload link is a drop box: files can be added (never overwriting one),
-// not seen. A link reaches only its folder, as an installed app does (see
+// not seen, up to its quota (DefaultShareMaxMB and DefaultShareMaxFiles
+// unless given), so a link can't fill the disk before it expires. A link reaches only its folder, as an installed app does (see
 // appaccess.go): not .myweb, and not where a symbolic link in it leads
 // elsewhere. Links are kept in .myweb/shares.json by the SHA-256 of their
 // secret, so the link itself is shown only when it is made.
@@ -54,6 +55,27 @@ type Share struct {
 	Created time.Time `json:"created"`
 	Expires time.Time `json:"expires"`
 	By      string    `json:"by,omitempty"` // multi-user: who made it
+
+	// an upload link's quota, and what it has taken
+	MaxBytes int64 `json:"maxBytes,omitempty"`
+	MaxFiles int   `json:"maxFiles,omitempty"`
+	Bytes    int64 `json:"bytes,omitempty"`
+	Files    int   `json:"files,omitempty"`
+}
+
+// The quota of an upload link when none is given.
+const (
+	DefaultShareMaxMB    = 1024
+	DefaultShareMaxFiles = 500
+)
+
+// ShareOptions are how a link is made; zero values are the defaults.
+type ShareOptions struct {
+	Upload   bool
+	Days     int   // default 7
+	MaxMB    int64 // an upload link's quota
+	MaxFiles int
+	By       string
 }
 
 // MaxShareDays is the longest a share link may last.
@@ -105,9 +127,22 @@ func (s *Server) saveShares(list []Share) error {
 	return writeFileAtomic(s.sharesFile(), append(b, '\n'))
 }
 
-// CreateShare makes a link to p (a folder for an upload link) lasting days,
-// and returns it with its secret, the part of the link that opens it.
-func (s *Server) CreateShare(p string, upload bool, days int, by string) (Share, string, error) {
+// CreateShare makes a link to p (a folder for an upload link), and returns
+// it with its secret, the part of the link that opens it.
+func (s *Server) CreateShare(p string, o ShareOptions) (Share, string, error) {
+	upload, days := o.Upload, o.Days
+	if days == 0 {
+		days = 7
+	}
+	if o.MaxMB == 0 {
+		o.MaxMB = DefaultShareMaxMB
+	}
+	if o.MaxFiles == 0 {
+		o.MaxFiles = DefaultShareMaxFiles
+	}
+	if o.MaxMB < 0 || o.MaxFiles < 0 {
+		return Share{}, "", errors.New("a quota can't be negative")
+	}
 	p = path.Clean("/" + p)
 	if IsReserved(p) {
 		return Share{}, "", errors.New("the server's own folder can't be shared")
@@ -129,7 +164,10 @@ func (s *Server) CreateShare(p string, upload bool, days int, by string) (Share,
 	secret := base64.RawURLEncoding.EncodeToString(raw)
 	now := time.Now().UTC().Truncate(time.Second)
 	sh := Share{ID: shareHash(secret)[:10], Hash: shareHash(secret), Path: p, Upload: upload,
-		Created: now, Expires: now.Add(time.Duration(days) * 24 * time.Hour), By: by}
+		Created: now, Expires: now.Add(time.Duration(days) * 24 * time.Hour), By: o.By}
+	if upload {
+		sh.MaxBytes, sh.MaxFiles = o.MaxMB<<20, o.MaxFiles
+	}
 	sharesMu.Lock()
 	defer sharesMu.Unlock()
 	list, err := s.loadShares()
@@ -375,6 +413,9 @@ func (s *Server) shareUpload(w http.ResponseWriter, r *http.Request, sh *Share, 
 	}
 	dir := s.ResolvePath(sh.Path)
 	var got []string
+	full := func() {
+		sharePage(w, http.StatusRequestEntityTooLarge, title, receivedList(got)+"<p>This link has taken all it can. Ask for a new one to send more.</p>")
+	}
 	for len(got) < MaxShareUploadFiles {
 		part, err := mr.NextPart()
 		if err == io.EOF {
@@ -392,10 +433,27 @@ func (s *Server) shareUpload(w http.ResponseWriter, r *http.Request, sh *Share, 
 		if strings.HasPrefix(name, ".") {
 			name = "_" + name // no hidden files, nor .myweb
 		}
-		tmp, _, err := receive(dir, part, s.maxUpload(), io.Discard)
+		now := s.shareByID(sh.ID) // what it has taken so far, with other uploads
+		if now == nil {
+			part.Close()
+			sharePage(w, http.StatusNotFound, "Link not found", "<p>This link has expired or was removed.</p>")
+			return
+		}
+		left := now.MaxBytes - now.Bytes
+		if left <= 0 || now.Files >= now.MaxFiles {
+			part.Close()
+			full()
+			return
+		}
+		max := min(s.maxUpload(), left)
+		tmp, size, err := receive(dir, part, max, io.Discard)
 		part.Close()
 		if errors.Is(err, errTooLarge) {
-			sharePage(w, http.StatusRequestEntityTooLarge, title, fmt.Sprintf("<p>%s is too large (at most %s).</p>", html.EscapeString(name), humanSize(s.maxUpload()))+form)
+			if max < s.maxUpload() {
+				sharePage(w, http.StatusRequestEntityTooLarge, title, receivedList(got)+fmt.Sprintf("<p>%s is more than this link can still take (%s).</p>", html.EscapeString(name), humanSize(max))+form)
+				return
+			}
+			sharePage(w, http.StatusRequestEntityTooLarge, title, receivedList(got)+fmt.Sprintf("<p>%s is too large (at most %s).</p>", html.EscapeString(name), humanSize(max))+form)
 			return
 		}
 		if err != nil {
@@ -410,18 +468,59 @@ func (s *Server) shareUpload(w http.ResponseWriter, r *http.Request, sh *Share, 
 			return
 		}
 		got = append(got, path.Base(landed))
+		s.countShareUpload(sh.ID, size)
 		log.Printf("share %s: received %s", sh.ID, landed)
 	}
 	if len(got) == 0 {
 		sharePage(w, http.StatusBadRequest, title, "<p>Choose some files to send.</p>"+form)
 		return
 	}
+	sharePage(w, http.StatusOK, "Thank you", receivedList(got)+`<p><a href="">Send more</a></p>`)
+}
+
+// receivedList tells which files arrived ("" for none).
+func receivedList(got []string) string {
+	if len(got) == 0 {
+		return ""
+	}
 	var list strings.Builder
 	for _, n := range got {
 		list.WriteString("<li>" + html.EscapeString(n) + "</li>")
 	}
-	sharePage(w, http.StatusOK, "Thank you", fmt.Sprintf("<p>Received %d file%s:</p><ul>%s</ul><p><a href=\"\">Send more</a></p>",
-		len(got), plural(len(got)), list.String()))
+	return fmt.Sprintf("<p>Received %d file%s:</p><ul>%s</ul>", len(got), plural(len(got)), list.String())
+}
+
+func (s *Server) shareByID(id string) *Share {
+	list, err := s.Shares()
+	if err != nil {
+		return nil
+	}
+	for i := range list {
+		if list[i].ID == id {
+			return &list[i]
+		}
+	}
+	return nil
+}
+
+// countShareUpload adds a received file to its link's total.
+func (s *Server) countShareUpload(id string, size int64) {
+	sharesMu.Lock()
+	defer sharesMu.Unlock()
+	list, err := s.loadShares()
+	if err != nil {
+		log.Printf("shares: %v", err)
+		return
+	}
+	for i := range list {
+		if list[i].ID == id {
+			list[i].Bytes += size
+			list[i].Files++
+		}
+	}
+	if err := s.saveShares(list); err != nil {
+		log.Printf("shares: %v", err)
+	}
 }
 
 func (sh *Share) byName() string {
@@ -483,15 +582,14 @@ func (s *Server) registerShareCmds() {
 			return nil, err
 		}
 		var p struct {
-			Path   string `json:"path"`
-			Upload bool   `json:"upload"`
-			Days   int    `json:"days"`
+			Path     string `json:"path"`
+			Upload   bool   `json:"upload"`
+			Days     int    `json:"days"`
+			MaxMB    int64  `json:"maxMB"`
+			MaxFiles int    `json:"maxFiles"`
 		}
 		if err := req.Bind(&p); err != nil {
 			return nil, err
-		}
-		if p.Days == 0 {
-			p.Days = 7
 		}
 		act := ActRead
 		if p.Upload {
@@ -500,13 +598,13 @@ func (s *Server) registerShareCmds() {
 		if !req.Can(act, p.Path) {
 			return nil, Errorf(http.StatusForbidden, "no %s permission for %s", act, path.Clean("/"+p.Path))
 		}
-		sh, secret, err := s.CreateShare(p.Path, p.Upload, p.Days, userName(req.User))
+		sh, secret, err := s.CreateShare(p.Path, ShareOptions{Upload: p.Upload, Days: p.Days, MaxMB: p.MaxMB, MaxFiles: p.MaxFiles, By: userName(req.User)})
 		if err != nil {
 			return nil, Errorf(http.StatusBadRequest, "%v", err)
 		}
 		return map[string]interface{}{"id": sh.ID, "url": s.ShareURL(secret), "path": sh.Path,
-			"upload": sh.Upload, "expires": sh.Expires, "local": !s.Global()}, nil
-	}, Describe(`make a link that opens a folder or file without the token: {"path":"/photos","upload":false,"days":7}; upload: a drop box for files`))
+			"upload": sh.Upload, "expires": sh.Expires, "maxBytes": sh.MaxBytes, "maxFiles": sh.MaxFiles, "local": !s.Global()}, nil
+	}, Describe(`make a link that opens a folder or file without the token: {"path":"/photos","upload":false,"days":7}; upload: a drop box for files, taking up to maxMB (default 1024) and maxFiles (500)`))
 	s.RegisterCmd("shares", func(ctx context.Context, req *CmdRequest) (interface{}, error) {
 		if err := notApp(req); err != nil {
 			return nil, err

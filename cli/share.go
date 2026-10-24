@@ -17,7 +17,8 @@ import (
 // "share" makes links to a folder or file of a running server's data
 // folder, that open without the token (see myserver/share.go):
 //
-//	share PATH [-upload] [-days N] [-on WHICH]   a link (-upload: a drop box)
+//	share PATH [-upload [-max-mb N] [-max-files N]] [-days N] [-on WHICH]
+//	                                             a link (-upload: a drop box)
 //	share list [-on WHICH]
 //	share revoke ID [-on WHICH]
 //
@@ -27,6 +28,8 @@ func shareCmd(spec Spec, args []string, w io.Writer) error {
 	fl := newAppFlags(spec.Name, "share")
 	upload := fl.Bool("upload", false, "")
 	days := fl.Int("days", 7, "")
+	maxMB := fl.Int64("max-mb", 0, "")
+	maxFiles := fl.Int("max-files", 0, "")
 	on := fl.String("on", "", "")
 	pos, err := fl.parse(args)
 	if err != nil {
@@ -58,6 +61,9 @@ func shareCmd(spec Spec, args []string, w io.Writer) error {
 			Upload  bool      `json:"upload"`
 			Expires time.Time `json:"expires"`
 			By      string    `json:"by"`
+			Bytes   int64     `json:"bytes"`
+			Files   int       `json:"files"`
+			Max     int64     `json:"maxBytes"`
 		}
 		if err := callCmd(s, "shares", nil, &list); err != nil {
 			return err
@@ -67,13 +73,14 @@ func shareCmd(spec Spec, args []string, w io.Writer) error {
 			return nil
 		}
 		t := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(t, "ID\tPATH\tKIND\tEXPIRES")
+		fmt.Fprintln(t, "ID\tPATH\tKIND\tEXPIRES\tRECEIVED")
 		for _, sh := range list {
-			kind := "read"
+			kind, got := "read", ""
 			if sh.Upload {
 				kind = "upload"
+				got = fmt.Sprintf("%d file%s, %d of %d MB", sh.Files, plural(sh.Files), (sh.Bytes+1<<20-1)>>20, sh.Max>>20)
 			}
-			fmt.Fprintf(t, "%s\t%s\t%s\t%s\n", sh.ID, sh.Path, kind, sh.Expires.Local().Format("2006-01-02 15:04"))
+			fmt.Fprintf(t, "%s\t%s\t%s\t%s\t%s\n", sh.ID, sh.Path, kind, sh.Expires.Local().Format("2006-01-02 15:04"), got)
 		}
 		return t.Flush()
 	case pos[0] == "revoke":
@@ -97,13 +104,18 @@ func shareCmd(spec Spec, args []string, w io.Writer) error {
 		URL     string    `json:"url"`
 		Expires time.Time `json:"expires"`
 		Local   bool      `json:"local"`
+		Max     int64     `json:"maxBytes"`
+		Files   int       `json:"maxFiles"`
 	}
-	if err := callCmd(s, "shareCreate", map[string]interface{}{"path": p, "upload": *upload, "days": *days}, &res); err != nil {
+	if (*maxMB != 0 || *maxFiles != 0) && !*upload {
+		return usageError{errors.New("-max-mb and -max-files are for -upload links")}
+	}
+	if err := callCmd(s, "shareCreate", map[string]interface{}{"path": p, "upload": *upload, "days": *days, "maxMB": *maxMB, "maxFiles": *maxFiles}, &res); err != nil {
 		return err
 	}
 	kind := "opens"
 	if *upload {
-		kind = "takes files into"
+		kind = fmt.Sprintf("takes up to %d files, %d MB in all, into", res.Files, res.Max>>20)
 	}
 	fmt.Fprintf(w, "%s\n\nthis link %s %s until %s, without the token (%s share revoke %s ends it)\n",
 		res.URL, kind, p, res.Expires.Local().Format("2 Jan 2006 15:04"), spec.Name, res.ID)

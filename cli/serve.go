@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/nimezhu/myweb/console"
@@ -40,6 +41,7 @@ type serveFlags struct {
 	homeDir, directory, web           *string
 	noManager, noTUI, noOpen, newCopy *bool
 	noUpgradeCheck, otherApps, noDAV  *bool
+	trustHTML                         *bool
 	auth                              *bool   // nil when spec.Access is set
 	token                             *string // nil when spec.Access is set
 	versions, trashDays               *int
@@ -62,6 +64,7 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f.directory = fs.String("d", "", "the folder of data files to serve (default <home>/data;\n-d . for the current folder)")
 	f.web = fs.String("web", "", "serve this web app at / (the file manager stays at "+myserver.ManagerPath+")")
 	f.noManager = fs.Bool("no-manager", false, "don't serve the built-in file manager")
+	f.trustHTML = fs.Bool("trust-html", false, "let HTML files in the data folder run scripts as this server (only\nfiles you trust; not while an installed app runs)")
 	f.noDAV = fs.Bool("no-dav", false, "don't serve the data folder as a network drive (WebDAV at /dav/)")
 	f.noTUI = fs.Bool("no-tui", false, "plain log output instead of the interactive TUI")
 	f.noOpen = fs.Bool("no-open", false, "do not open the browser on start")
@@ -171,13 +174,17 @@ func Serve(spec Spec) int {
 	// -web-from: install the app from a distribution server and keep it updated
 	var srv *myserver.Server
 	var app *webapp.Installer
+	var mountTeamApp func() // myweb-team: serve the app on its port, once installed
 	if webFlags.App != "" { // an app from a catalog, not installed yet
 		if err := ensureInstalled(name, dirs, webFlags.App); err != nil {
 			return fail(err)
 		}
 	}
 	app, err = webFlags.Installer(myserver.VERSION, dirs.Apps(), func(n, v string) {
-		makeFolders(app, root)                               // a new version may use new folders
+		makeFolders(app, root) // a new version may use new folders
+		if mountTeamApp != nil {
+			mountTeamApp() // just installed: now it has a name and pages
+		}
 		if webFlags.App == "" && len(app.Installed()) == 1 { // just installed with -web-from
 			log.Printf("app: next time, start it with -app %s (or %s app run %s)", n, name, n)
 		}
@@ -186,7 +193,10 @@ func Serve(spec Spec) int {
 	if err != nil {
 		return fail(err)
 	}
-	if app != nil {
+	// myweb-team: the app gets a port of its own (below), so its pages and the
+	// file manager are different sites to the browser
+	teamApp := app != nil && spec.Access != nil
+	if app != nil && !teamApp {
 		webFS = app.FS()
 	}
 
@@ -246,10 +256,14 @@ func Serve(spec Spec) int {
 	var webVersion func() string
 	var appAccess *myserver.AppAccess
 	if app != nil {
-		webVersion = app.Current
-		if spec.Access == nil { // an installed app: only its folders (myweb-team: people's own permissions)
-			appAccess = limitApp(app, root)
+		if !teamApp {
+			webVersion = app.Current
+		}
+		if app.Current() != "" { // a first install says so once installed
 			con.Note("%s may use: %s (more: %s app allow %s FOLDER)", app.Status().Name, folderList(app.Access()), name, app.Status().Name)
+		}
+		if spec.Access == nil { // an installed app: only its folders
+			appAccess = limitApp(app, root)
 		}
 	}
 	srv = myserver.New(myserver.Config{
@@ -260,6 +274,7 @@ func Serve(spec Spec) int {
 		Global:    *global,
 		ReadOnly:  *readOnly,
 		NoDAV:     *f.noDAV,
+		TrustHTML: *f.trustHTML,
 		CORS:      append(append([]string{}, myserver.DefaultCORS...), f.cors...),
 		Token:     tok,
 		Access:    access,
@@ -292,11 +307,33 @@ func Serve(spec Spec) int {
 	if err := srv.Start(); err != nil {
 		return fail(err)
 	}
+	if teamApp { // each person uses it with their own rights, within its folders
+		var once sync.Once
+		mountTeamApp = func() {
+			once.Do(func() {
+				port, err := srv.Mount(&myserver.Mount{Access: limitApp(app, root), FS: app.FS(), Version: app.Current}, app.Port())
+				if err != nil {
+					log.Printf("serving %s: %v", app.Status().Name, err)
+					return
+				}
+				if app.Port() == 0 {
+					app.SetPort(port)
+				}
+				log.Printf("%s is at /apps/%s/ (port %d); the file manager is at /", app.Status().Name, app.Status().Name, port)
+				if apps.onChange != nil {
+					go apps.onChange()
+				}
+			})
+		}
+		if app.Current() != "" {
+			mountTeamApp()
+		}
+	}
 	if apps.on {
 		apps.mountAll()
-		for _, a := range srv.Mounted() {
-			con.AddRow("app "+a.Name, a.URL)
-		}
+	}
+	for _, a := range srv.Mounted() {
+		con.AddRow("app "+a.Name, a.URL)
 	}
 	if !*f.noUpgradeCheck {
 		noticeUpgrade(name, dirs, log.Printf)

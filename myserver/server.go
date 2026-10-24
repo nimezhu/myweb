@@ -100,6 +100,7 @@ type Config struct {
 	Global    bool     // listen on all interfaces instead of 127.0.0.1
 	ReadOnly  bool     // initial read-only state (can be toggled at runtime)
 	NoDAV     bool     // don't serve the data folder over WebDAV at /dav/
+	TrustHTML bool     // let HTML files of the data folder run as the server (not while apps are limited)
 	CORS      []string // allowed origins; none: only the server's own pages
 
 	// Versions and trash (see versions.go). 0 means the default

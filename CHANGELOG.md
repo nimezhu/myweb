@@ -9,6 +9,16 @@ prints after installing it.
   Explorer, Linux file managers, rclone and phone apps. Saves keep versions,
   deletes go to the trash, `.myweb` is hidden; the token is the password.
   `-no-dav` turns it off.
+- myweb-team limits installed apps too: an app gets a port of its own, and
+  each person uses it with their own permissions, only within the app's
+  folders.
+- HTML and SVG files of the data folder always run in a sandbox when opened,
+  not only while an app runs (`-trust-html` lets them run as the server,
+  when no app does).
+- Browsers that don't send `Sec-Fetch-Site` (Safari before 16.4, or plain
+  http on a LAN) are no longer taken for the file manager on an app's address.
+- An upload link takes at most 1024 MB and 500 files in all (`share -upload
+  -max-mb N -max-files N`); `share list` shows what each has received.
 
 ## 0.0.3
 

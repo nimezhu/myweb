@@ -152,7 +152,8 @@ writes. If it does not, `myweb -no-tui -no-open` prints the startup URL for manu
 
 At `/` (or `/_myweb/` when `-web` is set): browse folders, preview files
 (images, video, audio, PDF, Markdown, CSV/TSV, JSON, text; HTML is shown as
-source and never run), search names and contents, upload files and whole
+source and never run; opened at `/f/`, an HTML or SVG file runs in a sandbox
+with no rights on the server, unless `-trust-html`), search names and contents, upload files and whole
 folders by dropping them on the list, rename, delete, browse and restore
 previous versions, and restore files from the trash. Download a folder, or the
 files and folders you tick, as one `.zip`, and extract a `.zip` into a new
@@ -240,9 +241,13 @@ myweb app use myapp latest      # follow updates again
   on different addresses: the app at `http://127.0.0.1:PORT/`, the file manager
   at `http://localhost:PORT/_myweb/` (the old address redirects there). Scripts
   without a browser (curl), the file manager and `-cors` sites keep full
-  access. This applies to apps installed with `-web-from`, `-app` or a
-  catalog, not to your own `-web DIR`, and not under myweb-team, where
-  people's permissions apply.
+  access. A browser that says neither where a request comes from nor which
+  site it is (Safari before 16.4; any browser over plain http to an address
+  other than localhost) is taken to be the app on the app's address. This
+  applies to apps installed with `-web-from`, `-app` or a catalog, not to your
+  own `-web DIR`. Under myweb-team an app gets a port of its own (the file
+  manager stays at `/`, `/apps/NAME/` leads to the app) and whoever is signed
+  in uses it with their own permissions, only within the app's folders.
 - **Safety:** myweb installs an app only if the manifest's ed25519 signature
   matches `-web-key` and the zip matches the signed SHA-256. There is no switch to skip this. It never moves to an older
   version by itself, refuses zips with paths that leave the app folder, accepts
@@ -354,7 +359,9 @@ which also lists and revokes them. A link is shown once, when it is made:
 myweb keeps only its SHA-256 (in `.myweb/shares.json`), and keeps it out of
 the request log. A link reaches only its folder, never `.myweb` or where a
 symbolic link inside leads elsewhere; shared HTML runs in a sandbox; an upload
-never replaces a file (it becomes `name (1).ext`). Other machines can open a
+never replaces a file (it becomes `name (1).ext`), and a drop box takes at
+most 1024 MB and 500 files in all (`-max-mb N`, `-max-files N`; `share list`
+shows what it has taken). Other machines can open a
 link only when the server listens on the network (`-global`, or a tunnel).
 Links are at `/_s/<secret>/`; the commands are `/cmd/shareCreate`, `/cmd/shares`
 and `/cmd/shareRevoke`, which apps may not use.

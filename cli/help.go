@@ -18,7 +18,7 @@ var flagGroups = []struct {
 }{
 	{"Files", []string{"d", "p", "global", "r", "home", "no-dav"}},
 	{"Web app at /", []string{"app", "web", "web-from", "web-key", "web-version", "no-update", "web-check", "other-apps", "no-manager"}},
-	{"Access", []string{"auth", "token", "cors"}},
+	{"Access", []string{"auth", "token", "cors", "trust-html"}},
 	{"Safety", []string{"versions", "trash-days", "upload-max"}},
 	{"Running", []string{"no-tui", "no-open", "log", "new", "no-upgrade-check", "v"}},
 }
@@ -241,7 +241,8 @@ day when a newer release is out (-no-upgrade-check: don't).
 without the token, for people who have nothing else:
 
   %[1]s share PATH                 a link to read (a folder: browse it, or get a .zip)
-  %[1]s share PATH -upload         a drop box: files can be sent into the folder, not seen
+  %[1]s share PATH -upload         a drop box: files can be sent into the folder, not seen;
+                                 at most -max-mb (1024) in all, and -max-files (500)
   %[1]s share PATH -days 30        how long it works (default 7, at most 365)
   %[1]s share list                 the links (each shown only when made)
   %[1]s share revoke ID            end one

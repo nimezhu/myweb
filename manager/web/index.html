@@ -865,7 +865,7 @@
     const list = (await r.json()).result;
     $("shareNote").textContent = list.length ? `${list.length} link${list.length === 1 ? "" : "s"}` : "open a folder or file without the token";
     rows.innerHTML = list.length ? list.map((sh) => `<tr>
-        <td class="name mono">${esc(sh.path)}</td><td>${sh.upload ? "send files" : "read"}</td>
+        <td class="name mono">${esc(sh.path)}</td><td>${sh.upload ? `send files <span class="sub">· ${sh.files || 0} received, ${size(sh.bytes || 0)} of ${size(sh.maxBytes)}</span>` : "read"}</td>
         <td class="num">${when(sh.expires)}</td>
         <td class="num"><button class="link authed" data-revoke="${esc(sh.id)}">revoke</button></td></tr>`).join("")
       : `<tr><td colspan="4" class="empty">No share links. Use “share” on a file or folder.</td></tr>`;

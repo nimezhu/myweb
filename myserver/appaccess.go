@@ -50,9 +50,10 @@ const ManagerHost = "localhost"
 func (s *Server) appLimited() bool { return s.cfg.App != nil && s.cfg.Access == nil }
 
 // anyApps reports whether some app's requests are limited: the one at "/"
-// or one mounted on a port of its own (see mounts.go).
+// or one mounted on a port of its own (see mounts.go; the only way
+// multi-user).
 func (s *Server) anyApps() bool {
-	return s.cfg.Access == nil && (s.cfg.App != nil || s.mountCount() > 0)
+	return (s.cfg.Access == nil && s.cfg.App != nil) || s.mountCount() > 0
 }
 
 // unknownPage is what pages of sites CORS doesn't allow may use: nothing.
@@ -71,8 +72,24 @@ func (s *Server) appFrom(r *http.Request) *AppAccess {
 			origin = "http://" + r.Host // a page of the address it asks
 		case "same-site", "cross-site":
 			return unknownPage // some other page: the least it may do
+		case "none":
+			return nil // the user typing an address
 		default:
-			return nil // a program, or the user typing an address
+			// No Sec-Fetch-Site: a program, or a browser that doesn't
+			// send it (old Safari; every browser over plain http to an
+			// address other than localhost, e.g. myweb-team on a LAN).
+			if !browser(r) {
+				return nil
+			}
+			if ref, err := url.Parse(r.Referer()); err == nil && ref.Host != "" {
+				origin = ref.Scheme + "://" + ref.Host // the page it came from, when it tells
+			} else if m := s.mountAt(r); m != nil {
+				return m.Access // an app's address: its pages, or the user typing it
+			} else if s.appLimited() && !s.isManagerHost(r.Host) {
+				return s.cfg.App
+			} else {
+				return nil
+			}
 		}
 	}
 	u, err := url.Parse(origin)
@@ -97,6 +114,21 @@ func (s *Server) appFrom(r *http.Request) *AppAccess {
 	return unknownPage
 }
 
+// browser reports whether r comes from a web browser (programs don't
+// pretend to be one, unless they are the user's own).
+func browser(r *http.Request) bool { return strings.HasPrefix(r.UserAgent(), "Mozilla/") }
+
+// limitTo is what person u may do from app a's pages: their own rights,
+// within the app's folders (multi-user). Nobody signed in: nothing.
+func (s *Server) limitTo(u *User, a *AppAccess) *User {
+	if u == nil {
+		return nil
+	}
+	c := *u // who they are (and their Home) decides their rights: keep it
+	c.isApp, c.app = true, a.Folders()
+	return &c
+}
+
 // isManagerHost: host (with port) is the file manager's address while the
 // app at "/" is limited.
 func (s *Server) isManagerHost(host string) bool {
@@ -111,6 +143,26 @@ func (s *Server) managerBase() string {
 		return s.urlFor(ManagerHost)
 	}
 	return s.URL()
+}
+
+// managerBaseFor is managerBase as r's browser reaches it: on a LAN, the
+// host name it used with the main port.
+func (s *Server) managerBaseFor(r *http.Request) string {
+	if s.appLimited() {
+		return s.managerBase()
+	}
+	return s.urlFor(requestHostname(r))
+}
+
+// requestHostname is the host name r was sent to, without its port.
+func requestHostname(r *http.Request) string {
+	if h, _, err := net.SplitHostPort(r.Host); err == nil {
+		return strings.Trim(h, "[]")
+	}
+	if r.Host != "" {
+		return r.Host
+	}
+	return "127.0.0.1"
 }
 
 // appUser is the identity an app's requests get.
@@ -215,7 +267,7 @@ func appTraverses(folders []Folder, dir string) bool {
 func (s *Server) managerOnItsHost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if (s.appLimited() && !s.isManagerHost(r.Host)) || s.mountAt(r) != nil {
-			http.Redirect(w, r, s.managerBase()+r.URL.RequestURI(), http.StatusTemporaryRedirect)
+			http.Redirect(w, r, s.managerBaseFor(r)+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 			return
 		}
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
@@ -238,13 +290,14 @@ func (s *Server) appOnItsHost(next http.Handler) http.Handler {
 	})
 }
 
-// sandboxDataPages: while apps are limited, a data file that can run
-// scripts (an HTML page an app wrote, say) runs them in a sandbox with an
-// origin of its own, so opened at the file manager's or another app's
-// address it doesn't act with their rights.
+// sandboxDataPages: a data file that can run scripts (an HTML page an app
+// wrote, or one saved from the web) runs them in a sandbox with an origin of
+// its own, so opened at the file manager's or an app's address it doesn't
+// act with their rights. Config.TrustHTML lets them run as the server, but
+// not while an app is limited.
 func (s *Server) sandboxDataPages(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.anyApps() {
+		if !s.cfg.TrustHTML || s.anyApps() {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w = &sandboxScripts{ResponseWriter: w}
 		}
