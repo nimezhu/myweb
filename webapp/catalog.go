@@ -7,8 +7,8 @@ package webapp
 //	                "manifest":"https://…/stable.json","key":"<the app's public key>"}]}
 //	apps.json.sig  its signature, made with myweb-publish catalog sign
 //
-// myweb trusts a catalog through its key: the default one is built in, others
-// are added with myweb app catalog add URL -key KEY. An app installed from a
+// myweb trusts a catalog through its key; catalogs are added with myweb app
+// catalog add URL -key KEY (none is built in). An app installed from a
 // catalog keeps the key it was installed with; a later change to the catalog
 // does not change which key its updates must be signed with.
 
@@ -27,12 +27,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-)
-
-// DefaultCatalogURL and DefaultCatalogKey name the catalog myweb starts with.
-var (
-	DefaultCatalogURL = ""
-	DefaultCatalogKey = ""
 )
 
 // CatalogApp is one app in a catalog.
@@ -118,14 +112,11 @@ type Catalogs struct {
 	MaxAge time.Duration
 }
 
-// Sources is the saved list; without one, the default catalog.
+// Sources is the saved list (none until one is added).
 func (c *Catalogs) Sources() ([]CatalogSource, error) {
 	b, err := os.ReadFile(c.File)
 	if errors.Is(err, os.ErrNotExist) {
-		if DefaultCatalogURL == "" || DefaultCatalogKey == "" {
-			return nil, nil
-		}
-		return []CatalogSource{{DefaultCatalogURL, DefaultCatalogKey}}, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, err
@@ -164,7 +155,7 @@ func (c *Catalogs) Add(ctx context.Context, src CatalogSource) (*Catalog, error)
 	return cat, c.save(append(out, src))
 }
 
-// Remove drops a catalog by URL (the default one too).
+// Remove drops a catalog by URL.
 func (c *Catalogs) Remove(u string) error {
 	list, err := c.Sources()
 	if err != nil {
@@ -352,6 +343,9 @@ func (c *Catalogs) Find(ctx context.Context, name string) (CatalogApp, error) {
 		names = append(names, a.Name)
 	}
 	if len(names) == 0 {
+		if srcs, _ := c.Sources(); len(srcs) == 0 {
+			return CatalogApp{}, fmt.Errorf("%s: no catalogs to look in; add one with: myweb app catalog add URL -key KEY", name)
+		}
 		return CatalogApp{}, fmt.Errorf("%s is in no catalog (no catalog lists any app)", name)
 	}
 	return CatalogApp{}, fmt.Errorf("%s is in no catalog; available: %s", name, strings.Join(names, ", "))

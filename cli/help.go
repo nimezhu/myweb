@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/nimezhu/myweb/webapp"
 )
 
 // Help: "myweb -h", "myweb help" and "myweb serve -h" show the overview;
@@ -188,9 +186,8 @@ An installed app may use only its own folders of the data folder (those its
 publisher declares, else /NAME) and those you allow; "allow NAME /" gives it
 everything. While it runs, the file manager is at http://localhost:PORT/_myweb/.
 A catalog is a signed list of apps (apps.json, made with myweb-publish
-catalog). %[1]s reads the ones added and, unless removed,
-  %[2]s
-The file manager's "App catalog" installs and opens them too.
+catalog). %[1]s reads the ones added (none is built in). The file manager's
+"App catalog" installs and opens them too.
 `,
 	"config": `saved defaults for serve's flags, kept in <home>/config.json:
 
@@ -257,7 +254,7 @@ func helpTopic(w io.Writer, spec Spec, topic string) error {
 	if !ok {
 		return fmt.Errorf("no help for %q; topics: app, status, config, service, upgrade, completion", topic)
 	}
-	fmt.Fprintf(w, t, spec.Name, webapp.DefaultCatalogURL)
+	fmt.Fprintf(w, t, spec.Name)
 	return nil
 }
 

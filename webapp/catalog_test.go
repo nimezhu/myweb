@@ -37,12 +37,16 @@ func TestCatalog(t *testing.T) {
 	src := CatalogSource{URL: r.ts.URL + "/apps.json", Key: EncodePublicKey(catPub)}
 
 	cats := newCatalogs(t)
-	defer func(u, k string) { DefaultCatalogURL, DefaultCatalogKey = u, k }(DefaultCatalogURL, DefaultCatalogKey)
-	DefaultCatalogURL, DefaultCatalogKey = src.URL, src.Key
-	if srcs, _ := cats.Sources(); len(srcs) != 1 || srcs[0] != src {
-		t.Fatalf("default sources: %v", srcs)
-	}
 	ctx := context.Background()
+	if srcs, _ := cats.Sources(); len(srcs) != 0 {
+		t.Fatalf("a catalog before any was added: %v", srcs)
+	}
+	if _, err := cats.Find(ctx, "demo"); err == nil || !strings.Contains(err.Error(), "no catalogs") {
+		t.Fatalf("Find without catalogs: %v", err)
+	}
+	if _, err := cats.Add(ctx, src); err != nil {
+		t.Fatal(err)
+	}
 	a, err := cats.Find(ctx, "demo")
 	if err != nil || a.Manifest != entry.Manifest || a.Catalog != src.URL {
 		t.Fatalf("Find: %+v, %v", a, err)
@@ -100,8 +104,6 @@ func TestCatalogAddRemove(t *testing.T) {
 	catPub, catPriv, _ := ed25519.GenerateKey(rand.Reader)
 	r.putCatalog(t, Catalog{Apps: []CatalogApp{{Name: "demo", Manifest: r.ts.URL + "/stable.json", Key: EncodePublicKey(r.pub)}}}, catPriv)
 	cats := newCatalogs(t)
-	defer func(u, k string) { DefaultCatalogURL, DefaultCatalogKey = u, k }(DefaultCatalogURL, DefaultCatalogKey)
-	DefaultCatalogURL, DefaultCatalogKey = "https://example.invalid/apps.json", EncodePublicKey(catPub)
 	ctx := context.Background()
 
 	if _, err := cats.Add(ctx, CatalogSource{URL: r.ts.URL + "/apps.json", Key: EncodePublicKey(r.pub)}); err == nil {
@@ -111,21 +113,20 @@ func TestCatalogAddRemove(t *testing.T) {
 		t.Fatal(err)
 	}
 	srcs, _ := cats.Sources()
-	if len(srcs) != 2 || srcs[1].URL != r.ts.URL+"/apps.json" {
+	if len(srcs) != 1 || srcs[0].URL != r.ts.URL+"/apps.json" {
 		t.Fatalf("sources: %v", srcs)
 	}
-	apps, errs := cats.Apps(ctx, false)
-	if len(apps) != 1 || len(errs) != 1 { // the default one can't be reached
-		t.Fatalf("apps %v errs %v", apps, errs)
-	}
-	if err := cats.Remove(DefaultCatalogURL); err != nil {
-		t.Fatal(err)
-	}
 	if apps, errs := cats.Apps(ctx, false); len(apps) != 1 || len(errs) != 0 {
-		t.Fatalf("after removing the default: %v %v", apps, errs)
+		t.Fatalf("apps %v errs %v", apps, errs)
 	}
 	if err := cats.Remove("https://nope/apps.json"); err == nil {
 		t.Fatal("removed a catalog that isn't there")
+	}
+	if err := cats.Remove(r.ts.URL + "/apps.json"); err != nil {
+		t.Fatal(err)
+	}
+	if srcs, _ := cats.Sources(); len(srcs) != 0 {
+		t.Fatalf("after remove: %v", srcs)
 	}
 }
 

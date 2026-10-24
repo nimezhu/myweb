@@ -284,8 +284,8 @@ opens. An installed app is served by the running myweb right away; with
 `-other-apps=false`, Open starts `myweb app run NAME` in the background (logs
 in `~/.myweb/logs`).
 
-myweb reads any catalog you add: `myweb app catalog add URL -key KEY` (`remove URL` drops
-one). Catalogs are cached for an hour and used offline.
+myweb reads the catalogs you add, none until then: `myweb app catalog add URL
+-key KEY` (`remove URL` drops one). Catalogs are cached for an hour and used offline.
 
 Publishing a catalog:
 

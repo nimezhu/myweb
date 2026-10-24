@@ -32,8 +32,9 @@ upgrade` does it.
 - `myweb status`, `myweb open`, `myweb stop`: the servers running now.
 - Download folders and files as a `.zip`, and extract uploaded zips, in the
   file manager and with `GET /zip/<folder>`.
-- App catalogs: `myweb app install NAME` installs from a signed list of apps; `myweb app
-  catalog` lists and searches it, `catalog add URL -key KEY` adds others. The
+- App catalogs: `myweb app install NAME` installs from a signed list of apps;
+  `myweb app catalog add URL -key KEY` adds one, `myweb app catalog` lists
+  and searches them. The
   file manager and the terminal UI (`i`) show the apps with their icons, tags
   and screenshots, to install and open. `myweb-publish catalog` makes and
   signs a catalog.
