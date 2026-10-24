@@ -74,7 +74,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		s.cfg.OnRequest(RequestEvent{
 			Time:      start,
 			Method:    r.Method,
-			Path:      r.URL.RequestURI(),
+			Path:      redactShare(r.URL.RequestURI()),
 			Remote:    r.RemoteAddr,
 			Status:    rec.status,
 			Bytes:     rec.bytes,

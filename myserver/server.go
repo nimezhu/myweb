@@ -211,6 +211,7 @@ func New(cfg Config) *Server {
 	s.routes()
 	s.registerSafetyCmds()
 	s.registerZipCmds()
+	s.registerShareCmds()
 	return s
 }
 
@@ -221,6 +222,7 @@ func (s *Server) routes() {
 	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", s.guardFiles(revalidate(root, s.sandboxDataPages(http.HandlerFunc(s.serveFiles)))))))
 	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(s.handleLs))))
 	m.Handle("/zip/", s.authedReads(http.StripPrefix("/zip", http.HandlerFunc(s.handleZip))))
+	m.HandleFunc("/_s/", s.handleShare) // share links: their secret is the key (share.go)
 
 	// Write routes are always registered and gated at request time so that
 	// read-only mode can be toggled while running.

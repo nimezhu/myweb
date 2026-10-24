@@ -281,6 +281,27 @@
   </section>
 
   <section>
+    <details id="shareBox">
+      <summary>Share links <span class="sub" id="shareNote">open a folder or file without the token</span></summary>
+      <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px;align-items:center">
+        <input type="text" id="sharePath" placeholder="/photos" aria-label="Folder or file to share" style="flex:1;min-width:160px">
+        <select id="shareKind" aria-label="Kind of link"><option value="read">to read</option><option value="upload">to send files (folder)</option></select>
+        <select id="shareDays" aria-label="How long it works"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="365">1 year</option></select>
+        <button class="authed" id="shareMake">Make link</button>
+      </div>
+      <div class="row" id="shareNew" hidden style="margin-top:10px;gap:8px;align-items:center">
+        <input type="text" id="shareURL" readonly aria-label="The new link" style="flex:1;font-family:var(--mono)">
+        <button id="shareCopy" type="button">Copy</button>
+      </div>
+      <div class="msg" id="shareMsg"></div>
+      <div class="table-wrap">
+        <table class="files"><thead><tr><th>Path</th><th>Kind</th><th style="text-align:right">Expires</th><th></th></tr></thead>
+        <tbody id="shareRows"></tbody></table>
+      </div>
+    </details>
+  </section>
+
+  <section>
     <details id="trashBox">
       <summary>Trash <span class="sub" id="trashNote"></span></summary>
       <div class="table-wrap" style="margin-top:10px">
@@ -630,11 +651,12 @@
         const mv = `<button class="link plain writable" data-mv="${esc(p)}" ${off}>rename</button>`;
         const hist = f.isdir || !keepsVersions ? "" : `<button class="link plain" data-hist="${esc(p)}">history</button>`;
         const rm = f.isdir ? "" : `<button class="link writable" data-rm="${esc(p)}" ${off}>delete</button>`;
+        const share = `<button class="link plain authed" data-share="${esc(p)}" data-isdir="${f.isdir ? 1 : ""}" ${authed ? "" : "disabled"} title="a link that opens it without the token">share</button>`;
         const zip = f.isdir ? `<a class="link" href="/zip${esc(enc(p))}" download title="download as .zip">zip</a>`
           : /\.zip$/i.test(f.name) ? `<button class="link plain writable" data-unzip="${esc(p)}" ${off} title="unpack into a new folder next to it">extract</button>` : "";
         const on = chosen.has(f.name);
         const sel = `<input type="checkbox" data-pick="${esc(f.name)}" ${on ? "checked" : ""} aria-label="Select ${esc(f.name)}">`;
-        return `<tr${on ? ' class="picked"' : ""}><td class="sel">${sel}</td><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${zip}${hist}${mv}${rm}</td></tr>`;
+        return `<tr${on ? ' class="picked"' : ""}><td class="sel">${sel}</td><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${zip}${share}${hist}${mv}${rm}</td></tr>`;
       }).join("");
       applyLocks();
       loadTrash();
@@ -694,6 +716,23 @@
         msg($("fmsg"), `Extracted ${x.files} file${x.files === 1 ? "" : "s"} (${size(x.bytes)}) into ${x.to}`, true);
       } else { msg($("fmsg"), "Extract failed: " + await errText(r), false); onFail(r); }
       load(cwd);
+      return;
+    }
+    const sh = e.target.closest("[data-share]");
+    if (sh) {
+      $("shareBox").open = true;
+      $("sharePath").value = sh.dataset.share;
+      if (!sh.dataset.isdir) $("shareKind").value = "read";
+      $("shareNew").hidden = true;
+      msg($("shareMsg"), "Choose who it is for and how long, then Make link.", true);
+      $("shareBox").scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const rv = e.target.closest("[data-revoke]");
+    if (rv) {
+      const r = await post("/cmd/shareRevoke", { id: rv.dataset.revoke });
+      if (!r.ok) { msg($("shareMsg"), "Revoke failed: " + await errText(r), false); onFail(r); }
+      loadShares();
       return;
     }
     const rm = e.target.closest("[data-rm]");
@@ -816,6 +855,38 @@
       : `<tr><td colspan="4" class="empty">The trash is empty.</td></tr>`;
   }
   $("trashBox").addEventListener("toggle", loadTrash);
+
+  // ---- share links ----
+  async function loadShares() {
+    if (!$("shareBox").open) return;
+    const rows = $("shareRows");
+    const r = await post("/cmd/shares", {});
+    if (!r.ok) { rows.innerHTML = `<tr><td colspan="4" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
+    const list = (await r.json()).result;
+    $("shareNote").textContent = list.length ? `${list.length} link${list.length === 1 ? "" : "s"}` : "open a folder or file without the token";
+    rows.innerHTML = list.length ? list.map((sh) => `<tr>
+        <td class="name mono">${esc(sh.path)}</td><td>${sh.upload ? "send files" : "read"}</td>
+        <td class="num">${when(sh.expires)}</td>
+        <td class="num"><button class="link authed" data-revoke="${esc(sh.id)}">revoke</button></td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">No share links. Use “share” on a file or folder.</td></tr>`;
+  }
+  $("shareBox").addEventListener("toggle", loadShares);
+  $("shareMake").onclick = async () => {
+    const path = $("sharePath").value.trim();
+    if (!path) { msg($("shareMsg"), "Which folder or file? e.g. /photos", false); return; }
+    const r = await post("/cmd/shareCreate", { path: path.startsWith("/") ? path : join(cwd, path), upload: $("shareKind").value === "upload", days: +$("shareDays").value });
+    if (!r.ok) { msg($("shareMsg"), "Could not make the link: " + await errText(r), false); onFail(r); return; }
+    const { result: x } = await r.json();
+    $("shareURL").value = x.url;
+    $("shareNew").hidden = false;
+    $("shareURL").select();
+    msg($("shareMsg"), "Copy the link now: it is shown only once." + (x.local ? " This server listens on this machine only; other machines reach the link when it runs with -global." : ""), true);
+    loadShares();
+  };
+  $("shareCopy").onclick = async () => {
+    try { await navigator.clipboard.writeText($("shareURL").value); msg($("shareMsg"), "Copied.", true); }
+    catch { $("shareURL").select(); msg($("shareMsg"), "Press Ctrl+C (⌘C) to copy.", true); }
+  };
   $("emptyTrash").onclick = async () => {
     if (!confirm("Permanently delete everything in the trash?")) return;
     const r = await post("/cmd/emptyTrash", {});

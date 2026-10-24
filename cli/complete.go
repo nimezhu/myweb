@@ -66,7 +66,7 @@ func completionCmd(spec Spec, args []string, w io.Writer) error {
 }
 
 var (
-	topCommands = []string{"serve", "app", "status", "open", "stop", "config", "service", "upgrade", "completion", "version", "help"}
+	topCommands = []string{"serve", "app", "status", "open", "stop", "config", "share", "service", "upgrade", "doctor", "completion", "version", "help"}
 	appCommands = []string{"list", "run", "install", "update", "versions", "use", "remove", "default", "catalog", "allow", "deny", "access"}
 )
 
@@ -243,6 +243,10 @@ func completions(spec Spec, words []string) []string {
 		return []string{"-check", "-rollback", "-no-restart", "-home"}
 	case "status", "ps":
 		return []string{"-json", "-home"}
+	case "share":
+		return []string{"list", "revoke", "-upload", "-days", "-on", "-home"}
+	case "doctor":
+		return []string{"-offline", "-home"}
 	case "open", "stop":
 		var c []string
 		if dirs, err := homeFor(spec.Name, home); err == nil {

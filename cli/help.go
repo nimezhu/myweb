@@ -54,9 +54,12 @@ commands:
   app          installed web apps: list, run, install, update, versions, use, remove, default
   status       the servers running now; open one in the browser, or stop it:
                status, open [WHICH], stop [WHICH | -all]
+  share        links to a folder or file that open without the token:
+               share PATH [-upload] [-days N], share list, share revoke ID
   service      run %[1]s in the background, started at login
   config       saved defaults for the flags below
   upgrade      install the latest release from GitHub (or -check, VERSION, -rollback)
+  doctor       check the setup and say what to fix
   completion   shell completion for bash, zsh and fish
   version      print the version
   help [CMD]   this help, or a command's
@@ -233,6 +236,31 @@ services running it (%[1]s service install) are restarted; other running
 servers keep the old version until restarted. A running server tells once a
 day when a newer release is out (-no-upgrade-check: don't).
 `,
+	"share": `links to a folder or file of a running server's data folder, that open
+without the token, for people who have nothing else:
+
+  %[1]s share PATH                 a link to read (a folder: browse it, or get a .zip)
+  %[1]s share PATH -upload         a drop box: files can be sent into the folder, not seen
+  %[1]s share PATH -days 30        how long it works (default 7, at most 365)
+  %[1]s share list                 the links (each shown only when made)
+  %[1]s share revoke ID            end one
+
+PATH is in the data folder (/photos), or a file or folder on disk inside it.
+-on WHICH picks the server when several run (see %[1]s status); -home DIR.
+A link reaches only its folder: not %[1]s's own .myweb folder, nor where a
+symbolic link in it leads elsewhere. Other machines can open it only when the
+server listens on the network (-global).
+`,
+	"doctor": `check what %[1]s needs, and say what to do about what's wrong:
+
+  %[1]s doctor                     the binary and its version, home, config, data
+                                folder, port, running servers and services,
+                                installed apps, catalogs (fetched and checked)
+  %[1]s doctor -offline            without asking GitHub or the catalogs
+
+It changes nothing. The exit status is 1 when something is broken (✗);
+warnings (!) are things to know.
+`,
 	"completion": `shell completion of commands, flags, app names and versions:
 
   bash: add to ~/.bashrc                  source <(%[1]s completion bash)
@@ -252,7 +280,7 @@ func helpTopic(w io.Writer, spec Spec, topic string) error {
 	}
 	t, ok := helpTopics[topic]
 	if !ok {
-		return fmt.Errorf("no help for %q; topics: app, status, config, service, upgrade, completion", topic)
+		return fmt.Errorf("no help for %q; topics: app, status, share, doctor, config, service, upgrade, completion", topic)
 	}
 	fmt.Fprintf(w, t, spec.Name)
 	return nil

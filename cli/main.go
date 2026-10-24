@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/nimezhu/myweb/home"
@@ -46,6 +47,10 @@ func Main(spec Spec) int {
 		return finish(spec, "status", stopCmd(spec, args, os.Stdout))
 	case "upgrade":
 		return finish(spec, "upgrade", upgradeCmd(spec, args, os.Stdout))
+	case "share":
+		return finish(spec, "share", shareCmd(spec, args, os.Stdout))
+	case "doctor":
+		return finish(spec, "doctor", doctorCmd(spec, args, os.Stdout))
 	case "version":
 		fmt.Println(spec.Name, myserver.VERSION)
 		return 0
@@ -72,9 +77,12 @@ type usageError struct{ error }
 // prints the command's topic.
 func finish(spec Spec, topic string, err error) int {
 	var ue usageError
+	var quiet silentExit
 	switch {
 	case err == nil:
 		return 0
+	case errors.As(err, &quiet): // the command said why
+		return int(quiet)
 	case errors.Is(err, flag.ErrHelp):
 		helpTopic(os.Stdout, spec, topic)
 		return 0
@@ -85,6 +93,11 @@ func finish(spec Spec, topic string, err error) int {
 	fmt.Fprintf(os.Stderr, "%s: %v\n", spec.Name, err)
 	return 1
 }
+
+// silentExit ends a command that has already printed why with that status.
+type silentExit int
+
+func (e silentExit) Error() string { return "exit status " + strconv.Itoa(int(e)) }
 
 // homeFor is the program's folder: dir if given, else $<NAME>_HOME or ~/.<name>.
 func homeFor(name, dir string) (home.Dirs, error) {

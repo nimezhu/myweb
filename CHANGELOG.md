@@ -3,6 +3,20 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## 0.0.3
+
+- Share links: `myweb share PATH` (or **share** in the file manager) makes a
+  link that opens a folder or file without the token, until it expires or is
+  revoked; `-upload` makes a drop box for files. `share list`, `share revoke`.
+- `myweb doctor` checks the setup (binary, PATH, version, home, config, data
+  folder, port, running servers and services, apps, catalogs) and says what
+  to fix.
+- `myweb upgrade` installs only releases signed with myweb's release key
+  (`checksums.txt.sig`), so a GitHub release that was tampered with is
+  refused. `myweb-publish sign` signs a file the same way.
+- A symbolic link in an app's folder no longer lets the app reach where it
+  leads, unless that is one of the app's folders too.
+
 ## 0.0.2
 
 From 0.0.1, which can't upgrade itself, download your system's binary below

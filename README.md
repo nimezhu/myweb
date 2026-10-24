@@ -53,6 +53,8 @@ The other commands manage installed web apps (see
 | `myweb service uninstall`, `status` | |
 | `myweb config` | show the saved defaults for the flags |
 | `myweb config set NAME VALUE` / `unset NAME` | e.g. `config set p 9000`, `config set d ~/data` |
+| `myweb share PATH [-upload] [-days N]` | a link to a folder or file that opens without the token (see below); `share list`, `share revoke ID` |
+| `myweb doctor [-offline]` | check the binary, home, config, data folder, port, servers, services, apps and catalogs, and say what to fix |
 | `myweb upgrade [VERSION]` | install the latest release from GitHub, or that version; `-check` only tells, `-rollback` goes back |
 | `myweb completion bash\|zsh\|fish` | shell completion of commands, flags, app names and versions |
 | `myweb version`, `myweb help` | |
@@ -85,7 +87,8 @@ token in `myweb config set token …`, not in the service's flags.
 
 **Upgrading:** `myweb upgrade` downloads the latest
 [release](https://github.com/nimezhu/myweb/releases) for your system, checks
-it against the release's `checksums.txt` and that it runs, and replaces the
+it against the release's `checksums.txt`, whose signature must be by the
+release key built into myweb, and that it runs, and replaces the
 binary, keeping the old one next to it as `myweb.old` (`myweb upgrade
 -rollback` swaps them back). Services installed with `myweb service install`
 are restarted on the new binary (`-no-restart`: they aren't); other running
@@ -232,7 +235,8 @@ myweb app use myapp latest      # follow updates again
 
   The rest of the data folder doesn't exist for it: listings, search, `/f/`,
   `/zip/`, `/events` and every command hide it, and it can't stop the server or
-  change its own installation. For this the app and the file manager are kept
+  change its own installation. A symbolic link in its folders leads it only
+  to where it may go anyway. For this the app and the file manager are kept
   on different addresses: the app at `http://127.0.0.1:PORT/`, the file manager
   at `http://localhost:PORT/_myweb/` (the old address redirects there). Scripts
   without a browser (curl), the file manager and `-cors` sites keep full
@@ -306,6 +310,30 @@ installs and updates the app exactly as with `-web-from` and `-web-key`. An
 installed app keeps the key it was installed with, so a later change to the
 catalog can't redirect its updates. Catalogs and manifests must be https (http
 only for localhost).
+
+## Share links
+
+A share link opens one folder or file for someone who has nothing else, no
+token and no account, until it expires (7 days unless `-days N`, at most a
+year) or you revoke it:
+
+```sh
+myweb share /photos                # browse it, or download it all as a .zip
+myweb share ~/data/report.pdf      # a file on disk inside the data folder works too
+myweb share /inbox -upload         # a drop box: people send files, can't see any
+myweb share list                   # ID, path, kind, expiry
+myweb share revoke 3f9c1e07ab
+```
+
+In the file manager, **share** on a row fills in the **Share links** panel,
+which also lists and revokes them. A link is shown once, when it is made:
+myweb keeps only its SHA-256 (in `.myweb/shares.json`), and keeps it out of
+the request log. A link reaches only its folder, never `.myweb` or where a
+symbolic link inside leads elsewhere; shared HTML runs in a sandbox; an upload
+never replaces a file (it becomes `name (1).ext`). Other machines can open a
+link only when the server listens on the network (`-global`, or a tunnel).
+Links are at `/_s/<secret>/`; the commands are `/cmd/shareCreate`, `/cmd/shares`
+and `/cmd/shareRevoke`, which apps may not use.
 
 ## Several people: myweb-team
 
@@ -522,8 +550,9 @@ git tag -a v0.0.2 -m "myweb 0.0.2" && git push origin main v0.0.2
 
 The release workflow (`.github/workflows/release.yml`) tests, builds myweb,
 myweb-publish and myweb-team for Linux, macOS and Windows (amd64 and arm64)
-with `scripts/release-build.sh`, and publishes them with `checksums.txt` as a
-GitHub release; a tag like `v0.1.0-rc.1` makes a prerelease, which `myweb
+with `scripts/release-build.sh`, signs `checksums.txt` with the release key
+(the repository secret `MYWEB_RELEASE_KEY`; its public key is
+`selfupdate.Keys`), and publishes them as a GitHub release; a tag like `v0.1.0-rc.1` makes a prerelease, which `myweb
 upgrade` only installs when asked for by version.
 
 ## License
