@@ -41,13 +41,24 @@ type AppAccess struct {
 // is limited.
 const ManagerHost = "localhost"
 
-// appLimited reports whether the app at "/" is limited.
+// appLimited reports whether the app at "/" is limited (and the file
+// manager is therefore at ManagerHost).
 func (s *Server) appLimited() bool { return s.cfg.App != nil && s.cfg.Access == nil }
 
-// fromApp reports whether r comes from the app's pages (see above).
-func (s *Server) fromApp(r *http.Request) bool {
-	if !s.appLimited() {
-		return false
+// anyApps reports whether some app's requests are limited: the one at "/"
+// or one mounted on a port of its own (see mounts.go).
+func (s *Server) anyApps() bool {
+	return s.cfg.Access == nil && (s.cfg.App != nil || s.mountCount() > 0)
+}
+
+// unknownPage is what pages of sites CORS doesn't allow may use: nothing.
+var unknownPage = &AppAccess{Name: "unknown page", Folders: func() []Folder { return nil }}
+
+// appFrom returns the app whose pages r comes from (see above), or nil
+// when r is not limited.
+func (s *Server) appFrom(r *http.Request) *AppAccess {
+	if !s.anyApps() {
+		return nil
 	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
@@ -55,33 +66,52 @@ func (s *Server) fromApp(r *http.Request) bool {
 		case "same-origin":
 			origin = "http://" + r.Host // a page of the address it asks
 		case "same-site", "cross-site":
-			return true // some other page: the least it may do
+			return unknownPage // some other page: the least it may do
 		default:
-			return false // a program, or the user typing an address
+			return nil // a program, or the user typing an address
 		}
 	}
 	u, err := url.Parse(origin)
 	if err != nil || u.Host == "" {
-		return true // "null": sandboxed frames, files
+		return unknownPage // "null": sandboxed frames, files
 	}
 	if s.isManagerHost(u.Host) {
-		return false
+		return nil
 	}
-	if u.Host == r.Host {
-		return true // a page of this server that isn't the file manager
+	if m := s.mountFor(u.Host); m != nil {
+		return m.Access // a page of a mounted app, asking any of our ports
 	}
-	return !s.cors.OriginAllowed(&http.Request{Header: http.Header{"Origin": {origin}}})
+	if u.Host == r.Host { // a page of the main port that isn't the file manager's address
+		if s.appLimited() {
+			return s.cfg.App
+		}
+		return nil // the file manager itself, at "/"
+	}
+	if s.cors.OriginAllowed(&http.Request{Header: http.Header{"Origin": {origin}}}) {
+		return nil
+	}
+	return unknownPage
 }
 
-// isManagerHost: host (with port) is the file manager's address.
+// isManagerHost: host (with port) is the file manager's address while the
+// app at "/" is limited.
 func (s *Server) isManagerHost(host string) bool {
 	h, p, err := net.SplitHostPort(host)
 	return err == nil && h == ManagerHost && p == strconv.Itoa(s.port)
 }
 
-// appUser is the identity the app's requests get.
-func (s *Server) appUser() *User {
-	folders := s.cfg.App.Folders()
+// managerBase is where the file manager is: http://localhost:PORT while the
+// app at "/" is limited, else the main address.
+func (s *Server) managerBase() string {
+	if s.appLimited() {
+		return s.urlFor(ManagerHost)
+	}
+	return s.URL()
+}
+
+// appUser is the identity an app's requests get.
+func (s *Server) appUser(a *AppAccess) *User {
+	folders := a.Folders()
 	home := ""
 	for _, f := range folders {
 		if !f.ReadOnly {
@@ -89,7 +119,7 @@ func (s *Server) appUser() *User {
 			break
 		}
 	}
-	return &User{Name: s.cfg.App.Name, Role: "app", Home: home, isApp: true, app: folders}
+	return &User{Name: a.Name, Role: "app", Home: home, isApp: true, app: folders}
 }
 
 // appAllows: may the app do act on p?
@@ -134,10 +164,8 @@ func appTraverses(folders []Folder, dir string) bool {
 // while the app is limited, and keeps other sites from framing them.
 func (s *Server) managerOnItsHost(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.appLimited() && !s.isManagerHost(r.Host) {
-			u := *r.URL
-			u.Scheme, u.Host = "http", net.JoinHostPort(ManagerHost, strconv.Itoa(s.port))
-			http.Redirect(w, r, u.String(), http.StatusTemporaryRedirect)
+		if (s.appLimited() && !s.isManagerHost(r.Host)) || s.mountAt(r) != nil {
+			http.Redirect(w, r, s.managerBase()+r.URL.RequestURI(), http.StatusTemporaryRedirect)
 			return
 		}
 		w.Header().Set("Content-Security-Policy", "frame-ancestors 'self'")
@@ -160,12 +188,13 @@ func (s *Server) appOnItsHost(next http.Handler) http.Handler {
 	})
 }
 
-// sandboxOnManagerHost: on the file manager's address, a data file that can
-// run scripts (an HTML page the app wrote, say) runs them in a sandbox with
-// an origin of its own, without the file manager's rights.
-func (s *Server) sandboxOnManagerHost(next http.Handler) http.Handler {
+// sandboxDataPages: while apps are limited, a data file that can run
+// scripts (an HTML page an app wrote, say) runs them in a sandbox with an
+// origin of its own, so opened at the file manager's or another app's
+// address it doesn't act with their rights.
+func (s *Server) sandboxDataPages(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.appLimited() && s.isManagerHost(r.Host) {
+		if s.anyApps() {
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			w = &sandboxScripts{ResponseWriter: w}
 		}

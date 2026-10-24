@@ -147,3 +147,31 @@ func TestCatalogValidate(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestCatalogLinks(t *testing.T) {
+	r := newRelease(t)
+	catPub, catPriv, _ := ed25519.GenerateKey(rand.Reader)
+	r.putCatalog(t, Catalog{Apps: []CatalogApp{{Name: "demo", Manifest: r.ts.URL + "/stable.json", Key: EncodePublicKey(r.pub),
+		Icon: "img/demo.png", Screenshots: []string{"img/s1.png", "https://cdn.example/s2.png"}, Tags: []string{"graphics"}}}}, catPriv)
+	cats := newCatalogs(t)
+	cat, _, err := cats.Fetch(context.Background(), CatalogSource{URL: r.ts.URL + "/apps.json", Key: EncodePublicKey(catPub)}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := cat.Apps[0]
+	if a.Icon != r.ts.URL+"/img/demo.png" || a.Screenshots[0] != r.ts.URL+"/img/s1.png" || a.Screenshots[1] != "https://cdn.example/s2.png" {
+		t.Fatalf("links: %+v", a)
+	}
+	key := EncodePublicKey(make([]byte, ed25519.PublicKeySize))
+	for name, a := range map[string]CatalogApp{
+		"javascript icon": {Icon: "javascript:alert(1)"},
+		"data screenshot": {Screenshots: []string{"data:image/png;base64,AAAA"}},
+		"bad tag":         {Tags: []string{"a,b"}},
+		"empty tag":       {Tags: []string{""}},
+	} {
+		a.Name, a.Manifest, a.Key = "x", "https://x/stable.json", key
+		if err := (&Catalog{Apps: []CatalogApp{a}}).Validate(); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

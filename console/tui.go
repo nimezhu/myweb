@@ -69,6 +69,12 @@ type model struct {
 	appAvail []webapp.Manifest // published versions, after 'p'
 	appBusy  string            // a switch or listing in progress
 
+	catView  bool          // the apps view ('i')
+	catItems []CatalogItem // nil until listed
+	catSel   int
+	catBusy  string
+	catErr   string
+
 	requests int
 	errors   int
 	bytesOut int64
@@ -219,6 +225,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case appDoneMsg:
 		m.appBusy = ""
 		return m, m.setFlash(msg.flash)
+	case catListMsg:
+		m.catBusy, m.catErr = "", ""
+		if msg.err != nil {
+			m.catErr = msg.err.Error()
+		}
+		if msg.items != nil || m.catItems == nil {
+			m.catItems = msg.items
+			if m.catItems == nil {
+				m.catItems = []CatalogItem{}
+			}
+		}
+		m.catSel = min(m.catSel, max(0, len(m.catItems)-1))
+	case catDoneMsg:
+		m.catBusy = ""
+		if msg.open != "" {
+			if err := openURL(msg.open); err != nil {
+				return m, m.setFlash("could not open browser: " + err.Error())
+			}
+		}
+		return m, tea.Batch(m.setFlash(msg.flash), m.catLoad(false))
 	case appAvailMsg:
 		m.appBusy = ""
 		if msg.err != nil {
@@ -259,6 +285,11 @@ func (m model) filterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.catView {
+		if mm, cmd, done := m.catKey(msg); done {
+			return mm, cmd
+		}
+	}
 	if m.appView {
 		if mm, cmd, done := m.appKey(msg); done {
 			return mm, cmd
@@ -289,6 +320,12 @@ func (m model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.setFlash("could not open browser: " + err.Error())
 		}
 		return m, m.setFlash("opened the file manager")
+	case "i":
+		if m.opts.Catalog == nil {
+			return m, m.setFlash("no app catalogs here")
+		}
+		m.catView, m.appView, m.qr, m.detail = true, false, false, false
+		return m, m.catLoad(false)
 	case "a":
 		if m.opts.App == nil {
 			return m, m.setFlash("no auto-updated app (start with -web-from or -app)")
@@ -485,6 +522,8 @@ func (m model) footerLines() []string {
 	switch {
 	case m.typing:
 		keys = []key{{"⏎", "apply"}, {"esc", "clear"}}
+	case m.catView:
+		keys = []key{{"↑↓", "select"}, {"⏎", "install / open"}, {"r", "refresh"}, {"esc", "back"}, {"q", "quit"}}
 	case m.appView:
 		keys = []key{{"↑↓", "select"}, {"⏎", "use version"}, {"l", "follow updates"}, {"c", "check now"},
 			{"p", "all published"}, {"esc", "back"}, {"q", "quit"}}
@@ -496,6 +535,9 @@ func (m model) footerLines() []string {
 		keys = []key{{"o", "open"}, {"y", "copy URL"}}
 		if m.srv.ManagerURL() != "" && !m.srv.ManagerAtRoot() {
 			keys = append(keys, key{"m", "files"})
+		}
+		if m.opts.Catalog != nil {
+			keys = append(keys, key{"i", "apps"})
 		}
 		keys = append(keys, []key{
 			{"r", "read-only"}, {"/", "filter"}, {"e", "errors"},
@@ -689,6 +731,8 @@ func (m model) View() string {
 	var title string
 	var body []string
 	switch {
+	case m.catView:
+		title, body = "Apps", m.catLines(h)
 	case m.appView:
 		title, body = "App", m.appLines(h)
 	case m.qr:

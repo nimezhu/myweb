@@ -61,6 +61,9 @@ func runningServers(dirs home.Dirs) []server {
 		case "web":
 			s.Serve = "web " + v
 		}
+		for _, a := range in.Apps {
+			s.Serve += ", " + a.Name
+		}
 		out = append(out, s)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Started.Before(out[j].Started) })
@@ -81,6 +84,19 @@ func (s server) address() string {
 		u.Path = "/"
 	}
 	return u.String()
+}
+
+// appURL is where the server serves app on a port of its own, if it does.
+func (s server) appURL(app string) string {
+	for _, a := range s.Apps {
+		if a.Name == app {
+			if t := s.token(); t != "" {
+				return a.URL + "?token=" + t
+			}
+			return a.URL
+		}
+	}
+	return ""
 }
 
 // token is the access token the server was started with, if any.
@@ -133,6 +149,9 @@ func statusCmd(spec Spec, args []string, w io.Writer) error {
 	fmt.Fprintln(tw, "#\tPID\tADDRESS\tFOLDER\tSERVES\tVERSION\tUP")
 	for i, s := range list {
 		fmt.Fprintf(tw, "%d\t%d\t%s\t%s\t%s\t%s\t%s\n", i+1, s.PID, s.address(), tildePath(s.Root), s.Serve, s.Version, uptime(s.Started))
+		for _, a := range s.Apps {
+			fmt.Fprintf(tw, "\t\t%s\t\tapp %s\t\t\n", a.URL, a.Name)
+		}
 	}
 	return tw.Flush()
 }
@@ -155,10 +174,17 @@ func openCmd(spec Spec, args []string, w io.Writer) error {
 		return err
 	}
 	target := s.URL
+	if len(pos) == 1 && s.appURL(pos[0]) != "" { // an app it serves on its own port
+		target = s.appURL(pos[0])
+	}
 	if target == "" {
 		target = s.address()
 	}
-	fmt.Fprintf(w, "opening %s\n", s.address())
+	shown, _ := url.Parse(target)
+	if shown != nil {
+		shown.RawQuery = ""
+		fmt.Fprintf(w, "opening %s\n", shown)
+	}
 	return openBrowser(target)
 }
 
@@ -262,7 +288,7 @@ func pickServer(name string, list []server, args []string, verb string) (server,
 	abs, _ := filepath.Abs(expandHome(want))
 	var found []server
 	for _, s := range list {
-		if s.App == want || s.Root == abs {
+		if s.App == want || s.appURL(want) != "" || s.Root == abs {
 			found = append(found, s)
 		}
 	}

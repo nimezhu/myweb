@@ -121,6 +121,7 @@ true`) turns that off. A binary in a folder you can't write to (e.g.
 | `-no-tui` | | plain log output |
 | `-no-open` | | don't open the browser on start |
 | `-new` | | start another copy even if one already serves this folder and app |
+| `-other-apps` | true | also serve the other installed apps, each on a port of its own |
 | `-no-upgrade-check` | | don't look for a newer myweb release (checked once a day) |
 | `-v`, `-version` | | print the version |
 
@@ -247,6 +248,24 @@ myweb app use myapp latest      # follow updates again
   Windows), never in the data folder. Don't edit files there; they are replaced
   on update. The file manager stays at `/_myweb/`.
 
+### Several apps at once
+
+One myweb serves every installed app, each on a port of its own that it
+keeps (so what the browser stores for it stays), next to the files or the app
+at `/`:
+
+```
+http://localhost:8433/_myweb/      the file manager
+http://127.0.0.1:8434/             rx-graphic (also: http://127.0.0.1:8433/apps/rx-graphic/)
+http://127.0.0.1:8435/             another app
+```
+
+The terminal and `myweb status` show them; `myweb open rx-graphic` opens one,
+and apps installed or removed while myweb runs are served or dropped right
+away. Each app is a separate site to the browser, limited to its own folders,
+so apps can't reach each other's data. `-other-apps=false` serves only the
+app at `/`.
+
 ### App catalogs: install by name
 
 A catalog is a signed list of apps, each with its manifest URL and public key,
@@ -257,9 +276,12 @@ myweb app catalog              # the apps you can install (app catalog WORD sear
 myweb app install rx-graphic   # install one; or just: myweb app run rx-graphic
 ```
 
-In the browser, the file manager's **App catalog** lists the same apps with
-**Install** and **Open**; Open starts `myweb app run NAME` in the background
-(logs in `~/.myweb/logs`) unless it is already running, and opens it.
+In the browser, the file manager's **App catalog** shows the same apps as
+cards (icon, description, tags, screenshots; search and filter by tag) with
+**Install** and **Open**. In the terminal UI, `i` lists them: ⏎ installs or
+opens. An installed app is served by the running myweb right away; with
+`-other-apps=false`, Open starts `myweb app run NAME` in the background (logs
+in `~/.myweb/logs`).
 
 myweb reads any catalog you add: `myweb app catalog add URL -key KEY` (`remove URL` drops
 one). Catalogs are cached for an hour and used offline.
@@ -268,8 +290,11 @@ Publishing a catalog:
 
 ```sh
 myweb-publish catalog init -title "My apps"       # apps.json, and catalog.key + .pub if missing
+# add checks the manifest is signed with that key; images may be links relative
+# to apps.json; adding an app again keeps what isn't given
 myweb-publish catalog add -manifest https://…/stable.json -app-key app.key.pub \
-    -title "My app" -description "What it does"   # checks the manifest is signed with that key
+    -title "My app" -description "What it does" \
+    -icon img/myapp.png -screenshot img/myapp-1.png -tags graphics,editor
 myweb-publish catalog remove myapp
 myweb-publish catalog list                        # check the signature
 # each change signs apps.json again: upload apps.json and apps.json.sig together

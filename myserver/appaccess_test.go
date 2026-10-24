@@ -187,8 +187,8 @@ func TestAppCantBorrowManagerHost(t *testing.T) {
 			t.Errorf("%s: sandbox keeps the origin", p)
 		}
 	}
-	// at the app's address they are the app's own business
-	if _, _, h := a.as("", "GET", "/f/demo/evil.html", "127.0.0.1"); h.Get("Content-Security-Policy") != "" {
+	// and at the app's address too: there they would act as the app at "/"
+	if _, _, h := a.as("", "GET", "/f/demo/evil.html", "127.0.0.1"); !strings.Contains(h.Get("Content-Security-Policy"), "sandbox") {
 		t.Errorf("app host: CSP %q", h.Get("Content-Security-Policy"))
 	}
 }

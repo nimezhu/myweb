@@ -17,14 +17,21 @@ import (
 // instance records a running server in <home>/run/<id>.json, so starting the
 // same folder and app again opens it instead of starting a second copy.
 type instance struct {
-	ID      string    `json:"id"` // also reported by /cmd/status
-	PID     int       `json:"pid"`
-	Port    int       `json:"port"`
-	URL     string    `json:"url"` // what the browser opens; may carry the token
-	Root    string    `json:"root"`
-	Source  string    `json:"source"` // what is served at "/"
-	Version string    `json:"version,omitempty"`
-	Started time.Time `json:"started"`
+	ID      string      `json:"id"` // also reported by /cmd/status
+	PID     int         `json:"pid"`
+	Port    int         `json:"port"`
+	URL     string      `json:"url"` // what the browser opens; may carry the token
+	Root    string      `json:"root"`
+	Source  string      `json:"source"` // what is served at "/"
+	Version string      `json:"version,omitempty"`
+	Apps    []servedApp `json:"apps,omitempty"` // other apps, on ports of their own
+	Started time.Time   `json:"started"`
+}
+
+// servedApp is an app a server serves on a port of its own.
+type servedApp struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 // instanceFile is the record for one folder and one app.

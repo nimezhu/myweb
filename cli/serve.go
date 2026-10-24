@@ -39,7 +39,7 @@ type serveFlags struct {
 	global, readOnly                  *bool
 	homeDir, directory, web           *string
 	noManager, noTUI, noOpen, newCopy *bool
-	noUpgradeCheck                    *bool
+	noUpgradeCheck, otherApps         *bool
 	auth                              *bool   // nil when spec.Access is set
 	token                             *string // nil when spec.Access is set
 	versions, trashDays               *int
@@ -78,6 +78,7 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f.version = fs.Bool("version", false, "print version and exit")
 	fs.BoolVar(f.version, "v", false, "print version and exit (shorthand)")
 	f.webFlags = webapp.AddFlags(fs)
+	f.otherApps = fs.Bool("other-apps", true, "also serve the other installed apps, each on a port of its own (on;\n-other-apps=false serves only the app at /)")
 	fs.Usage = func() { fmt.Fprintf(fs.Output(), "run '%s -h' for help\n", name) }
 	return fs, f
 }
@@ -175,7 +176,10 @@ func Serve(spec Spec) int {
 		}
 	}
 	app, err = webFlags.Installer(myserver.VERSION, dirs.Apps(), func(n, v string) {
-		makeFolders(app, root) // a new version may use new folders
+		makeFolders(app, root)                               // a new version may use new folders
+		if webFlags.App == "" && len(app.Installed()) == 1 { // just installed with -web-from
+			log.Printf("app: next time, start it with -app %s (or %s app run %s)", n, name, n)
+		}
 		srv.Broadcast(map[string]string{"type": "app-updated", "name": n, "version": v, "notes": app.Status().Notes[v]})
 	})
 	if err != nil {
@@ -269,13 +273,22 @@ func Serve(spec Spec) int {
 	if len(f.cors) > 0 {
 		con.AddRow("CORS", "+ "+f.cors.String())
 	}
+	apps := &appSet{dirs: dirs, root: root, srv: srv, main: app, flags: *webFlags, ctx: context.Background(),
+		on: *f.otherApps && spec.Access == nil}
 	plugins.RegisterFileOps(srv)
-	registerCatalogCmd(srv, spec, dirs)
-	if app != nil {
-		registerAppCmd(srv, app)
+	registerCatalogCmd(srv, spec, apps)
+	registerAppCmd(srv, apps)
+	if spec.Access == nil {
+		con.SetCatalog(catalogUI{spec, apps})
 	}
 	if err := srv.Start(); err != nil {
 		return fail(err)
+	}
+	if apps.on {
+		apps.mountAll()
+		for _, a := range srv.Mounted() {
+			con.AddRow("app "+a.Name, a.URL)
+		}
 	}
 	if !*f.noUpgradeCheck {
 		noticeUpgrade(name, dirs, log.Printf)
@@ -294,8 +307,13 @@ func Serve(spec Spec) int {
 	if other != nil || *f.newCopy { // a -new copy leaves the main record to the first one
 		runFile = strings.TrimSuffix(runFile, ".json") + "-" + instanceID[:8] + ".json"
 	}
+	self.Apps = apps.served()
 	if err := self.record(runFile); err != nil {
 		log.Printf("could not record the running server: %v", err)
+	}
+	apps.onChange = func() { // apps installed or removed while running
+		self.Apps = apps.served()
+		self.record(runFile)
 	}
 	defer self.forget(runFile)
 	return con.Run(srv)

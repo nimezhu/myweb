@@ -37,13 +37,16 @@ var (
 
 // CatalogApp is one app in a catalog.
 type CatalogApp struct {
-	Name        string `json:"name"`
-	Title       string `json:"title,omitempty"`
-	Description string `json:"description,omitempty"`
-	Manifest    string `json:"manifest"`
-	Key         string `json:"key"`
-	Homepage    string `json:"homepage,omitempty"`
-	Catalog     string `json:"catalog,omitempty"` // set when loaded: the catalog's URL
+	Name        string   `json:"name"`
+	Title       string   `json:"title,omitempty"`
+	Description string   `json:"description,omitempty"`
+	Manifest    string   `json:"manifest"`
+	Key         string   `json:"key"`
+	Homepage    string   `json:"homepage,omitempty"`
+	Icon        string   `json:"icon,omitempty"`        // an image URL, square; may be relative to apps.json
+	Screenshots []string `json:"screenshots,omitempty"` // image URLs; may be relative
+	Tags        []string `json:"tags,omitempty"`        // e.g. "graphics", "editor"
+	Catalog     string   `json:"catalog,omitempty"`     // set when loaded: the catalog's URL
 }
 
 // Catalog is the content of apps.json.
@@ -67,6 +70,16 @@ func (c *Catalog) Validate() error {
 		if _, err := ParsePublicKey(a.Key); err != nil {
 			return fmt.Errorf("%s: key: %v", a.Name, err)
 		}
+		for _, l := range append([]string{a.Icon, a.Homepage}, a.Screenshots...) {
+			if l != "" && !linkOK(l) {
+				return fmt.Errorf("%s: %q is not an http(s) link", a.Name, l)
+			}
+		}
+		for _, t := range a.Tags {
+			if t == "" || len(t) > 32 || strings.ContainsAny(t, ",<>\"\n") {
+				return fmt.Errorf("%s: invalid tag %q", a.Name, t)
+			}
+		}
 		seen[a.Name] = true
 	}
 	return nil
@@ -76,6 +89,12 @@ func (c *Catalog) Validate() error {
 func (c *Catalog) Encode() ([]byte, error) {
 	b, err := json.MarshalIndent(c, "", "  ")
 	return append(b, '\n'), err
+}
+
+// linkOK: an http(s) link, or one relative to the catalog (no other scheme).
+func linkOK(s string) bool {
+	u, err := url.Parse(s)
+	return err == nil && (u.Scheme == "" && u.Host == "" || (u.Scheme == "https" || u.Scheme == "http") && u.Host != "")
 }
 
 // webURL: https, or http for localhost only, as for -web-from.
@@ -241,8 +260,20 @@ func parseCatalog(src CatalogSource, data, sig []byte, key ed25519.PublicKey) (*
 	if err := cat.Validate(); err != nil {
 		return nil, fmt.Errorf("catalog %s: %v", src.URL, err)
 	}
+	base, _ := url.Parse(src.URL)
+	abs := func(s string) string { // links relative to apps.json
+		if u, err := url.Parse(s); err == nil && s != "" {
+			return base.ResolveReference(u).String()
+		}
+		return s
+	}
 	for i := range cat.Apps {
-		cat.Apps[i].Catalog = src.URL
+		a := &cat.Apps[i]
+		a.Catalog = src.URL
+		a.Icon, a.Homepage = abs(a.Icon), abs(a.Homepage)
+		for j := range a.Screenshots {
+			a.Screenshots[j] = abs(a.Screenshots[j])
+		}
 	}
 	return &cat, nil
 }

@@ -3,13 +3,13 @@ package cli
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -21,21 +21,38 @@ import (
 	"github.com/nimezhu/myweb/webapp"
 )
 
-// registerAppCmd serves the app's status at POST /cmd/app; {"check":true}
-// also starts a check for an update (admins only, when multi-user).
-func registerAppCmd(srv *myserver.Server, app *webapp.Installer) {
+// registerAppCmd serves an app's status at POST /cmd/app: an app's own
+// pages get theirs, others the app at "/" or {"name":…}. {"check":true}
+// also starts a check for an update (not for apps; admins only, when
+// multi-user); {"rescan":true} serves apps installed since the start.
+func registerAppCmd(srv *myserver.Server, apps *appSet) {
 	srv.RegisterCmd("app", func(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 		var p struct {
+			Name      string `json:"name"`      // which app (default: the one at "/")
 			Check     bool   `json:"check"`     // check for an update now
 			Refresh   bool   `json:"refresh"`   // pick up a change "myweb app use" saved
+			Rescan    bool   `json:"rescan"`    // serve newly installed apps
 			Use       string `json:"use"`       // a version, or "latest"
 			Available bool   `json:"available"` // include every published version
 		}
 		if err := req.Bind(&p); err != nil {
 			return nil, err
 		}
-		if (p.Check || p.Refresh || p.Use != "") && req.User != nil && req.User.Role != "admin" {
+		if (p.Check || p.Refresh || p.Rescan || p.Use != "") && req.User != nil && req.User.Role != "admin" {
 			return nil, myserver.Errorf(http.StatusForbidden, "only admins can change the app")
+		}
+		if req.User.IsApp() {
+			p.Name = req.User.Name // an app asks about itself
+		}
+		if p.Rescan {
+			apps.mountAll()
+		}
+		app := apps.byName(p.Name)
+		if app == nil {
+			if p.Rescan {
+				return map[string]int{"apps": len(srv.Mounted())}, nil
+			}
+			return nil, myserver.Errorf(http.StatusNotFound, "no app %q here", p.Name)
 		}
 		if p.Refresh {
 			app.Refresh()
@@ -60,7 +77,7 @@ func registerAppCmd(srv *myserver.Server, app *webapp.Installer) {
 			res.Available = vs.Versions
 		}
 		return res, nil
-	}, myserver.Describe(`the web app at /: versions, release notes, update status. {"check":true} checks for an update now; {"use":"1.2.0"} serves that version and stops updates ("latest" follows them again); {"available":true} adds every published version`))
+	}, myserver.Describe(`a web app (the one at /, or {"name":…}): versions, release notes, update status, folders. {"check":true} checks for an update now; {"use":"1.2.0"} serves that version and stops updates ("latest" follows them again); {"available":true} adds every published version; {"rescan":true} serves apps installed since`))
 }
 
 // appCmd runs "app …": managing the web apps installed with -web-from.
@@ -273,6 +290,9 @@ func update(name, appsDir string, fl *webapp.Flags) error {
 	switch {
 	case before == "":
 		fmt.Printf("%s may use: %s\n", a.Name, folderList(a.Access))
+		if dirs, err := homeFor(name, filepath.Dir(appsDir)); err == nil && tellRescan(dirs) > 0 {
+			fmt.Printf("(the running %s serves it now: %s status)\n", name, name)
+		}
 		if serveHint {
 			fmt.Printf("%s %s installed; serve it with: %s app run %s\n", a.Name, a.Current, name, a.Name)
 		} else {
@@ -395,22 +415,33 @@ func appUse(name string, args []string) error {
 	return nil
 }
 
-// tellRunning asks the running copies that serve this app to pick up a change
-// right away (otherwise they do at their next check); it returns how many did.
+// tellRunning asks the running servers that serve this app (at "/" or on a
+// port of its own) to pick up a change right away (otherwise they do at their
+// next check); it returns how many did.
 func tellRunning(dirs home.Dirs, manifest string) int {
-	files, _ := filepath.Glob(filepath.Join(dirs.Root, "run", "*.json"))
+	a, err := webapp.FindApp(dirs.Apps(), manifest)
+	if err != nil {
+		return 0
+	}
+	body, _ := json.Marshal(map[string]interface{}{"name": a.Name, "refresh": true})
+	return postRunning(dirs, string(body))
+}
+
+// tellRescan asks the running servers to serve newly installed apps and
+// stop serving removed ones.
+func tellRescan(dirs home.Dirs) int { return postRunning(dirs, `{"rescan":true}`) }
+
+// postRunning sends body to /cmd/app of every running server; it returns how
+// many answered OK.
+func postRunning(dirs home.Dirs, body string) int {
 	n := 0
-	for _, file := range files {
-		in := running(file)
-		if in == nil || in.Source != "app:"+manifest {
-			continue
-		}
-		req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(in.Port)+"/cmd/app", strings.NewReader(`{"refresh":true}`))
+	for _, s := range runningServers(dirs) {
+		req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:"+strconv.Itoa(s.Port)+"/cmd/app", strings.NewReader(body))
 		if err != nil {
 			continue
 		}
-		if u, err := url.Parse(in.URL); err == nil && u.Query().Get("token") != "" {
-			req.Header.Set("Authorization", "Bearer "+u.Query().Get("token"))
+		if t := s.token(); t != "" {
+			req.Header.Set("Authorization", "Bearer "+t)
 		}
 		c := http.Client{Timeout: 5 * time.Second}
 		if resp, err := c.Do(req); err == nil {
@@ -445,6 +476,7 @@ func appRemove(name string, args []string) error {
 	if err != nil {
 		return err
 	}
+	tellRescan(dirs)
 	if cfg, err := loadConfig(dirs); err == nil && (cfg["app"] == a.Name || cfg["app"] == a.Manifest) {
 		delete(cfg, "app")
 		if err := cfg.save(dirs); err != nil {

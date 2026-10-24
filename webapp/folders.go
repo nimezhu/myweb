@@ -138,3 +138,23 @@ func (in *Installer) Revoke(p string) error {
 	in.state.Grants = gs
 	return in.saveStateLocked()
 }
+
+// Port is the app's own port, 0 until SetPort.
+func (in *Installer) Port() int {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.state.Port
+}
+
+// SetPort keeps the app's own port, so its address (and what the browser
+// stores for it) stays the same from one start to the next.
+func (in *Installer) SetPort(port int) error {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	in.loadState()
+	if in.state.Port == port {
+		return nil
+	}
+	in.state.Port = port
+	return in.saveStateLocked()
+}

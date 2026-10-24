@@ -83,6 +83,7 @@ type state struct {
 	Notes    map[string]string   `json:"notes,omitempty"`   // release notes by version
 	Folders  map[string][]Folder `json:"folders,omitempty"` // declared by each version's manifest
 	Grants   []Folder            `json:"grants,omitempty"`  // given by the user
+	Port     int                 `json:"port,omitempty"`    // its own port, when served beside others: kept, so its address stays
 }
 
 // New prepares an installer and, if a version is installed, serves it right
@@ -416,9 +417,6 @@ func (in *Installer) check(ctx context.Context) error {
 	}
 	in.setStatus("up to date")
 	log.Printf("app: %s %s installed", m.Name, m.Version)
-	if current == "" {
-		log.Printf("app: next time, start it with -app %s", m.Name)
-	}
 	if in.opts.OnUpdate != nil {
 		in.opts.OnUpdate(m.Name, m.Version)
 	}

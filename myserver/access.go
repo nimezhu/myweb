@@ -74,8 +74,8 @@ func (s *Server) requestToken(r *http.Request) string {
 // with a limited app, the app for requests from its pages.
 func (s *Server) identify(r *http.Request) *http.Request {
 	if s.cfg.Access == nil {
-		if s.fromApp(r) {
-			return r.WithContext(context.WithValue(r.Context(), userKey{}, s.appUser()))
+		if a := s.appFrom(r); a != nil {
+			return r.WithContext(context.WithValue(r.Context(), userKey{}, s.appUser(a)))
 		}
 		return r
 	}

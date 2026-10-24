@@ -20,6 +20,7 @@ type App struct {
 	Notes    map[string]string // release notes by version, when published
 	Access   []Folder          // the folders it may use: declared and granted
 	Grants   []Folder          // those the user granted
+	Port     int               // its own port, once it has been served beside other apps
 }
 
 // InstalledApps lists the apps installed under dir (e.g. ~/.myweb/apps), by name.
@@ -43,7 +44,7 @@ func InstalledApps(dir string) ([]App, error) {
 		}
 		apps = append(apps, App{Name: in.state.Name, Dir: in.home, Manifest: in.state.Manifest, Key: in.state.Key,
 			Current: in.state.Current, Pin: in.state.Pin, Versions: in.Installed(), Notes: in.state.Notes,
-			Access: in.Access(), Grants: in.Grants()})
+			Access: in.Access(), Grants: in.Grants(), Port: in.state.Port})
 	}
 	sort.Slice(apps, func(i, j int) bool {
 		if apps[i].Name != apps[j].Name {

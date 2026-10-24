@@ -19,7 +19,7 @@ var flagGroups = []struct {
 	names []string
 }{
 	{"Files", []string{"d", "p", "global", "r", "home"}},
-	{"Web app at /", []string{"app", "web", "web-from", "web-key", "web-version", "no-update", "web-check", "no-manager"}},
+	{"Web app at /", []string{"app", "web", "web-from", "web-key", "web-version", "no-update", "web-check", "other-apps", "no-manager"}},
 	{"Access", []string{"auth", "token", "cors"}},
 	{"Safety", []string{"versions", "trash-days", "upload-max"}},
 	{"Running", []string{"no-tui", "no-open", "log", "new", "no-upgrade-check", "v"}},

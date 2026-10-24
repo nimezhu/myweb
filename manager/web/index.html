@@ -170,7 +170,18 @@
   .cat-app .title { font-weight: 600; }
   .cat-app .title .mono { font-weight: 400; color: var(--muted); margin-left: 6px; }
   .cat-app p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
-  .cat-app .acts { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+  .cat-app .acts { display: flex; gap: 6px; flex-shrink: 0; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .cat-app .icon { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; object-fit: cover; background: var(--accent-soft);
+    display: grid; place-items: center; color: var(--accent); font-weight: 700; font-size: 18px; }
+  .cat-app .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+  .cat-app .tag { font: 11.5px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); cursor: pointer; background: none; }
+  .cat-app .shots { display: flex; gap: 8px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; }
+  .cat-app .shots img { height: 90px; border-radius: 6px; border: 1px solid var(--line); }
+  .cat-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .cat-tools input { flex: 1; min-width: 160px; }
+  .cat-tools .tag { font: 12px var(--mono); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); cursor: pointer; }
+  .cat-tools .tag.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  @media (max-width: 560px) { .cat-app { flex-wrap: wrap; } .cat-app .acts { width: 100%; justify-content: flex-start; } }
   #appBox td.notes-cell { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
   #appNew { display: block; margin: 0 0 12px; }
   #appNew[hidden] { display: none; }
@@ -226,6 +237,7 @@
   <section>
     <details id="catBox">
       <summary>App catalog <span class="sub" id="catNote">web apps you can install and open</span></summary>
+      <div class="cat-tools"><input type="text" id="catQ" placeholder="Search apps" aria-label="Search apps"><span id="catTags"></span></div>
       <div class="cat-list" id="catList"><div class="empty">Loading…</div></div>
       <div class="row" style="margin-top:10px">
         <button class="authed" id="catRefresh">Refresh</button>
@@ -703,21 +715,40 @@
     $("catNote").textContent = catalog.length ? `${catalog.length} app${catalog.length === 1 ? "" : "s"}` : "";
     renderCatalog();
   }
+  let catTag = "";
   function renderCatalog() {
-    if (!catalog.length) { $("catList").innerHTML = `<div class="empty">No apps listed yet.</div>`; return; }
+    if (!catalog.length) { $("catList").innerHTML = `<div class="empty">No apps listed yet.</div>`; $("catTags").innerHTML = ""; return; }
+    const tags = [...new Set(catalog.flatMap((a) => a.tags || []))].sort();
+    if (catTag && !tags.includes(catTag)) catTag = "";
+    $("catTags").innerHTML = tags.map((t) => `<button type="button" class="tag${t === catTag ? " on" : ""}" data-cat-tag="${esc(t)}">${esc(t)}</button>`).join(" ");
+    const q = $("catQ").value.trim().toLowerCase();
+    const shown = catalog.filter((a) => (!catTag || (a.tags || []).includes(catTag)) &&
+      (!q || [a.name, a.title, a.description, ...(a.tags || [])].join(" ").toLowerCase().includes(q)));
+    if (!shown.length) { $("catList").innerHTML = `<div class="empty">No app matches.</div>`; return; }
     const off = authed ? "" : "disabled";
-    $("catList").innerHTML = catalog.map((a) => {
+    const web = (u) => /^https?:\/\//i.test(u || ""); // only http(s) links reach the page
+    $("catList").innerHTML = shown.map((a) => {
       const state = a.installed ? `<span class="pill ok">${esc(a.installed)}${a.running ? " · running" : ""}</span>` : "";
-      const home = a.homepage ? ` <a class="link" href="${esc(a.homepage)}" target="_blank" rel="noopener">about</a>` : "";
+      const home = web(a.homepage) ? ` <a class="link" href="${esc(a.homepage)}" target="_blank" rel="noopener">about</a>` : "";
       const act = a.installed
         ? `<button class="primary authed" data-cat-open="${esc(a.name)}" ${off}>Open</button>`
         : `<button class="primary authed" data-cat-install="${esc(a.name)}" ${off}>Install</button>`;
-      return `<div class="cat-app"><div class="grow">
+      const icon = web(a.icon) ? `<img class="icon" src="${esc(a.icon)}" alt="" loading="lazy" referrerpolicy="no-referrer">`
+        : `<div class="icon">${esc((a.title || a.name).slice(0, 1).toUpperCase())}</div>`;
+      const tagList = (a.tags || []).length ? `<div class="tags">${a.tags.map((t) => `<button type="button" class="tag" data-cat-tag="${esc(t)}">${esc(t)}</button>`).join("")}</div>` : "";
+      const shots = (a.screenshots || []).filter(web);
+      const shotList = shots.length ? `<div class="shots">${shots.map((u) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer"></a>`).join("")}</div>` : "";
+      return `<div class="cat-app">${icon}<div class="grow">
           <div class="title">${esc(a.title || a.name)}<span class="mono">${esc(a.name)}</span></div>
-          ${a.description ? `<p>${esc(a.description)}</p>` : ""}
+          ${a.description ? `<p>${esc(a.description)}</p>` : ""}${tagList}${shotList}
         </div><div class="acts">${state}${home}${act}</div></div>`;
     }).join("");
   }
+  $("catQ").addEventListener("input", renderCatalog);
+  $("catBox").addEventListener("click", (e) => {
+    const t = e.target.closest("[data-cat-tag]");
+    if (t) { catTag = catTag === t.dataset.catTag ? "" : t.dataset.catTag; renderCatalog(); }
+  });
   $("catBox").addEventListener("toggle", () => { if ($("catBox").open) loadCatalog(false); });
   $("catRefresh").onclick = () => loadCatalog(true);
   $("catList").addEventListener("click", async (e) => {

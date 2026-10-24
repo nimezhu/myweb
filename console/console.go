@@ -47,6 +47,8 @@ type Options struct {
 	// App, if set, is the installed web app (-web-from): shown in the TUI,
 	// where 'a' checks for an update.
 	App App
+	// Catalog, if set, lists apps to install and open in the TUI ('i').
+	Catalog Catalog
 }
 
 // App is what the console shows about an auto-updated web app.

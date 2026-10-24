@@ -166,6 +166,9 @@ type Server struct {
 
 	proxyClient *http.Client
 
+	mountMu sync.Mutex
+	mounts  map[int]*mounted // apps on ports of their own, by port
+
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	doneCh   chan error
@@ -215,7 +218,7 @@ func (s *Server) routes() {
 	m := s.cfg.Mux
 	root := s.cfg.Root
 
-	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", s.guardFiles(revalidate(root, s.sandboxOnManagerHost(http.HandlerFunc(s.serveFiles)))))))
+	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", s.guardFiles(revalidate(root, s.sandboxDataPages(http.HandlerFunc(s.serveFiles)))))))
 	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(s.handleLs))))
 	m.Handle("/zip/", s.authedReads(http.StripPrefix("/zip", http.HandlerFunc(s.handleZip))))
 
@@ -286,12 +289,14 @@ func (s *Server) routes() {
 	}
 	// no-cache: after an app update (or an edit with -web) browsers must
 	// check before reusing a cached index.html or script
+	var main http.Handler
 	switch {
 	case s.cfg.WebFS != nil:
-		m.Handle("/", noCache(s.appOnItsHost(s.webVersion(http.FileServer(s.cfg.WebFS)))))
+		main = noCache(s.appOnItsHost(s.webVersion(http.FileServer(s.cfg.WebFS))))
 	case s.cfg.Manager != nil:
-		m.Handle("/", noCache(http.FileServer(s.cfg.Manager)))
+		main = noCache(s.managerOnItsHost(http.FileServer(s.cfg.Manager)))
 	}
+	m.Handle("/", s.serveRoot(main)) // and the mounted apps' (mounts.go)
 }
 
 func (s *Server) writable(h http.HandlerFunc) http.Handler {
@@ -363,6 +368,7 @@ func (s *Server) Start() error {
 // Shutdown gracefully stops the server, waiting for in-flight requests.
 func (s *Server) Shutdown(ctx context.Context) error {
 	s.events.close() // WebSockets are hijacked: http.Server.Shutdown doesn't close them
+	s.unmountAll(ctx)
 	if s.srv == nil {
 		return nil
 	}
@@ -442,10 +448,7 @@ func (s *Server) ManagerURL() string {
 	if s.cfg.Manager == nil {
 		return ""
 	}
-	if s.appLimited() {
-		return s.urlFor(ManagerHost) + ManagerPath
-	}
-	return s.URL() + ManagerPath
+	return s.managerBase() + ManagerPath
 }
 
 // ManagerAtRoot reports whether "/" shows the file manager (no web app).

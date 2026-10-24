@@ -22,6 +22,7 @@
     if (t && t.description) loaded = t.description;
   } catch { /* older browsers: the first check below sets it */ }
   let shown = null;
+  let mine = null; // this app's name: one server may serve several apps
 
   function notify(detail) {
     if (!detail.version || detail.version === shown) return;
@@ -40,6 +41,7 @@
       if (!r.ok) return;
       const st = (await r.json()).result;
       if (!st || !st.current) return;
+      mine = st.name;
       if (loaded === null) loaded = st.current;
       else if (st.current !== loaded) notify({ name: st.name, version: st.current, notes: (st.notes || {})[st.current] || "" });
     } catch { /* not served by myweb, or offline */ }
@@ -52,7 +54,7 @@
     ws.onopen = () => { retry = 1000; compare(); };
     ws.onmessage = (e) => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
-      if (m.type === "app-updated" && m.version !== loaded) notify({ name: m.name, version: m.version, notes: m.notes || "" });
+      if (m.type === "app-updated" && m.version !== loaded && (!mine || m.name === mine)) notify({ name: m.name, version: m.version, notes: m.notes || "" });
     };
     ws.onclose = () => { setTimeout(connect, retry); retry = Math.min(retry * 2, 60000); };
   }

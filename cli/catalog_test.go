@@ -13,7 +13,7 @@ import (
 func TestCatalogCmdOrigin(t *testing.T) {
 	dirs := home.Dirs{Root: t.TempDir()}
 	srv := myserver.New(myserver.Config{Root: t.TempDir()})
-	registerCatalogCmd(srv, Spec{Name: "myweb"}, dirs)
+	registerCatalogCmd(srv, Spec{Name: "myweb"}, &appSet{dirs: dirs, srv: srv})
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 	post := func(origin, body string) int {

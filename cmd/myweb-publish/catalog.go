@@ -22,6 +22,7 @@ import (
 //
 //	myweb-publish catalog init [-title TITLE]      apps.json and catalog.key, if missing
 //	myweb-publish catalog add -manifest URL -app-key KEY [-name N] [-title T] [-description D]
+//	                          [-icon IMG] [-screenshot IMG ...] [-tags a,b] [-homepage URL]
 //	myweb-publish catalog remove NAME
 //	myweb-publish catalog sign                      after editing apps.json by hand
 //	myweb-publish catalog list                      check the signature, list the apps
@@ -50,6 +51,10 @@ func catalogCmd(args []string) error {
 		title := fs.String("title", "", "a short title")
 		desc := fs.String("description", "", "one or two sentences")
 		homepage := fs.String("homepage", "", "a web page about the app")
+		icon := fs.String("icon", "", "a square image (link; may be relative to apps.json, e.g. img/myapp.png)")
+		var shots listFlag
+		fs.Var(&shots, "screenshot", "an image of the app (link, may be relative); repeat for more")
+		tags := fs.String("tags", "", "comma-separated, e.g. graphics,editor")
 		noCheck := fs.Bool("no-check", false, "don't download the manifest to check its signature")
 		fs.Parse(args)
 		if *manifest == "" || *appKey == "" {
@@ -61,7 +66,12 @@ func catalogCmd(args []string) error {
 				return fmt.Errorf("-app-key: %v", err)
 			}
 			a := webapp.CatalogApp{Name: *name, Title: *title, Description: *desc, Manifest: *manifest,
-				Key: webapp.EncodePublicKey(key), Homepage: *homepage}
+				Key: webapp.EncodePublicKey(key), Homepage: *homepage, Icon: *icon, Screenshots: shots}
+			for _, t := range strings.Split(*tags, ",") {
+				if t = strings.TrimSpace(t); t != "" {
+					a.Tags = append(a.Tags, t)
+				}
+			}
 			if !*noCheck {
 				m, err := fetchManifest(*manifest, key)
 				if err != nil {
@@ -82,6 +92,15 @@ func catalogCmd(args []string) error {
 					}
 					if a.Homepage == "" {
 						a.Homepage = old.Homepage
+					}
+					if a.Icon == "" {
+						a.Icon = old.Icon
+					}
+					if len(a.Screenshots) == 0 {
+						a.Screenshots = old.Screenshots
+					}
+					if len(a.Tags) == 0 {
+						a.Tags = old.Tags
 					}
 					c.Apps[i] = a
 					fmt.Printf("replaced %s\n", a.Name)
@@ -255,3 +274,9 @@ func fetchManifest(u string, key ed25519.PublicKey) (*webapp.Manifest, error) {
 	}
 	return &m, nil
 }
+
+// listFlag collects a repeated flag.
+type listFlag []string
+
+func (l *listFlag) String() string     { return strings.Join(*l, ",") }
+func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }

@@ -13,6 +13,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/nimezhu/myweb/console"
 	"github.com/nimezhu/myweb/home"
 	"github.com/nimezhu/myweb/myserver"
 	"github.com/nimezhu/myweb/webapp"
@@ -85,7 +86,7 @@ func appCatalog(name string, args []string) error {
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	shown := 0
 	for _, a := range apps {
-		if word != "" && !strings.Contains(strings.ToLower(a.Name+" "+a.Title+" "+a.Description), word) {
+		if word != "" && !strings.Contains(strings.ToLower(a.Name+" "+a.Title+" "+a.Description+" "+strings.Join(a.Tags, " ")), word) {
 			continue
 		}
 		if shown == 0 {
@@ -105,6 +106,9 @@ func appCatalog(name string, args []string) error {
 		}
 		if len(about) > 70 {
 			about = about[:67] + "…"
+		}
+		if len(a.Tags) > 0 {
+			about += "  [" + strings.Join(a.Tags, ", ") + "]"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\n", a.Name, state, about)
 	}
@@ -168,38 +172,70 @@ func ensureInstalled(name string, dirs home.Dirs, app string) error {
 	return installFromCatalog(name, dirs, app)
 }
 
+// catalogEntry is a catalog app and how it stands here.
+type catalogEntry struct {
+	webapp.CatalogApp
+	Installed string `json:"installed,omitempty"` // its current version
+	Running   bool   `json:"running,omitempty"`
+	URL       string `json:"url,omitempty"` // where this server serves it
+}
+
+// catalogList is every catalog app and how it stands here, and the catalogs
+// that couldn't be read.
+func (set *appSet) catalogList(ctx context.Context, refresh bool) ([]catalogEntry, []error) {
+	apps, errs := catalogsFor(set.dirs).Apps(ctx, refresh)
+	installed, _ := webapp.InstalledApps(set.dirs.Apps())
+	running := map[string]bool{}
+	for _, s := range runningServers(set.dirs) {
+		running[s.App] = true
+		for _, a := range s.Apps {
+			running[a.Name] = true
+		}
+	}
+	out := []catalogEntry{}
+	for _, a := range apps {
+		e := catalogEntry{CatalogApp: a}
+		if in := installedFrom(installed, a); in != nil {
+			e.Installed, e.Running = in.Current, running[a.Name]
+			if u := set.url(a.Name); u != "" {
+				e.URL, e.Running = u, true
+			}
+		}
+		out = append(out, e)
+	}
+	return out, errs
+}
+
+// catalogInstall installs (or updates) a catalog app and serves it.
+func (set *appSet) catalogInstall(ctx context.Context, name string) error {
+	a, err := catalogsFor(set.dirs).Find(ctx, name)
+	if err != nil {
+		return err
+	}
+	in, err := (&webapp.Flags{From: a.Manifest, Key: a.Key}).Installer(myserver.VERSION, set.dirs.Apps(), nil)
+	if err == nil {
+		err = in.Update(ctx)
+	}
+	if err != nil {
+		return err
+	}
+	set.mountAll() // serve it right away
+	return nil
+}
+
+// catalogOpen is an installed app's URL: where this server serves it, else a
+// server started for it.
+func (set *appSet) catalogOpen(spec Spec, name string) (string, error) {
+	if u := set.url(name); u != "" {
+		return u, nil
+	}
+	return openApp(spec, set.dirs, name)
+}
+
 // registerCatalogCmd serves the catalogs at POST /cmd/catalog, for the file
 // manager: {} lists the apps, {"install":NAME} installs one, {"open":NAME}
-// opens it (starting "app run NAME" in the background if it isn't running).
-func registerCatalogCmd(srv *myserver.Server, spec Spec, dirs home.Dirs) {
-	type entry struct {
-		webapp.CatalogApp
-		Installed string `json:"installed,omitempty"` // its current version
-		Running   bool   `json:"running,omitempty"`
-	}
-	list := func(ctx context.Context, refresh bool) (interface{}, error) {
-		apps, errs := catalogsFor(dirs).Apps(ctx, refresh)
-		installed, _ := webapp.InstalledApps(dirs.Apps())
-		running := map[string]bool{}
-		for _, s := range runningServers(dirs) {
-			running[s.App] = true
-		}
-		out := struct {
-			Apps   []entry  `json:"apps"`
-			Errors []string `json:"errors,omitempty"`
-		}{Apps: []entry{}}
-		for _, a := range apps {
-			e := entry{CatalogApp: a}
-			if in := installedFrom(installed, a); in != nil {
-				e.Installed, e.Running = in.Current, running[a.Name]
-			}
-			out.Apps = append(out.Apps, e)
-		}
-		for _, err := range errs {
-			out.Errors = append(out.Errors, err.Error())
-		}
-		return out, nil
-	}
+// returns its URL (starting "app run NAME" in the background if needed).
+func registerCatalogCmd(srv *myserver.Server, spec Spec, set *appSet) {
 	srv.RegisterCmd("catalog", func(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 		var p struct {
 			Refresh bool   `json:"refresh"`
@@ -221,25 +257,25 @@ func registerCatalogCmd(srv *myserver.Server, spec Spec, dirs home.Dirs) {
 		}
 		switch {
 		case p.Install != "":
-			a, err := catalogsFor(dirs).Find(ctx, p.Install)
-			if err != nil {
-				return nil, myserver.Errorf(http.StatusNotFound, "%v", err)
-			}
-			in, err := (&webapp.Flags{From: a.Manifest, Key: a.Key}).Installer(myserver.VERSION, dirs.Apps(), nil)
-			if err == nil {
-				err = in.Update(ctx)
-			}
-			if err != nil {
+			if err := set.catalogInstall(ctx, p.Install); err != nil {
 				return nil, myserver.Errorf(http.StatusBadGateway, "%v", err)
 			}
 		case p.Open != "":
-			u, err := openApp(spec, dirs, p.Open)
+			u, err := set.catalogOpen(spec, p.Open)
 			if err != nil {
 				return nil, myserver.Errorf(http.StatusBadGateway, "%v", err)
 			}
 			return map[string]string{"url": u}, nil
 		}
-		return list(ctx, p.Refresh)
+		apps, errs := set.catalogList(ctx, p.Refresh)
+		out := struct {
+			Apps   []catalogEntry `json:"apps"`
+			Errors []string       `json:"errors,omitempty"`
+		}{Apps: apps}
+		for _, err := range errs {
+			out.Errors = append(out.Errors, err.Error())
+		}
+		return out, nil
 	}, myserver.Describe(`apps from the catalogs: {} lists them; {"install":"NAME"} installs one; {"open":"NAME"} starts it if needed and returns its URL`))
 }
 
@@ -290,3 +326,28 @@ func openApp(spec Spec, dirs home.Dirs, app string) (string, error) {
 	}
 	return "", fmt.Errorf("%s did not start; see %s", app, filepath.Join(dirs.Root, "logs", app+".log"))
 }
+
+// catalogUI is the terminal UI's apps view ('i').
+type catalogUI struct {
+	spec Spec
+	set  *appSet
+}
+
+func (c catalogUI) List(ctx context.Context, refresh bool) ([]console.CatalogItem, error) {
+	entries, errs := c.set.catalogList(ctx, refresh)
+	items := []console.CatalogItem{}
+	for _, e := range entries {
+		items = append(items, console.CatalogItem{Name: e.Name, Title: e.Title, Description: e.Description,
+			Tags: e.Tags, Installed: e.Installed, URL: e.URL})
+	}
+	if len(errs) > 0 {
+		return items, errs[0]
+	}
+	return items, nil
+}
+
+func (c catalogUI) Install(ctx context.Context, name string) error {
+	return c.set.catalogInstall(ctx, name)
+}
+
+func (c catalogUI) Open(name string) (string, error) { return c.set.catalogOpen(c.spec, name) }
