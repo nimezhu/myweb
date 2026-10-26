@@ -3,6 +3,26 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## 0.0.6
+
+New:
+
+- myweb-desktop: myweb in the system tray (the menu bar on macOS), for
+  those who'd rather not keep a terminal open. While it runs it serves your
+  data folder; its menu opens the file manager and the apps, shows or
+  chooses the data folder, stops and starts the server, starts it at login,
+  and shows the log. It shares `~/.myweb` with the `myweb` command, and
+  starting it again opens the file manager. Download
+  `myweb-desktop_0.0.6_darwin_universal.zip` (`myweb.app`; not notarized:
+  right-click it and choose Open the first time), or the
+  `myweb-desktop_0.0.6_windows_*.exe` or `_linux_*` binary.
+- It updates itself: it checks once a day and offers "Update to myweb X",
+  which installs the release (checked against its signed checksums) and
+  restarts into it; `myweb-desktop upgrade` does the same from a terminal.
+  This version is the first to install by hand.
+- myweb's own checks that a server is up (`myweb status`, the tray, every
+  few seconds) no longer show in the request log.
+
 ## 0.0.5
 
 Changes to know before upgrading:
