@@ -5,9 +5,12 @@
 //
 // With arguments it is the myweb command line (myweb-desktop status, …); it
 // starts its server that way, as "myweb-desktop serve -no-tui -no-open -d DIR".
+// "myweb-desktop upgrade" updates this program instead of myweb (update.go).
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -32,10 +35,19 @@ func main() {
 		args = args[1:]
 	}
 	login := len(args) == 1 && args[0] == autostartArg
+	dirs, err := home.For(program)
+	if len(args) > 0 && args[0] == "upgrade" && err == nil { // this program, not myweb
+		if err := upgradeCmd(dirs, args[1:], os.Stdout); err != nil {
+			if !errors.Is(err, flag.ErrHelp) {
+				fmt.Fprintln(os.Stderr, "myweb-desktop:", err)
+			}
+			os.Exit(1)
+		}
+		return
+	}
 	if len(args) > 0 && !login {
 		os.Exit(cli.Main(cli.Spec{Name: program, Args: args}))
 	}
-	dirs, err := home.For(program)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "myweb-desktop:", err)
 		os.Exit(1)

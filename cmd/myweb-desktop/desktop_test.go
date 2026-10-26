@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/nimezhu/myweb/home"
+	"github.com/nimezhu/myweb/selfupdate"
 )
 
 func TestTailKeepsLastLine(t *testing.T) {
@@ -51,7 +53,7 @@ func TestOneTrayPerHome(t *testing.T) {
 		t.Fatal("the first start should run")
 	}
 	opened := make(chan bool, 2)
-	go serveSingle(l, func() { opened <- true })
+	go serveSingle(l, func(msg string) { opened <- msg == "open" })
 	if _, handed := claim(dirs, true); !handed {
 		t.Fatal("a second start should hand over")
 	}
@@ -72,4 +74,23 @@ func TestOneTrayPerHome(t *testing.T) {
 		t.Fatal("after the first quits, a start should run")
 	}
 	release(dirs, l2)
+}
+
+func TestAppBundle(t *testing.T) {
+	for exe, want := range map[string]string{
+		"/Applications/myweb.app/Contents/MacOS/myweb-desktop": "/Applications/myweb.app",
+		"/usr/local/bin/myweb-desktop":                         "",
+		"/x/Contents/MacOS/myweb-desktop":                      "",
+	} {
+		if got := appBundle(exe); got != want {
+			t.Errorf("appBundle(%s) = %q, want %q", exe, got, want)
+		}
+	}
+}
+
+func TestMacUpdatesOnlyTheApp(t *testing.T) {
+	err := install(context.Background(), newUpdater(), &selfupdate.Release{Version: "9.9.9", URL: "page"}, "/usr/local/bin/myweb-desktop", "", "darwin")
+	if err == nil || !strings.Contains(err.Error(), "only myweb.app") {
+		t.Fatalf("err = %v", err)
+	}
 }

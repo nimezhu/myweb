@@ -135,37 +135,13 @@ func (u *Updater) AssetName(version string) string {
 // runs, and puts it in place of exe. The binary it replaces is kept as
 // exe.old, for Rollback.
 func (u *Updater) Install(ctx context.Context, rel *Release, exe string) error {
-	name := u.AssetName(rel.Version)
-	url, ok := rel.Assets[name]
-	if !ok {
-		return fmt.Errorf("release %s has no binary for this platform (%s)", rel.Tag, name)
-	}
-	sumsURL, ok := rel.Assets["checksums.txt"]
-	if !ok {
-		return fmt.Errorf("release %s has no checksums.txt", rel.Tag)
-	}
-	sums, err := u.get(ctx, sumsURL, 1<<20)
-	if err != nil {
-		return fmt.Errorf("checksums: %w", err)
-	}
-	if err := u.verify(ctx, rel, sums); err != nil {
-		return err
-	}
-	want, err := findSum(sums, name)
-	if err != nil {
-		return err
-	}
 	if err := writable(filepath.Dir(exe)); err != nil {
 		return err
 	}
-	bin, err := u.get(ctx, url, 512<<20)
+	bin, err := u.fetch(ctx, rel, u.AssetName(rel.Version))
 	if err != nil {
-		return fmt.Errorf("download %s: %w", name, err)
+		return err
 	}
-	if got := sha256.Sum256(bin); hex.EncodeToString(got[:]) != want {
-		return fmt.Errorf("%s does not match its checksum: download it again", name)
-	}
-
 	tmp := exe + ".new"
 	if err := os.WriteFile(tmp, bin, 0o755); err != nil {
 		return err
@@ -175,6 +151,90 @@ func (u *Updater) Install(ctx context.Context, rel *Release, exe string) error {
 		return err
 	}
 	return swap(exe, tmp)
+}
+
+// InstallApp puts the release's asset, a macOS app zipped with ditto (as
+// scripts/desktop-mac.sh makes myweb.app), in place of the app at app (the
+// .app folder) once its checksum checks and its binary, bin inside it, runs.
+// The app it replaces is kept as APP.old (myweb.app.old).
+func (u *Updater) InstallApp(ctx context.Context, rel *Release, asset, app, bin string) error {
+	dir := filepath.Dir(app)
+	if err := writable(dir); err != nil {
+		return err
+	}
+	zip, err := u.fetch(ctx, rel, asset)
+	if err != nil {
+		return err
+	}
+	tmp, err := os.MkdirTemp(dir, ".upgrade-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp) // the new app has moved out by then, unless it failed
+	zipFile := filepath.Join(tmp, asset)
+	if err := os.WriteFile(zipFile, zip, 0o644); err != nil {
+		return err
+	}
+	if err := unzipApp(ctx, zipFile, tmp); err != nil {
+		return fmt.Errorf("unzip %s: %w", asset, err)
+	}
+	next := filepath.Join(tmp, filepath.Base(app))
+	if err := u.check(filepath.Join(next, bin), rel.Version); err != nil {
+		return err
+	}
+	old := app + ".old"
+	if err := os.RemoveAll(old); err != nil {
+		return fmt.Errorf("could not remove the previous app %s: %w", old, err)
+	}
+	if err := os.Rename(app, old); err != nil {
+		return err
+	}
+	if err := os.Rename(next, app); err != nil {
+		os.Rename(old, app)
+		return err
+	}
+	return nil
+}
+
+// unzipApp unpacks a zipped app into dir with ditto, which keeps what an app
+// needs (modes, its signature's files); replaced in tests off macOS.
+var unzipApp = func(ctx context.Context, zip, dir string) error {
+	if out, err := exec.CommandContext(ctx, "ditto", "-x", "-k", zip, dir).CombinedOutput(); err != nil {
+		return fmt.Errorf("%v %s", err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// fetch downloads one of the release's files and checks it against the
+// signed checksums.txt.
+func (u *Updater) fetch(ctx context.Context, rel *Release, name string) ([]byte, error) {
+	url, ok := rel.Assets[name]
+	if !ok {
+		return nil, fmt.Errorf("release %s has nothing for this platform (%s)", rel.Tag, name)
+	}
+	sumsURL, ok := rel.Assets["checksums.txt"]
+	if !ok {
+		return nil, fmt.Errorf("release %s has no checksums.txt", rel.Tag)
+	}
+	sums, err := u.get(ctx, sumsURL, 1<<20)
+	if err != nil {
+		return nil, fmt.Errorf("checksums: %w", err)
+	}
+	if err := u.verify(ctx, rel, sums); err != nil {
+		return nil, err
+	}
+	want, err := findSum(sums, name)
+	if err != nil {
+		return nil, err
+	}
+	b, err := u.get(ctx, url, 512<<20)
+	if err != nil {
+		return nil, fmt.Errorf("download %s: %w", name, err)
+	}
+	if got := sha256.Sum256(b); hex.EncodeToString(got[:]) != want {
+		return nil, fmt.Errorf("%s does not match its checksum: download it again", name)
+	}
+	return b, nil
 }
 
 // verify checks checksums.txt's signature.

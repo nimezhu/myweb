@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +23,7 @@ import (
 	"github.com/nimezhu/myweb/console"
 	"github.com/nimezhu/myweb/home"
 	"github.com/nimezhu/myweb/myserver"
+	"github.com/nimezhu/myweb/selfupdate"
 )
 
 // maxApps is how many apps the Apps submenu lists.
@@ -53,6 +56,12 @@ type exited struct {
 	last string // its last line of output
 }
 
+// checkResult is a check for updates asked for in the menu.
+type checkResult struct {
+	version string
+	err     error
+}
+
 // tray is the menu and the server it looks after. Only loop changes it.
 type tray struct {
 	dirs    home.Dirs
@@ -67,20 +76,35 @@ type tray struct {
 	note       string       // shown instead of the state until the next click
 	openWhenUp bool         // open the file manager once the server answers
 
-	openReq chan struct{}
-	exits   chan exited
-	shown   map[*systray.MenuItem]string // the titles set
-	hidden  map[*systray.MenuItem]bool
-	iconOn  int // 1 on, 0 off, -1 not set yet
+	exe, app   string // what an update replaces ("" when it can't update)
+	cantUpdate string // why not
+	newer      string // a newer version, once found
+	updating   bool
 
-	mStatus, mOpen, mManager, mApps              *systray.MenuItem
-	mShow, mChoose, mToggle, mLogin, mLog, mQuit *systray.MenuItem
-	appItems                                     []*systray.MenuItem
+	openReq    chan struct{}
+	restartReq chan struct{}
+	found      chan string // the latest version, from the daily check
+	checked    chan checkResult
+	updated    chan error
+	exits      chan exited
+	shown      map[*systray.MenuItem]string // the titles set
+	hidden     map[*systray.MenuItem]bool
+	iconOn     int // 1 on, 0 off, -1 not set yet
+
+	mStatus, mOpen, mManager, mApps                       *systray.MenuItem
+	mShow, mChoose, mToggle, mLogin, mLog, mUpdate, mQuit *systray.MenuItem
+	appItems                                              []*systray.MenuItem
 }
 
 func newTray(dirs home.Dirs, logFile *os.File, single net.Listener, open bool) *tray {
 	t := &tray{dirs: dirs, logFile: logFile, single: single, set: loadSettings(dirs), openWhenUp: open,
-		openReq: make(chan struct{}, 1), exits: make(chan exited, 4), shown: map[*systray.MenuItem]string{}, hidden: map[*systray.MenuItem]bool{}, iconOn: -1}
+		openReq: make(chan struct{}, 1), restartReq: make(chan struct{}, 1), found: make(chan string, 1),
+		checked: make(chan checkResult, 1), updated: make(chan error, 1), exits: make(chan exited, 4), shown: map[*systray.MenuItem]string{}, hidden: map[*systray.MenuItem]bool{}, iconOn: -1}
+	// found now: after an update, the running binary's path may be the old one's
+	var err error
+	if t.exe, t.app, err = installed(); err != nil {
+		t.cantUpdate = err.Error()
+	}
 	t.folder = t.set.Folder
 	if t.folder == "" {
 		d, err := cli.DataFolder(program)
@@ -120,17 +144,38 @@ func (t *tray) ready() {
 		}
 	}
 	t.mLog = systray.AddMenuItem("Show log", "")
+	t.mUpdate = systray.AddMenuItem("Check for updates", "")
 	systray.AddSeparator()
 	t.mQuit = systray.AddMenuItem("Quit myweb", "Stop the server it started, and quit")
 	if t.single != nil {
-		go serveSingle(t.single, func() {
+		go serveSingle(t.single, func(msg string) {
+			req := t.openReq
+			if msg == "restart" {
+				req = t.restartReq
+			}
 			select {
-			case t.openReq <- struct{}{}:
+			case req <- struct{}{}:
 			default:
 			}
 		})
 	}
 	go t.loop()
+	go t.checkDaily()
+}
+
+// checkDaily looks for a newer release soon after the start, then every few
+// hours (GitHub is asked at most once a day).
+func (t *tray) checkDaily() {
+	time.Sleep(20 * time.Second)
+	for {
+		if v, _ := latest(t.dirs, false); v != "" {
+			select {
+			case t.found <- v:
+			default:
+			}
+		}
+		time.Sleep(6 * time.Hour)
+	}
 }
 
 func (t *tray) exit() { release(t.dirs, t.single) }
@@ -157,6 +202,36 @@ func (t *tray) loop() {
 			t.reap(e)
 		case <-t.openReq:
 			t.open(false)
+		case <-t.restartReq: // updated by "myweb-desktop upgrade"
+			t.restart()
+			return
+		case v := <-t.found:
+			if selfupdate.Newer(v, myserver.VERSION) {
+				t.newer = v
+			}
+		case r := <-t.checked:
+			t.note = "" // "checking for updates…"
+			switch {
+			case r.err != nil:
+				t.note = "could not check for updates: " + r.err.Error()
+			case selfupdate.Newer(r.version, myserver.VERSION):
+				t.newer = r.version
+			default:
+				t.note = "myweb " + myserver.VERSION + " is the latest version"
+			}
+		case err := <-t.updated:
+			t.updating = false
+			if err != nil {
+				t.note = "update failed: " + err.Error()
+				log.Printf("update to %s: %v", t.newer, err)
+				break
+			}
+			log.Printf("updated to %s; restarting", t.newer)
+			t.restart()
+			return
+		case <-t.mUpdate.ClickedCh:
+			t.note = ""
+			t.checkOrUpdate()
 		case <-t.mOpen.ClickedCh:
 			t.note = ""
 			t.open(false)
@@ -227,11 +302,24 @@ func (t *tray) update() {
 	case t.failed != "":
 		state = "Stopped: " + t.failed
 	}
+	if t.updating {
+		state = "Updating to " + t.newer + "…"
+	}
 	if t.note != "" {
 		state = t.note
 	}
 	t.title(t.mStatus, shorten(state, 90))
-	systray.SetTooltip("myweb · " + shorten(state, 60))
+	tip := "myweb " + myserver.VERSION + " · " + shorten(state, 60)
+	switch {
+	case t.updating:
+		t.title(t.mUpdate, "Updating to "+t.newer+"…")
+	case t.newer != "":
+		t.title(t.mUpdate, "Update to myweb "+t.newer)
+		tip += " · update available"
+	default:
+		t.title(t.mUpdate, "Check for updates")
+	}
+	systray.SetTooltip(tip)
 	t.setIcon(t.cur != nil)
 
 	open, app := "Open file manager", ""
@@ -411,6 +499,51 @@ func (t *tray) setLogin(on bool) {
 	} else {
 		t.mLogin.Uncheck()
 	}
+}
+
+// update_ installs the newer version found, or looks for one; the answers
+// come back to loop.
+func (t *tray) checkOrUpdate() {
+	switch {
+	case t.updating:
+	case t.newer == "":
+		t.note = "checking for updates…"
+		go func() {
+			v, err := latest(t.dirs, true)
+			t.checked <- checkResult{v, err}
+		}()
+	case t.cantUpdate != "":
+		t.note = t.cantUpdate
+	default:
+		t.updating = true
+		version, exe, app := t.newer, t.exe, t.app
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+			defer cancel()
+			u := newUpdater()
+			rel, err := u.Get(ctx, version)
+			if err == nil {
+				err = install(ctx, u, rel, exe, app, runtime.GOOS)
+			}
+			t.updated <- err
+		}()
+	}
+}
+
+// restart stops the server it started and starts this program again (now
+// the new version), which starts the new version's server.
+func (t *tray) restart() {
+	if t.ours() {
+		if err := t.cur.Stop(); err != nil {
+			log.Printf("stopping the server: %v", err)
+		}
+	}
+	release(t.dirs, t.single) // so the new one takes over
+	t.single = nil
+	if err := relaunch(t.exe); err != nil {
+		log.Printf("restarting: %v", err)
+	}
+	systray.Quit()
 }
 
 // quit stops the server it started (one it found running keeps running).

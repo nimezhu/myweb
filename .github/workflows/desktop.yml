@@ -5,7 +5,7 @@ name: desktop
 on:
   push:
     branches: [main]
-    paths: ["cmd/myweb-desktop/**", "cli/desktop.go", "scripts/desktop-mac.sh", "go.mod", ".github/workflows/desktop.yml"]
+    paths: ["cmd/myweb-desktop/**", "cli/desktop.go", "selfupdate/**", "scripts/desktop-mac.sh", "go.mod", ".github/workflows/desktop.yml"]
   workflow_dispatch:
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./cmd/myweb-desktop
-      - run: go test ./cmd/myweb-desktop
+      - run: go test ./cmd/myweb-desktop ./selfupdate
       - run: scripts/desktop-mac.sh 0.0.0-dev dist/desktop
       - uses: actions/upload-artifact@v4
         with:

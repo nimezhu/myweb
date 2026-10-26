@@ -1,6 +1,8 @@
 package selfupdate
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -8,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -251,5 +254,93 @@ func TestInstallRefusesUnsigned(t *testing.T) {
 	}
 	if len(Keys) == 0 {
 		t.Error("no release key built in")
+	}
+}
+
+// zipApp is a zipped app: name.app holding bin as Contents/MacOS/prog.
+func zipApp(t *testing.T, name, prog, bin string) string {
+	var b bytes.Buffer
+	zw := zip.NewWriter(&b)
+	h := &zip.FileHeader{Name: name + ".app/Contents/MacOS/" + prog, Method: zip.Deflate}
+	h.SetMode(0o755)
+	w, _ := zw.CreateHeader(h)
+	io.WriteString(w, bin)
+	w, _ = zw.Create(name + ".app/Contents/Info.plist")
+	io.WriteString(w, "<plist/>")
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return b.String()
+}
+
+// unzipForTest is unzipApp without ditto.
+func unzipForTest(_ context.Context, file, dir string) error {
+	zr, err := zip.OpenReader(file)
+	if err != nil {
+		return err
+	}
+	defer zr.Close()
+	for _, f := range zr.File {
+		p := filepath.Join(dir, filepath.FromSlash(f.Name))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		r, err := f.Open()
+		if err != nil {
+			return err
+		}
+		b, _ := io.ReadAll(r)
+		r.Close()
+		if err := os.WriteFile(p, b, f.Mode().Perm()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestInstallApp(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as the new binary")
+	}
+	if runtime.GOOS != "darwin" {
+		orig := unzipApp
+		unzipApp = unzipForTest
+		t.Cleanup(func() { unzipApp = orig })
+	}
+	u := updater("", "")
+	u.Program = "myweb-desktop"
+	asset := "myweb-desktop_0.0.2_darwin_universal.zip"
+	for _, c := range []struct{ what, bin, err string }{
+		{"wrong version", "#!/bin/sh\necho myweb 0.0.3\n", "expected version"},
+		{"good", "#!/bin/sh\necho myweb 0.0.2\n", ""},
+	} {
+		z := zipApp(t, "myweb", "myweb-desktop", c.bin)
+		fakeGitHub(t, map[string]string{asset: z}, sum(z)+"  "+asset+"\n")
+		dir := t.TempDir()
+		app := filepath.Join(dir, "myweb.app")
+		os.MkdirAll(filepath.Join(app, "Contents", "MacOS"), 0o755)
+		os.WriteFile(filepath.Join(app, "Contents", "MacOS", "myweb-desktop"), []byte("old"), 0o755)
+		rel, err := u.Latest(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = u.InstallApp(context.Background(), rel, asset, app, filepath.Join("Contents", "MacOS", "myweb-desktop"))
+		got, _ := os.ReadFile(filepath.Join(app, "Contents", "MacOS", "myweb-desktop"))
+		if c.err != "" {
+			if err == nil || !strings.Contains(err.Error(), c.err) || string(got) != "old" {
+				t.Errorf("%s: err = %v, app holds %q", c.what, err, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", c.what, err)
+		}
+		if string(got) != c.bin {
+			t.Errorf("the app holds %q", got)
+		}
+		if b, _ := os.ReadFile(filepath.Join(app+".old", "Contents", "MacOS", "myweb-desktop")); string(b) != "old" {
+			t.Errorf("myweb.app.old holds %q", b)
+		}
+		if left, _ := filepath.Glob(filepath.Join(dir, ".upgrade-*")); len(left) > 0 {
+			t.Errorf("left behind: %v", left)
+		}
 	}
 }

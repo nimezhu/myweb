@@ -177,6 +177,12 @@ menu:
   at login, it serves without opening the browser.
 - **Show log**: `~/.myweb/logs/desktop.log`, which also holds the server's
   output.
+- **Check for updates**: it also checks once a day, and then offers
+  **Update to myweb VERSION**, which installs that release (checked against
+  its signed checksums, as `myweb upgrade` does) and restarts into it. On
+  macOS it replaces the whole `myweb.app`, keeping the previous one as
+  `myweb.app.old`. `myweb-desktop upgrade [-check | VERSION]` does the same
+  from a terminal, and a running tray restarts into the new version.
 - **Quit myweb** stops the server it started. A server it found already
   serving the folder (`myweb service`, another terminal) keeps running.
 

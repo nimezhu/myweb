@@ -13,7 +13,8 @@ import (
 
 // One tray per home: the running one listens on 127.0.0.1 and records the
 // address in <home>/run/desktop.addr. A second start sends it "open" (or
-// "hello", started at login) and exits.
+// "hello", started at login) and exits; "myweb-desktop upgrade" sends
+// "restart".
 
 func addrFile(dirs home.Dirs) string { return filepath.Join(dirs.Root, "run", "desktop.addr") }
 
@@ -51,8 +52,9 @@ func ask(addr, msg string) bool {
 	return strings.TrimSpace(reply) == "ok"
 }
 
-// serveSingle answers the other starts; on "open", calls open.
-func serveSingle(l net.Listener, open func()) {
+// serveSingle answers the other starts, and "myweb-desktop upgrade": it
+// passes on "open" and "restart".
+func serveSingle(l net.Listener, do func(msg string)) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
@@ -62,9 +64,9 @@ func serveSingle(l net.Listener, open func()) {
 			defer c.Close()
 			c.SetDeadline(time.Now().Add(2 * time.Second))
 			line, _ := bufio.NewReader(c).ReadString('\n')
-			switch strings.TrimSpace(line) {
-			case "open":
-				open()
+			switch msg := strings.TrimSpace(line); msg {
+			case "open", "restart":
+				do(msg)
 			case "hello":
 			default:
 				return
