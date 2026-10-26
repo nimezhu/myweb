@@ -58,6 +58,7 @@ func (s *Server) handleWrite(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "write failed")
 		return
 	}
+	s.recordFor(r, Activity{Op: "save", Path: dir, Size: int64(len(reqBody))})
 	f := file{"/f" + dir, path.Base(dir), len(reqBody), ""}
 	if fi, err := os.Stat(p); err == nil {
 		f.ETag = fileETag(fi)

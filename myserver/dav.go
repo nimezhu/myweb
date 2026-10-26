@@ -102,11 +102,15 @@ func (d davFS) check(ctx context.Context, name string, act Action) (string, stri
 }
 
 func (d davFS) Mkdir(ctx context.Context, name string, perm os.FileMode) error {
-	_, fp, err := d.check(ctx, name, ActWrite)
+	p, fp, err := d.check(ctx, name, ActWrite)
 	if err != nil {
 		return err
 	}
-	return os.Mkdir(fp, 0o755)
+	if err := os.Mkdir(fp, 0o755); err != nil {
+		return err
+	}
+	d.s.record(Activity{Op: "mkdir", Path: p, Who: userName(UserFrom(ctx)), Via: "dav"})
+	return nil
 }
 
 func (d davFS) OpenFile(ctx context.Context, name string, flag int, perm os.FileMode) (webdav.File, error) {
@@ -141,7 +145,7 @@ func (d davFS) OpenFile(ctx context.Context, name string, flag int, perm os.File
 	if err != nil {
 		return nil, err
 	}
-	return &davWriter{File: tmp, s: d.s, p: p, dst: fp}, nil
+	return &davWriter{File: tmp, s: d.s, p: p, dst: fp, by: userName(UserFrom(ctx))}, nil
 }
 
 // RemoveAll moves name's files to the trash, then removes the folders they
@@ -151,23 +155,30 @@ func (d davFS) RemoveAll(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	_, err = d.s.removeTree(p, userName(UserFrom(ctx)))
+	n, _, err := d.s.removeTree(p, userName(UserFrom(ctx)))
+	if n > 0 || err == nil {
+		d.s.record(Activity{Op: "delete", Path: p, Files: n, Who: userName(UserFrom(ctx)), Via: "dav"})
+	}
 	return err
 }
 
 func (d davFS) Rename(ctx context.Context, oldName, newName string) error {
-	_, from, err := d.check(ctx, oldName, ActWrite)
+	fromURL, from, err := d.check(ctx, oldName, ActWrite)
 	if err != nil {
 		return err
 	}
-	_, to, err := d.check(ctx, newName, ActWrite)
+	toURL, to, err := d.check(ctx, newName, ActWrite)
 	if err != nil {
 		return err
 	}
 	if _, err := os.Lstat(to); err == nil {
 		return os.ErrExist // the handler has trashed it first when it may be replaced
 	}
-	return fsx.Rename(from, to)
+	if err := fsx.Rename(from, to); err != nil {
+		return err
+	}
+	d.s.record(Activity{Op: "move", Path: fromURL, To: toURL, Who: userName(UserFrom(ctx)), Via: "dav"})
+	return nil
 }
 
 func (d davFS) Stat(ctx context.Context, name string) (os.FileInfo, error) {
@@ -208,6 +219,7 @@ type davWriter struct {
 	*os.File
 	s      *Server
 	p, dst string
+	by     string // who writes it
 	failed bool
 }
 
@@ -244,6 +256,10 @@ func (w *davWriter) Close() error {
 	unlock := w.s.locks.lock(w.dst)
 	defer unlock()
 	kept := w.s.KeepVersion(w.p)
+	var size int64
+	if fi, err := os.Stat(tmp); err == nil {
+		size = fi.Size()
+	}
 	if err := fsx.Rename(tmp, w.dst); err != nil {
 		os.Remove(tmp)
 		if kept != "" {
@@ -251,5 +267,6 @@ func (w *davWriter) Close() error {
 		}
 		return err
 	}
+	w.s.record(Activity{Op: "save", Path: w.p, Size: size, Who: w.by, Via: "dav"})
 	return nil
 }

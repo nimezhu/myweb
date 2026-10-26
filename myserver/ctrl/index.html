@@ -1,46 +1,86 @@
-<html>
-
+<!doctype html>
+<html lang="en">
 <head>
-</head>
-
-<body>
-    <div id="container">
-    <input type="button" value="Stop Server" id="stopBtn"></input>
-    <div id="stopped" style="display:none">
-        <div>Server stopped. </div>
-        <div>Please close this tab.</div>
-    </div>
-    </div>
-</body>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stop myweb</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f6f8; --panel: #ffffff; --text: #1d1d22; --muted: #6b6b76;
+    --line: #e4e4ea; --accent: #5a3fd8; --err: #cf222e; --ok: #1a7f37;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #121216; --panel: #1b1b21; --text: #e6e6ea; --muted: #8d8d99;
+      --line: #2c2c35; --accent: #a08cff; --err: #ff7b72; --ok: #56d364;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121216; --panel: #1b1b21; --text: #e6e6ea; --muted: #8d8d99;
+    --line: #2c2c35; --accent: #a08cff; --err: #ff7b72; --ok: #56d364;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 16px;
+    background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 28px; width: 400px; max-width: 100%; text-align: center; }
+  .logo { width: 40px; height: 40px; border-radius: 10px; background: var(--accent); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 20px; margin: 0 auto 14px; }
+  h1 { font-size: 19px; margin: 0 0 6px; }
+  p { color: var(--muted); margin: 0 0 20px; font-size: 14px; }
+  button { font: 600 14px system-ui, sans-serif; border: 1px solid var(--err); background: var(--err); color: #fff; padding: 9px 18px; border-radius: 8px; cursor: pointer; }
+  button:disabled { opacity: .5; cursor: progress; }
+  a { color: var(--accent); font-size: 14px; }
+  .links { margin-top: 18px; }
+  .err { color: var(--err); }
+  [hidden] { display: none !important; }
+</style>
 <script>
-    (() =>
-        {
-            var $ = document.getElementById.bind(document)
-            var h = document.createElement.bind(document)
-            var stopBtn = $("stopBtn")
-            stopBtn.onclick = (e) =>
-            {
-                fetch("/cmd/stopServer",
-                    {
-                        method: "POST",
-                        body: JSON.stringify(
-                        {}),
-                        headers:
-                        {
-                            "Content-type": "application/json; charset=UTF-8"
-                        }
-                    })
-                    .then((response) =>
-                    {
-                        stopBtn.remove()
-                        $("stopped").style.display = null
-                    }).catch((e)=>{
-                        console.log(e)
-                        stopBtn.remove()
-                        $("stopped").style.display = null
-                    })
-            }
-        })()
+  try { const t = localStorage.getItem("myweb.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
 </script>
-
+</head>
+<body>
+<main class="card">
+  <div class="logo">m</div>
+  <div id="running">
+    <h1>Stop this myweb server?</h1>
+    <p>Its file manager, its apps and its share links stop working until myweb is started again.</p>
+    <button type="button" id="stopBtn">Stop server</button>
+    <p class="err" id="error" hidden style="margin:14px 0 0"></p>
+    <div class="links"><a href="/_myweb/">Back to the file manager</a></div>
+  </div>
+  <div id="stopped" hidden>
+    <h1>Server stopped</h1>
+    <p style="margin:0">You can close this tab.</p>
+  </div>
+</main>
+<script>
+  (() => {
+    const $ = (id) => document.getElementById(id);
+    $("stopBtn").onclick = async () => {
+      $("stopBtn").disabled = true;
+      $("error").hidden = true;
+      let r = null;
+      try {
+        r = await fetch("/cmd/stopServer", {
+          method: "POST", body: "{}", headers: { "Content-Type": "application/json; charset=UTF-8" },
+        });
+      } catch {} // it may stop before it answers
+      if (r && !r.ok) {
+        let e = r.status + " " + r.statusText;
+        try { e = (await r.json()).error || e; } catch {}
+        $("error").textContent = "Could not stop it: " + e;
+        $("error").hidden = false;
+        $("stopBtn").disabled = false;
+        return;
+      }
+      $("running").hidden = true;
+      $("stopped").hidden = false;
+    };
+  })();
+</script>
+</body>
 </html>

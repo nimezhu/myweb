@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/nimezhu/myweb/home"
 	"github.com/nimezhu/myweb/myserver"
 	"github.com/nimezhu/myweb/selfupdate"
 	"github.com/nimezhu/myweb/webapp"
@@ -186,7 +187,15 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 		d.warn("serve it with -read-only, or fix its permissions", "data folder %s is read-only for you", tildePath(data))
 	} else {
 		d.ok("data folder %s", tildePath(data))
+		if free, total, err := myserver.DiskSpace(data); err == nil && total > 0 {
+			if free < total/20 || free < 1<<30 {
+				d.warn("empty the trash, or see what fills it: More → Folder sizes in the file manager", "only %s free on its disk (of %s)", sizeText(int64(free)), sizeText(int64(total)))
+			} else {
+				d.ok("%s free on its disk (of %s)", sizeText(int64(free)), sizeText(int64(total)))
+			}
+		}
 	}
+	d.backups(spec, dirs, sf)
 
 	running := runningServers(dirs)
 	port := *sf.port
@@ -304,6 +313,29 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 		}
 	}
 	return d.result()
+}
+
+// backups: the automatic ones are made, and not long ago.
+func (d *doctor) backups(spec Spec, dirs home.Dirs, sf *serveFlags) {
+	name := spec.Name
+	ev := *sf.backupEvery
+	if ev == 0 {
+		d.ok("no automatic backups (%s backup -every 1d makes them)", name)
+		return
+	}
+	dir := backupsDirFor(dirs, *sf.backupTo)
+	st, _ := readAutoBackupStatus(dir)
+	made := autoBackups(name, dir)
+	switch {
+	case st.Error != "" && (len(made) == 0 || st.Time.After(made[0].ModTime())):
+		d.warn("see that "+tildePath(dir)+" can be written and has room; "+name+" backup -list", "the last automatic backup failed (%s): %s", st.Time.Local().Format("2006-01-02 15:04"), st.Error)
+	case len(made) == 0:
+		d.warn("a running "+name+" makes the first a minute after it starts", "backups every %s, but none made yet in %s", &ev, tildePath(dir))
+	case time.Since(made[0].ModTime()) > 2*time.Duration(ev)+time.Hour:
+		d.warn("backups are made only while a "+name+" runs: start one, or install a service", "the newest automatic backup is from %s (every %s)", made[0].ModTime().Format("2006-01-02 15:04"), &ev)
+	default:
+		d.ok("backups every %s: %d kept, the newest %s, in %s", &ev, len(made), made[0].ModTime().Format("2006-01-02 15:04"), tildePath(dir))
+	}
 }
 
 func (d *doctor) result() error {

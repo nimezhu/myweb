@@ -202,30 +202,31 @@ func listVersions(dir string) []os.FileInfo {
 	return vs
 }
 
-// trashFile moves a file into the trash (or deletes it when trash is off).
-// by, if set, is recorded as who deleted it.
-func (s *Server) trashFile(urlPath, by string) error {
+// trashFile moves a file into the trash (or deletes it when trash is off)
+// and returns its trash id ("" when deleted). by, if set, is recorded as who
+// deleted it.
+func (s *Server) trashFile(urlPath, by string) (string, error) {
 	p := s.ResolvePath(urlPath)
 	if s.trashDays() == 0 {
-		return os.Remove(p)
+		return "", os.Remove(p)
 	}
 	b := make([]byte, 3)
 	rand.Read(b)
 	id := time.Now().UTC().Format(versionLayout) + "-" + hex.EncodeToString(b)
 	dst := s.metaPath("trash", id, filepath.FromSlash(strings.TrimPrefix(path.Clean("/"+urlPath), "/")))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
+		return "", err
 	}
 	if err := fsx.Rename(p, dst); err != nil {
 		os.RemoveAll(s.metaPath("trash", id))
-		return err
+		return "", err
 	}
 	if by != "" {
 		info, _ := json.Marshal(map[string]string{"by": by})
 		os.WriteFile(s.metaPath("trash", id+".json"), info, 0o644)
 	}
 	go s.pruneTrash()
-	return nil
+	return id, nil
 }
 
 type trashItem struct {
@@ -370,6 +371,7 @@ func (s *Server) cmdRestore(_ context.Context, req *CmdRequest) (interface{}, er
 		}
 		return nil, err
 	}
+	req.Record(Activity{Op: "restore", Path: clean})
 	res := map[string]interface{}{"path": clean, "restored": p.Version}
 	if fi, err := os.Stat(dst); err == nil {
 		res["etag"] = fileETag(fi)
@@ -428,6 +430,7 @@ func (s *Server) cmdUntrash(_ context.Context, req *CmdRequest) (interface{}, er
 	}
 	os.RemoveAll(s.metaPath("trash", p.ID))
 	os.Remove(s.metaPath("trash", p.ID+".json"))
+	req.Record(Activity{Op: "untrash", Path: item.Path})
 	return map[string]string{"path": item.Path}, nil
 }
 

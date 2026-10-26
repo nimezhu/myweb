@@ -6,12 +6,14 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -67,9 +69,32 @@ func dataFolder(spec Spec, dirs home.Dirs) (string, error) {
 func backupCmd(spec Spec, args []string, w io.Writer) error {
 	fl := newAppFlags(spec.Name, "backup")
 	noFiles := fl.Bool("no-files", false, "")
+	ev := new(every)
+	fl.Var(ev, "every", "")
+	keep := fl.Int("keep", 0, "")
+	to := fl.String("to", "", "")
+	list := fl.Bool("list", false, "")
 	pos, err := fl.parse(args)
 	if err != nil {
 		return err
+	}
+	given := map[string]bool{}
+	fl.Visit(func(f *flag.Flag) { given[f.Name] = true })
+	if given["every"] || given["keep"] || given["to"] || *list {
+		if len(pos) > 0 || *noFiles {
+			return usageError{errors.New("-every, -keep, -to and -list take no FILE")}
+		}
+		if (given["keep"] || given["to"]) && !given["every"] {
+			return usageError{errors.New("-keep and -to go with -every")}
+		}
+		dirs, err := homeFor(spec.Name, *fl.home)
+		if err != nil {
+			return err
+		}
+		if *list {
+			return listBackups(spec, dirs, w)
+		}
+		return scheduleBackups(spec, dirs, ev, *keep, *to, w)
 	}
 	if len(pos) > 1 {
 		return usageError{errors.New("backup takes at most one FILE")}
@@ -92,54 +117,11 @@ func backupCmd(spec Spec, args []string, w io.Writer) error {
 	if out, err = filepath.Abs(expandHome(out)); err != nil {
 		return err
 	}
-	info := backupInfo{Program: spec.Name, Version: myserver.VERSION, Created: time.Now().UTC().Truncate(time.Second),
-		Home: dirs.Root, Data: data, DataInHome: data == dirs.Data(), NoFiles: *noFiles}
 	if len(runningServers(dirs)) > 0 {
 		fmt.Fprintf(w, "(a %s is running: files it changes meanwhile may be left out or copied half-written)\n", spec.Name)
 	}
-
-	tmp, err := os.CreateTemp(filepath.Dir(out), "."+filepath.Base(out)+".*")
+	st, err := makeBackup(spec, dirs, data, out, *noFiles, backupsDir(spec, dirs))
 	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	tmp.Chmod(0o600) // the config may hold the token
-	zw := zip.NewWriter(tmp)
-	b, _ := json.MarshalIndent(info, "", "  ")
-	if f, err := zw.CreateHeader(&zip.FileHeader{Name: backupInfoName, Method: zip.Deflate, Modified: info.Created}); err == nil {
-		f.Write(append(b, '\n'))
-	}
-	var st backupStats
-	skip := func(p string) bool { return p == out || p == tmp.Name() } // not into the backup
-	skipHome := func(p string) bool {
-		return skip(p) || p == filepath.Join(dirs.Root, "run") || (p == data && info.DataInHome)
-	}
-	if err := addTree(zw, dirs.Root, "home", skipHome, &st); err != nil {
-		return err
-	}
-	if fi, err := os.Stat(data); err == nil && fi.IsDir() {
-		src := data
-		if *noFiles {
-			src = filepath.Join(data, ".myweb")
-		}
-		dst := "data"
-		if *noFiles {
-			dst = "data/.myweb"
-		}
-		if _, err := os.Stat(src); err == nil {
-			skipData := func(p string) bool { return skip(p) || p == dirs.Root } // a data folder around the home: it's in home/
-			if err := addTree(zw, src, dst, skipData, &st); err != nil {
-				return err
-			}
-		}
-	}
-	if err := zw.Close(); err != nil {
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := fsx.Rename(tmp.Name(), out); err != nil {
 		return err
 	}
 	fi, _ := os.Stat(out)
@@ -151,6 +133,55 @@ func backupCmd(spec Spec, args []string, w io.Writer) error {
 		fmt.Fprintf(w, "the zip is %s; it holds the token, keep it private\n", sizeText(fi.Size()))
 	}
 	return nil
+}
+
+// makeBackup writes the backup of dirs and data to out (whole, or not at
+// all). Folders in skipDirs (where backups are kept) are left out.
+func makeBackup(spec Spec, dirs home.Dirs, data, out string, noFiles bool, skipDirs ...string) (backupStats, error) {
+	var st backupStats
+	info := backupInfo{Program: spec.Name, Version: myserver.VERSION, Created: time.Now().UTC().Truncate(time.Second),
+		Home: dirs.Root, Data: data, DataInHome: data == dirs.Data(), NoFiles: noFiles}
+	tmp, err := os.CreateTemp(filepath.Dir(out), "."+filepath.Base(out)+".*")
+	if err != nil {
+		return st, err
+	}
+	defer os.Remove(tmp.Name())
+	defer tmp.Close()
+	tmp.Chmod(0o600) // the config may hold the token
+	zw := zip.NewWriter(tmp)
+	b, _ := json.MarshalIndent(info, "", "  ")
+	if f, err := zw.CreateHeader(&zip.FileHeader{Name: backupInfoName, Method: zip.Deflate, Modified: info.Created}); err == nil {
+		f.Write(append(b, '\n'))
+	}
+	thumbs := filepath.Join(data, ".myweb", "thumbs") // made again when asked for
+	skip := func(p string) bool {                     // not into the backup
+		return p == out || p == tmp.Name() || p == thumbs || slices.Contains(skipDirs, p)
+	}
+	skipHome := func(p string) bool {
+		return skip(p) || p == filepath.Join(dirs.Root, "run") || (p == data && info.DataInHome)
+	}
+	if err := addTree(zw, dirs.Root, "home", skipHome, &st); err != nil {
+		return st, err
+	}
+	if fi, err := os.Stat(data); err == nil && fi.IsDir() {
+		src, dst := data, "data"
+		if noFiles {
+			src, dst = filepath.Join(data, ".myweb"), "data/.myweb"
+		}
+		if _, err := os.Stat(src); err == nil {
+			skipData := func(p string) bool { return skip(p) || p == dirs.Root } // a data folder around the home: it's in home/
+			if err := addTree(zw, src, dst, skipData, &st); err != nil {
+				return st, err
+			}
+		}
+	}
+	if err := zw.Close(); err != nil {
+		return st, err
+	}
+	if err := tmp.Close(); err != nil {
+		return st, err
+	}
+	return st, fsx.Rename(tmp.Name(), out)
 }
 
 type backupStats struct {

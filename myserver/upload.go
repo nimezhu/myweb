@@ -254,6 +254,7 @@ func (s *Server) storePart(u *User, folder string, part *multipart.Part, mode st
 		return res, status, err
 	}
 	res.Path, res.URL = urlPath, "/f"+urlPath
+	s.record(Activity{Op: "upload", Path: urlPath, Size: size, Who: userName(u)})
 	if fi, err := os.Stat(s.ResolvePath(urlPath)); err == nil {
 		res.ETag = fileETag(fi)
 	}

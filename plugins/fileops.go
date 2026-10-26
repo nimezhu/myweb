@@ -81,6 +81,7 @@ func cmdMkdir(ctx context.Context, req *myserver.CmdRequest) (interface{}, error
 	if err := os.MkdirAll(fsPath, 0o755); err != nil {
 		return nil, myserver.Errorf(http.StatusConflict, "mkdir failed: %v", err)
 	}
+	req.Record(myserver.Activity{Op: "mkdir", Path: path.Clean("/" + p.Path)})
 	return map[string]string{"path": path.Clean("/" + p.Path)}, nil
 }
 
@@ -136,6 +137,7 @@ func cmdMv(ctx context.Context, req *myserver.CmdRequest) (interface{}, error) {
 		}
 		return nil, myserver.Errorf(http.StatusConflict, "move failed: %v", errors.Unwrap(err))
 	}
+	req.Record(myserver.Activity{Op: "move", Path: from, To: to})
 	return map[string]string{"from": from, "to": to}, nil
 }
 

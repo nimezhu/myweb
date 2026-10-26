@@ -172,10 +172,12 @@ type Server struct {
 	readOnly  atomic.Bool
 	publicURL atomic.Value // string: see SetPublicURL
 
-	cmds   cmdRegistry
-	locks  pathLocks
-	events *eventHub
-	cors   *cors.Cors
+	cmds     cmdRegistry
+	locks    pathLocks
+	thumbs   thumbMaker  // thumbnails being made (thumb.go)
+	activity activityLog // activity.go
+	events   *eventHub
+	cors     *cors.Cors
 
 	proxyClient *http.Client
 
@@ -226,6 +228,9 @@ func New(cfg Config) *Server {
 	s.registerZipCmds()
 	s.registerShareCmds()
 	s.registerRemoveCmd()
+	s.registerActivityCmd()
+	s.registerDiskCmds()
+	s.registerCopyCmd()
 	return s
 }
 
@@ -236,6 +241,7 @@ func (s *Server) routes() {
 	m.Handle("/f/", s.authedReads(http.StripPrefix("/f", s.guardFiles(revalidate(root, s.sandboxDataPages(http.HandlerFunc(s.serveFiles)))))))
 	m.Handle("/ls/", s.authedReads(http.StripPrefix("/ls", http.HandlerFunc(s.handleLs))))
 	m.Handle("/zip/", s.authedReads(http.StripPrefix("/zip", http.HandlerFunc(s.handleZip))))
+	m.Handle("/thumb/", s.authedReads(http.StripPrefix("/thumb", http.HandlerFunc(s.handleThumb))))
 	m.HandleFunc("/_s/", s.handleShare) // share links: their secret is the key (share.go)
 	if !s.cfg.NoDAV {
 		dav := s.davHandler() // the data folder as a drive (dav.go)
@@ -271,6 +277,7 @@ func (s *Server) routes() {
 			"user":      UserFrom(r.Context()),
 			"multiUser": s.MultiUser(),
 			"instance":  s.cfg.Instance,
+			"disk":      s.diskIfAuthed(r),
 		})
 	})
 	if len(s.cfg.TrustCert) > 0 {

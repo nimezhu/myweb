@@ -271,6 +271,7 @@ func (s *Server) cmdUnzip(ctx context.Context, req *CmdRequest) (interface{}, er
 		}
 	}
 	log.Printf("unzipped %s into %s (%d files, %d bytes)", src, to, res.Files, res.Bytes)
+	req.Record(Activity{Op: "unzip", Path: src, To: to, Files: res.Files, Size: res.Bytes})
 	return res, nil
 }
 
@@ -278,7 +279,7 @@ func (s *Server) cmdUnzip(ctx context.Context, req *CmdRequest) (interface{}, er
 func junk(name string) bool {
 	n := strings.ReplaceAll(name, "\\", "/")
 	b := path.Base(n)
-	return strings.HasPrefix(n, "__MACOSX/") || b == ".DS_Store" || b == "Thumbs.db" || b == "desktop.ini"
+	return strings.HasPrefix(n, "__MACOSX/") || b == ".DS_Store" || b == "Thumbs.db" || b == "desktop.ini" || strings.HasPrefix(b, "._")
 }
 
 func (s *Server) registerZipCmds() {

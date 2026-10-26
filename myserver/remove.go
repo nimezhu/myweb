@@ -39,7 +39,7 @@ func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
 	}
 	fi, err := os.Lstat(p)
 	if err == nil && fi.Mode().IsRegular() {
-		err = s.trashFile(dir, userName(UserFrom(r.Context())))
+		_, err = s.trashFile(dir, userName(UserFrom(r.Context())))
 	} else if err == nil {
 		err = os.Remove(p) // empty directory or symlink
 	}
@@ -51,21 +51,31 @@ func (s *Server) handleRemove(w http.ResponseWriter, r *http.Request) {
 		writeError(w, status, "remove failed: "+r.URL.Path)
 		return
 	}
+	s.recordFor(r, Activity{Op: "delete", Path: dir})
 	writeJSON(w, http.StatusOK, map[string]int{"success": 1})
 	log.Printf("removed %s", r.URL.Path)
 }
 
 // removeTree moves p's files to the trash (a folder's one by one), then
-// removes the folders they leave empty, and returns how many files went. A
-// file that can't be moved stays, and so does its folder. by is who.
-func (s *Server) removeTree(p, by string) (int, error) {
+// removes the folders they leave empty, and returns how many files went and
+// their trash ids (for putting them back). A file that can't be moved stays,
+// and so does its folder. by is who.
+func (s *Server) removeTree(p, by string) (int, []string, error) {
 	fp := s.ResolvePath(p)
 	fi, err := os.Lstat(fp)
 	if err != nil {
-		return 0, err
+		return 0, nil, err
+	}
+	var ids []string
+	keep := func(id string) {
+		if id != "" {
+			ids = append(ids, id)
+		}
 	}
 	if !fi.IsDir() {
-		return 1, s.removeOne(p, fp, fi, by)
+		id, err := s.removeOne(p, fp, fi, by)
+		keep(id)
+		return 1, ids, err
 	}
 	var dirs []string
 	var errs error
@@ -82,7 +92,9 @@ func (s *Server) removeTree(p, by string) (int, error) {
 		rel, _ := filepath.Rel(s.cfg.Root, f)
 		info, err := e.Info()
 		if err == nil {
-			err = s.removeOne("/"+filepath.ToSlash(rel), f, info, by)
+			var id string
+			id, err = s.removeOne("/"+filepath.ToSlash(rel), f, info, by)
+			keep(id)
 		}
 		if err != nil {
 			errs = errors.Join(errs, err)
@@ -94,16 +106,17 @@ func (s *Server) removeTree(p, by string) (int, error) {
 	for i := len(dirs) - 1; i >= 0; i-- { // deepest first; never with contents
 		os.Remove(dirs[i])
 	}
-	return n, errs
+	return n, ids, errs
 }
 
-func (s *Server) removeOne(p, fp string, fi os.FileInfo, by string) error {
+// removeOne trashes one file, returning its trash id, or removes a link.
+func (s *Server) removeOne(p, fp string, fi os.FileInfo, by string) (string, error) {
 	unlock := s.locks.lock(fp)
 	defer unlock()
 	if fi.Mode().IsRegular() {
 		return s.trashFile(p, by)
 	}
-	return os.Remove(fp) // a symbolic link, not what it leads to
+	return "", os.Remove(fp) // a symbolic link, not what it leads to
 }
 
 // registerRemoveCmd: "rm" deletes files and folders, everything in them to
@@ -137,20 +150,25 @@ func (s *Server) registerRemoveCmd() {
 			p.Paths[i] = x
 		}
 		files := 0
-		failed := []string{}
+		failed, trashed := []string{}, []string{}
 		for _, x := range p.Paths {
-			n, err := s.removeTree(x, userName(req.User))
+			n, ids, err := s.removeTree(x, userName(req.User))
 			files += n
+			trashed = append(trashed, ids...)
 			if err != nil {
 				failed = append(failed, x)
 				log.Printf("rm %s: %v", x, err)
 			} else {
 				log.Printf("removed %s", x)
 			}
+			if n > 0 || err == nil {
+				req.Record(Activity{Op: "delete", Path: x, Files: n})
+			}
 		}
 		if len(failed) == len(p.Paths) && files == 0 {
 			return nil, Errorf(http.StatusConflict, "could not remove %s", failed[0])
 		}
-		return map[string]interface{}{"files": files, "failed": failed}, nil
+		// trash: the ids "untrash" puts back (none when the trash is off)
+		return map[string]interface{}{"files": files, "failed": failed, "trash": trashed}, nil
 	}, Writes(), Describe(`delete files and folders (everything in them goes to the trash): {"paths":["/old","/a.txt"]}`))
 }

@@ -4,138 +4,383 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>myweb</title>
+<link rel="manifest" href="/_myweb/manifest.json">
+<meta name="theme-color" content="#5a3fd8">
+<link rel="apple-touch-icon" href="/_myweb/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="myweb">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%235a3fd8'/%3E%3Cpath d='M8 22V10l8 7 8-7v12' stroke='white' stroke-width='3' fill='none' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+  // the chosen theme before the first paint (auto follows the system)
+  try { const t = localStorage.getItem("myweb.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+</script>
 <style>
   :root {
-    --bg: #f7f7f9; --panel: #ffffff; --text: #1d1d22; --muted: #6b6b76;
-    --line: #e4e4ea; --accent: #5a3fd8; --accent-soft: #eeeafd;
+    color-scheme: light;
+    --bg: #f6f6f8; --panel: #ffffff; --raise: #ffffff; --text: #1d1d22; --muted: #6b6b76;
+    --line: #e4e4ea; --hover: #f1f0f5; --accent: #5a3fd8; --accent-soft: #eeeafd; --on-accent: #fff;
     --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+    --k-image: #2f8a4c; --k-video: #8a3fd8; --k-audio: #c2610c; --k-pdf: #cf222e;
+    --k-table: #1a7f6e; --k-code: #2c6fd1; --k-archive: #9a6700; --k-doc: #6b6b76;
+    --shadow: 0 8px 28px rgba(20, 20, 40, .14), 0 1px 3px rgba(20, 20, 40, .08);
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #121216; --panel: #1b1b21; --text: #e6e6ea; --muted: #8d8d99;
-      --line: #2c2c35; --accent: #a08cff; --accent-soft: #26213f;
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #121216; --panel: #1b1b21; --raise: #23232b; --text: #e6e6ea; --muted: #8d8d99;
+      --line: #2c2c35; --hover: #24242c; --accent: #a08cff; --accent-soft: #26213f; --on-accent: #16112e;
       --ok: #56d364; --warn: #e3b341; --err: #ff7b72;
+      --k-image: #56d364; --k-video: #c3a6ff; --k-audio: #f0a35e; --k-pdf: #ff7b72;
+      --k-table: #4fd1b8; --k-code: #79b8ff; --k-archive: #e3b341; --k-doc: #8d8d99;
+      --shadow: 0 8px 28px rgba(0, 0, 0, .5), 0 1px 3px rgba(0, 0, 0, .4);
     }
   }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121216; --panel: #1b1b21; --raise: #23232b; --text: #e6e6ea; --muted: #8d8d99;
+    --line: #2c2c35; --hover: #24242c; --accent: #a08cff; --accent-soft: #26213f; --on-accent: #16112e;
+    --ok: #56d364; --warn: #e3b341; --err: #ff7b72;
+    --k-image: #56d364; --k-video: #c3a6ff; --k-audio: #f0a35e; --k-pdf: #ff7b72;
+    --k-table: #4fd1b8; --k-code: #79b8ff; --k-archive: #e3b341; --k-doc: #8d8d99;
+    --shadow: 0 8px 28px rgba(0, 0, 0, .5), 0 1px 3px rgba(0, 0, 0, .4);
+  }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body {
     margin: 0; background: var(--bg); color: var(--text);
     font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
   }
-  main { max-width: 920px; margin: 0 auto; padding: 32px 16px 64px; }
-  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-  .logo {
-    width: 40px; height: 40px; border-radius: 10px; background: var(--accent);
-    display: grid; place-items: center; color: #fff; font-weight: 700; font-size: 20px;
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ---- header: brand, tabs, status ---- */
+  .top {
+    position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px); border-bottom: 1px solid var(--line);
   }
-  h1 { margin: 0; font-size: 26px; letter-spacing: -0.02em; }
+  .top-in { max-width: 1080px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 14px; height: 56px; }
+  .brand { display: flex; align-items: center; gap: 9px; color: var(--text); text-decoration: none; font-weight: 700; font-size: 17px; letter-spacing: -0.01em; flex-shrink: 0; }
+  .logo {
+    width: 28px; height: 28px; border-radius: 7px; background: var(--accent);
+    display: grid; place-items: center; color: var(--on-accent); font-weight: 700; font-size: 15px;
+  }
+  .tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; flex: 1; min-width: 0; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tabs button {
+    border: 0; background: none; color: var(--muted); font: 500 14px system-ui, sans-serif;
+    padding: 7px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; position: relative;
+  }
+  .tabs button:hover { background: var(--hover); color: var(--text); }
+  .tabs button[aria-selected="true"] { color: var(--text); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+  @media (max-width: 480px) { .tabs [data-tab="dev"] { display: none; } }
+  @media (min-width: 481px) { #devLink { display: none; } }
+  .tabs .badge { position: absolute; top: 6px; right: 5px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+  .status {
+    display: inline-flex; align-items: center; gap: 7px; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); font: 12.5px var(--mono); padding: 5px 10px; border-radius: 999px; cursor: pointer; flex-shrink: 0;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+  .dot.ok { background: var(--ok); } .dot.warn { background: var(--warn); } .dot.err { background: var(--err); }
+  .dot.live { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); animation: pulse 2.4s infinite; }
+  @keyframes pulse { 70% { box-shadow: 0 0 0 6px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) { .dot.live { animation: none; } }
+  .pop {
+    position: fixed; z-index: 40; background: var(--raise); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow); padding: 14px; width: 300px; max-width: calc(100vw - 16px);
+  }
+  .pop dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0 0 12px; font-size: 13.5px; }
+  .pop dt { color: var(--muted); }
+  .pop dd { margin: 0; text-align: right; font-family: var(--mono); font-size: 12.5px; overflow-wrap: anywhere; }
+  .pop .row { justify-content: space-between; }
+  .pop hr { border: 0; border-top: 1px solid var(--line); margin: 12px -14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+  .seg button { border: 0; border-radius: 0; background: var(--panel); color: var(--muted); padding: 5px 10px; font-weight: 500; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 20px 16px 64px; }
+  section.card {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 20px; margin-bottom: 16px;
+  }
+  h2 { margin: 0 0 4px; font-size: 16px; }
+  .sub { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
+  .lead { color: var(--muted); margin: 0 0 18px; max-width: 680px; }
+  code, .mono { font-family: var(--mono); font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  tr:last-child td { border-bottom: 0; }
+  .method { font: 600 11.5px var(--mono); color: var(--accent); }
+  .table-wrap { overflow-x: auto; }
+  .empty { color: var(--muted); padding: 22px 8px; text-align: center; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .grow { flex: 1; }
+  input[type=text], input[type=password], textarea, select {
+    font: 13px var(--mono); color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  }
+  input[type=text], input[type=password], textarea { width: 100%; }
+  textarea { min-height: 84px; resize: vertical; }
+  input[type=text]:focus, input[type=password]:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button, .btn {
+    font: 600 13px system-ui, sans-serif; border: 1px solid var(--line); background: var(--panel);
+    color: var(--text); padding: 7px 13px; border-radius: 8px; cursor: pointer; text-decoration: none;
+    display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  }
+  button:hover:not(:disabled), .btn:hover { background: var(--hover); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+  button.danger { color: var(--err); }
+  button.primary.danger { background: var(--err); border-color: var(--err); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.link { border: 0; background: none; color: var(--accent); padding: 2px 6px; font-weight: 500; }
+  button.link.danger { color: var(--err); }
+  button.link:hover:not(:disabled) { background: none; text-decoration: underline; }
+  a.link { color: var(--accent); font: 500 13px system-ui, sans-serif; padding: 2px 6px; text-decoration: none; }
+  a.link:hover { text-decoration: underline; }
+  .icon-btn { padding: 6px 8px; min-width: 32px; justify-content: center; }
+  .caret::after { content: ""; border: 4px solid transparent; border-top-color: currentColor; margin: 4px 0 -4px; }
+  .field { margin-bottom: 10px; }
+  .field > label, label.field-label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
+  .msg { font-size: 13px; min-height: 1.4em; word-break: break-word; }
+  .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
+  .notice {
+    border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+    background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--text);
+    border-radius: 10px; padding: 12px 14px; margin: 0 0 16px; font-size: 14px;
+  }
   .pill {
-    font: 12px var(--mono); padding: 3px 9px; border-radius: 999px;
-    background: var(--accent-soft); color: var(--accent);
+    font: 12px var(--mono); padding: 2px 9px; border-radius: 999px;
+    background: var(--accent-soft); color: var(--accent); white-space: nowrap;
   }
   .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
   .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
   .pill.err { color: var(--err); background: color-mix(in srgb, var(--err) 14%, transparent); }
-  .lead { color: var(--muted); margin: 10px 0 28px; max-width: 640px; }
-  section {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
-    padding: 20px; margin-bottom: 18px;
-  }
-  h2 { margin: 0 0 4px; font-size: 16px; }
-  .sub { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; }
-  code, .mono { font-family: var(--mono); font-size: 13px; }
-  table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
-  tr:last-child td { border-bottom: 0; }
-  .method { font: 600 11.5px var(--mono); color: var(--accent); }
-  .table-wrap { overflow-x: auto; }
-  .crumbs { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; margin-bottom: 8px; font-family: var(--mono); font-size: 13px; }
-  .crumbs a { color: var(--accent); text-decoration: none; padding: 2px 4px; border-radius: 4px; }
-  .crumbs a:hover { background: var(--accent-soft); }
-  .files td.name a { color: var(--text); text-decoration: none; }
-  .files td.name a:hover { color: var(--accent); text-decoration: underline; }
-  .files td.num { text-align: right; color: var(--muted); font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
-  .files .icon { display: inline-block; width: 1.4em; color: var(--muted); }
-  .empty { color: var(--muted); padding: 14px 8px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-  input[type=text], textarea {
-    font: 13px var(--mono); color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%;
-  }
-  textarea { min-height: 84px; resize: vertical; }
-  input[type=text]:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  button, .btn {
-    font: 600 13px system-ui, sans-serif; border: 1px solid var(--line); background: var(--panel);
-    color: var(--text); padding: 7px 14px; border-radius: 8px; cursor: pointer; text-decoration: none;
-  }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button:disabled { opacity: .45; cursor: not-allowed; }
-  button.link { border: 0; background: none; color: var(--err); padding: 2px 6px; font-weight: 500; }
-  button.link.plain, a.link { color: var(--accent); }
-  a.link { font: 500 13px system-ui, sans-serif; padding: 2px 6px; text-decoration: none; }
-  a.link:hover { text-decoration: underline; }
-  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
-  .bar .crumbs { margin-bottom: 0; flex: 1; }
-  .bar .sub { margin: 0; }
-  .files td.sel, .files th.sel { width: 1.6em; padding-right: 0; }
-  .files tr.picked td { background: var(--accent-soft); }
-  .files tr.target td { background: var(--accent-soft); box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent); }
-  .crumbs a.target { background: var(--accent-soft); outline: 2px solid var(--accent); }
-  .files tr.dragged td { opacity: .5; }
-  .files img.thumb { width: 1.9em; height: 1.9em; object-fit: cover; border-radius: 4px; vertical-align: middle; margin: -4px .5em -4px -.2em; background: var(--accent-soft); }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
-  .grid section { margin-bottom: 0; }
-  .field { margin-bottom: 10px; }
-  .field label { display: block; font-size: 12.5px; color: var(--muted); margin-bottom: 4px; }
-  .msg { font-size: 13px; margin-top: 10px; min-height: 1.4em; word-break: break-all; }
-  .msg.ok { color: var(--ok); } .msg.err { color: var(--err); }
-  .drop {
-    display: block;
-    border: 1.5px dashed var(--line); border-radius: 10px; padding: 22px; text-align: center;
-    color: var(--muted); cursor: pointer; transition: border-color .15s, background .15s;
-  }
-  .drop.over { border-color: var(--accent); background: var(--accent-soft); }
-  .notice {
-    display: none; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
-    background: color-mix(in srgb, var(--warn) 10%, transparent); color: var(--text);
-    border-radius: 10px; padding: 12px 14px; margin: -10px 0 20px; font-size: 14px;
-  }
-  .notice.show { display: block; }
-  select {
-    font: 13px var(--mono); color: var(--text); background: var(--bg);
-    border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
-  }
+  .tag { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); margin-left: 4px; }
+  .check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
   pre.out {
     font: 12.5px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line);
     border-radius: 8px; padding: 10px 12px; margin: 10px 0 0; max-height: 280px; overflow: auto;
     white-space: pre-wrap; word-break: break-all;
   }
-  .tag { font: 11px var(--mono); padding: 1px 6px; border-radius: 4px; background: var(--accent-soft); color: var(--accent); margin-left: 4px; }
-  .panel { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 12px; }
-  .panel h3 { margin: 0 0 8px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
-  .panel h3 .grow { flex: 1; }
-  details summary { cursor: pointer; font-weight: 600; font-size: 16px; }
-  details summary .sub { font-weight: 400; margin-left: 6px; }
-  .check { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
-  .progress { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin-top: 10px; }
-  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
-  section.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
-  dialog#pv {
-    width: min(1000px, 94vw); max-height: 88vh; padding: 0; border: 1px solid var(--line); border-radius: 12px;
-    background: var(--panel); color: var(--text);
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid2 > section.card { margin-bottom: 0; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+
+  /* ---- files ---- */
+  .fbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 12px; }
+  .crumbs { display: flex; flex-wrap: wrap; gap: 1px; align-items: center; font-family: var(--mono); font-size: 13.5px; flex: 1; min-width: 200px; }
+  .crumbs a { color: var(--text); text-decoration: none; padding: 3px 6px; border-radius: 6px; }
+  .crumbs a:last-child { font-weight: 600; }
+  .crumbs a:hover { background: var(--hover); }
+  .crumbs span { color: var(--muted); }
+  .crumbs a.target { background: var(--accent-soft); outline: 2px solid var(--accent); }
+  .tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .searchbox { position: relative; width: 300px; max-width: 100%; }
+  .searchbox svg { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--muted); pointer-events: none; }
+  .searchbox input { padding-left: 30px; padding-right: 28px; font-family: system-ui, sans-serif; }
+  .searchbox kbd { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); }
+  .searchbox input:focus + kbd, .searchbox input:not(:placeholder-shown) + kbd { display: none; }
+  kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; color: var(--muted); background: var(--panel); }
+  .tab-short { display: none; }
+  @media (max-width: 640px) {
+    .tools { width: 100%; }
+    .searchbox { flex: 1 1 100%; width: auto; }
+    .top-in { gap: 8px; }
+    .brand > span:last-child, #statusText { display: none; }
+    .status { padding: 9px; }
+    .tabs button { padding: 7px 9px; }
+    .tab-long { display: none; } .tab-short { display: inline; }
+    .tabs button { padding: 7px 8px; }
+    #toasts { top: 64px; bottom: auto; }
   }
-  dialog#pv::backdrop { background: rgba(0, 0, 0, .45); }
+  .selbar {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -2px 0 12px; padding: 7px 10px 7px 14px;
+    border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 13.5px; font-weight: 600;
+  }
+  .selbar button { padding: 5px 11px; }
+  .fpanel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .fpanel.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
+  table.files { table-layout: fixed; }
+  table.files th { padding: 9px 8px; background: var(--panel); }
+  table.files th.c-size { width: 96px; } table.files th.c-time { width: 190px; }
+  table.files th button.sort { border: 0; background: none; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; padding: 0; gap: 4px; }
+  table.files th button.sort:hover { color: var(--text); background: none; }
+  table.files th.r, table.files td.r { text-align: right; }
+  table.files th.r button.sort { flex-direction: row-reverse; }
+  table.files td { padding: 5px 8px; }
+  table.files tbody tr:hover td { background: var(--hover); }
+  table.files td.sel, table.files th.sel { width: 40px; padding-left: 14px; padding-right: 0; }
+  table.files td.num { text-align: right; color: var(--muted); font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+  table.files td.act, table.files th.act { width: 48px; text-align: right; padding-right: 10px; }
+  table.files td.name { overflow: hidden; }
+  .fname-wrap { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .files a.open { color: var(--text); text-decoration: none; display: flex; align-items: center; gap: 10px; min-width: 0; padding: 3px 0; }
+  .files a.open:hover .fname { color: var(--accent); text-decoration: underline; }
+  .fname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta-sm { display: none; color: var(--muted); font: 11.5px var(--mono); }
+  @media (max-width: 640px) {
+    table.files .c-size, table.files .c-time { display: none; }
+    .meta-sm { display: block; }
+    .files a.open { align-items: flex-start; }
+  }
+  .ficon { width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center; border-radius: 6px; color: var(--k-doc); }
+  .ficon svg { width: 20px; height: 20px; }
+  .ficon img { width: 28px; height: 28px; object-fit: cover; border-radius: 5px; background: var(--accent-soft); }
+  .k-folder { color: var(--accent); } .k-image { color: var(--k-image); } .k-video { color: var(--k-video); }
+  .k-audio { color: var(--k-audio); } .k-pdf { color: var(--k-pdf); } .k-table { color: var(--k-table); }
+  .k-code { color: var(--k-code); } .k-archive { color: var(--k-archive); }
+  .k-folder svg path { fill: color-mix(in srgb, var(--accent) 18%, transparent); }
+  .kebab { border: 0; background: none; color: var(--muted); padding: 4px 8px; font-size: 16px; line-height: 1; border-radius: 6px; }
+  .kebab:hover:not(:disabled) { background: var(--line); color: var(--text); }
+  .files tr.picked td, .tile.picked { background: var(--accent-soft); }
+  .files tr.picked:hover td { background: color-mix(in srgb, var(--accent-soft) 80%, var(--hover)); }
+  .files tr.cur td:first-child { box-shadow: inset 3px 0 var(--accent); }
+  .files tr.target td { background: var(--accent-soft); box-shadow: inset 0 2px var(--accent), inset 0 -2px var(--accent); }
+  .files tr.dragged td, .tile.dragged { opacity: .5; }
+  input.rename { font: 14px system-ui, sans-serif; padding: 4px 8px; }
+  button.more { display: block; width: 100%; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: none; color: var(--muted); font-weight: 500; padding: 12px; text-align: center; }
+  button.more:hover:not(:disabled) { color: var(--accent); }
+  .tile .fname-wrap { display: block; padding: 8px; }
+  /* grid view */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: 10px; padding: 12px; }
+  .tile { position: relative; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+  .tile:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+  .tile.cur { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tile.target { outline: 2px solid var(--accent); background: var(--accent-soft); }
+  .tile a.open { display: block; padding: 8px; color: var(--text); text-decoration: none; }
+  .tile .thumb { aspect-ratio: 4 / 3; border-radius: 6px; background: var(--bg); display: grid; place-items: center; overflow: hidden; margin-bottom: 7px; }
+  .tile .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .tile .thumb svg { width: 40px; height: 40px; }
+  .tile .fname { display: block; font-size: 13px; }
+  .tile .tmeta { color: var(--muted); font: 11px var(--mono); }
+  .tile .tsel { position: absolute; top: 12px; left: 12px; opacity: 0; }
+  .tile:hover .tsel, .tile.picked .tsel, .tile .tsel:focus-within { opacity: 1; }
+  .tile .kebab { position: absolute; top: 10px; right: 10px; background: var(--panel); opacity: 0; }
+  .tile:hover .kebab, .tile .kebab:focus-visible { opacity: 1; }
+  @media (hover: none) { .tile .tsel, .tile .kebab { opacity: 1; } }
+  /* search results */
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; margin-bottom: 12px; }
+  .panel h3 { margin: 0 0 6px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+  #results .group { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }
+  #results ul { list-style: none; margin: 0; padding: 0; max-height: 360px; overflow: auto; }
+  #results li { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; overflow-wrap: anywhere; }
+  #results li a { color: var(--text); text-decoration: none; font-family: var(--mono); font-size: 12.5px; }
+  #results li a:hover { color: var(--accent); }
+  #results .ln { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
+  mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: inherit; border-radius: 2px; }
+
+  /* ---- menus, toasts, overlays ---- */
+  .menu {
+    position: fixed; z-index: 50; min-width: 200px; max-width: calc(100vw - 16px); padding: 5px;
+    background: var(--raise); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow);
+  }
+  .menu button {
+    display: flex; width: 100%; border: 0; background: none; border-radius: 6px; padding: 7px 10px;
+    font: 500 13.5px system-ui, sans-serif; color: var(--text); text-align: left; gap: 8px;
+  }
+  .menu button:hover:not(:disabled), .menu button:focus-visible { background: var(--hover); outline: 0; }
+  .menu button.danger { color: var(--err); }
+  .menu .chk { width: 1em; color: var(--accent); }
+  .menu .hint { margin-left: auto; padding-left: 16px; color: var(--muted); font: 11.5px var(--mono); }
+  .menu .sep { border-top: 1px solid var(--line); margin: 5px -5px; }
+  .menu .mhead { padding: 6px 10px 4px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 280px; }
+  #toasts { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60; display: flex; flex-direction: column; gap: 8px; align-items: center; width: max-content; max-width: calc(100vw - 32px); pointer-events: none; }
+  .toast {
+    pointer-events: auto; display: flex; gap: 12px; align-items: center; padding: 10px 12px 10px 16px;
+    border-radius: 10px; background: var(--text); color: var(--bg); box-shadow: var(--shadow); font-size: 14px;
+    animation: rise .18s ease-out; max-width: 100%;
+  }
+  .toast.err { background: var(--err); color: #fff; }
+  .toast span { overflow-wrap: anywhere; }
+  .toast button { border: 0; background: none; color: inherit; font-weight: 700; padding: 3px 8px; text-decoration: underline; }
+  .toast button:hover:not(:disabled) { background: rgba(127, 127, 127, .2); }
+  .toast .x { text-decoration: none; opacity: .7; }
+  @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
+  @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+  #dropOverlay {
+    position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; pointer-events: none;
+    background: color-mix(in srgb, var(--accent) 12%, transparent); border: 3px dashed var(--accent);
+  }
+  #dropOverlay div { background: var(--raise); padding: 18px 26px; border-radius: 12px; box-shadow: var(--shadow); font-size: 16px; font-weight: 600; }
+  .upl {
+    position: fixed; right: 16px; bottom: 16px; z-index: 30; width: 360px; max-width: calc(100vw - 32px);
+    background: var(--raise); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .upl-head { display: flex; gap: 8px; align-items: center; padding: 10px 10px 8px 14px; font-size: 13.5px; }
+  .upl ul { list-style: none; margin: 0; padding: 4px 0; max-height: 240px; overflow: auto; border-top: 1px solid var(--line); }
+  .upl li { padding: 5px 14px; font-size: 12.5px; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; }
+  .upl li .n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+  .upl li .s { color: var(--muted); font-size: 12px; }
+  .upl li .s.ok { color: var(--ok); } .upl li .s.err { color: var(--err); }
+  .upl li .progress { grid-column: 1 / -1; margin: 0; height: 3px; }
+  .progress { height: 4px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .progress > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  .upl > .progress { margin: 0 14px 10px; }
+  #stopped { position: fixed; inset: 0; z-index: 70; background: var(--bg); display: grid; place-items: center; text-align: center; padding: 16px; }
+
+  /* ---- dialogs ---- */
+  dialog {
+    padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--text);
+    box-shadow: var(--shadow); max-width: calc(100vw - 24px);
+  }
+  dialog::backdrop { background: rgba(0, 0, 0, .45); }
+  dialog.small { width: 440px; }
+  dialog.medium { width: 560px; }
+  dialog.wide { width: 980px; }
+  .sizenote { display: flex; gap: 6px 14px; flex-wrap: wrap; align-items: center; padding: 8px 14px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font-size: 13.5px; color: var(--muted); }
+  .sizenote strong { color: var(--text); font-weight: 600; }
+  .sizebar { display: inline-block; width: 60px; height: 6px; border-radius: 3px; background: var(--line); vertical-align: middle; overflow: hidden; margin-left: 6px; }
+  .sizebar > span { display: block; height: 100%; background: var(--accent); }
+  .diskbar { display: block; width: 100%; height: 5px; border-radius: 3px; background: var(--line); margin-top: 4px; overflow: hidden; }
+  .diskbar > span { display: block; height: 100%; background: var(--accent); }
+  .diskbar.low > span { background: var(--danger, #cf222e); }
+  .rc-day { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 4px; }
+  .rc-day:first-child { margin-top: 0; }
+  .rc { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .rc:last-child { border-bottom: 0; }
+  .rc .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .rc .what .sub { margin-left: 4px; }
+  .rc .when { color: var(--muted); font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .rc .op { font-weight: 600; }
+  .rc a.p { font-family: var(--mono); font-size: 13px; }
+  .diff-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; font-size: 13.5px; }
+  .diff-bar select { font: inherit; padding: 4px 6px; }
+  .diff-stat { margin-left: auto; font-family: ui-monospace, monospace; }
+  .diff-stat .add, .diff .add .sg { color: var(--ok, #1a7f37); } .diff-stat .del, .diff .del .sg { color: var(--danger, #cf222e); }
+  .diff { border: 1px solid var(--line); border-radius: 8px; max-height: 60vh; overflow: auto; font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .diff table { border-collapse: collapse; width: 100%; }
+  .diff td { padding: 0 8px; vertical-align: top; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .diff td.ln { width: 1%; color: var(--muted); text-align: right; user-select: none; white-space: nowrap; }
+  .diff td.sg { width: 1%; user-select: none; padding: 0 2px; }
+  .diff tr.add { background: color-mix(in srgb, #2da44e 14%, transparent); }
+  .diff tr.del { background: color-mix(in srgb, #cf222e 12%, transparent); }
+  .diff tr.gap td { background: var(--hover); color: var(--muted); text-align: center; padding: 3px; font-family: system-ui, sans-serif; font-size: 12px; }
+  .diff .note { padding: 18px; color: var(--muted); text-align: center; font-family: system-ui, sans-serif; }
+  .dlg { padding: 18px 20px; }
+  .dlg h3 { margin: 0 0 6px; font-size: 16px; }
+  .dlg p { margin: 0 0 12px; color: var(--muted); font-size: 14px; overflow-wrap: anywhere; }
+  .dlg-acts { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+  .pick-list { border: 1px solid var(--line); border-radius: 8px; max-height: 240px; overflow: auto; margin: 8px 0 12px; }
+  .pick-list button { display: flex; width: 100%; border: 0; border-radius: 0; background: none; padding: 7px 10px; font: 13.5px system-ui, sans-serif; gap: 8px; }
+  .pick-list button + button { border-top: 1px solid var(--line); }
+  .pick-list button:hover:not(:disabled) { background: var(--hover); }
+  .pick-list .ficon { width: 20px; height: 20px; }
+  .pick-list .ficon svg { width: 18px; height: 18px; }
+  .pick-list .empty { padding: 14px; }
+  .radios { display: grid; gap: 6px; margin-top: 4px; font-size: 14px; }
+  .radios label { display: flex; gap: 8px; align-items: flex-start; }
+  .radios .sub { margin: 0; }
+  dl.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 6px 0 0; font-size: 14px; }
+  dl.keys dt { text-align: right; } dl.keys dd { margin: 0; color: var(--muted); }
+  dialog#pv { width: min(1000px, 94vw); max-height: 88vh; }
   .pv-head {
-    display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 16px;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 10px 12px 10px 16px;
     border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel);
   }
   .pv-head strong { font-family: var(--mono); font-size: 13.5px; word-break: break-all; }
-  .pv-head .grow { flex: 1; }
-  .pv-head a { color: var(--accent); font-size: 13px; }
+  .pv-head .btn, .pv-head button { padding: 5px 10px; font-size: 12.5px; }
   #pvBody { padding: 16px; overflow: auto; max-height: calc(88vh - 60px); }
   #pvBody img, #pvBody video { max-width: 100%; max-height: 72vh; display: block; margin: 0 auto; }
   #pvBody iframe { width: 100%; height: 72vh; border: 0; }
@@ -155,24 +400,18 @@
   .md blockquote { margin: 0; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
   .md img { max-width: 100%; }
   .md a { color: var(--accent); }
-  #search { margin: 4px 0 12px; }
-  #search input { flex: 1; min-width: 180px; }
-  #results .group { font-size: 12.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 10px 0 4px; }
-  #results ul { list-style: none; margin: 0; padding: 0; }
-  #results li { padding: 4px 0; border-bottom: 1px solid var(--line); font-size: 13.5px; overflow-wrap: anywhere; }
-  #results li a { color: var(--text); text-decoration: none; font-family: var(--mono); font-size: 12.5px; }
-  #results li a:hover { color: var(--accent); }
-  #results .ln { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
-  mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: inherit; border-radius: 2px; }
+
+  /* ---- apps ---- */
   #appBox .head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
   #appBox .head h2 { margin: 0; }
-  #appBox .head .grow { flex: 1; }
   #appBox .notes { white-space: pre-wrap; font-size: 13.5px; margin: 0 0 12px; }
   #appBox .notes:empty { display: none; }
   #appBox .when { font: 12px system-ui, sans-serif; color: var(--muted); }
+  #appBox td.notes-cell { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
   .cat-list { display: grid; gap: 10px; margin-top: 12px; }
   .cat-app { display: flex; gap: 12px; align-items: flex-start; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
-  .cat-app .grow { flex: 1; min-width: 0; }
+  .cat-app .grow { min-width: 0; }
   .cat-app .title { font-weight: 600; }
   .cat-app .title .mono { font-weight: 400; color: var(--muted); margin-left: 6px; }
   .cat-app p { margin: 4px 0 0; color: var(--muted); font-size: 13.5px; }
@@ -180,263 +419,366 @@
   .cat-app .icon { width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0; object-fit: cover; background: var(--accent-soft);
     display: grid; place-items: center; color: var(--accent); font-weight: 700; font-size: 18px; }
   .cat-app .tags { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
-  .cat-app .tag { font: 11.5px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); cursor: pointer; background: none; }
+  .cat-app .tag { font: 11.5px var(--mono); padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); cursor: pointer; background: none; margin: 0; }
   .cat-app .shots { display: flex; gap: 8px; overflow-x: auto; margin-top: 8px; padding-bottom: 2px; }
   .cat-app .shots img { height: 90px; border-radius: 6px; border: 1px solid var(--line); }
-  .cat-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
-  .cat-tools input { flex: 1; min-width: 160px; }
-  .cat-tools .tag { font: 12px var(--mono); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); cursor: pointer; }
+  .cat-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 4px; }
+  .cat-tools input { flex: 1; min-width: 160px; width: auto; }
+  .cat-tools .tag { font: 12px var(--mono); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: none; color: var(--muted); cursor: pointer; margin: 0; }
   .cat-tools .tag.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   @media (max-width: 560px) { .cat-app { flex-wrap: wrap; } .cat-app .acts { width: 100%; justify-content: flex-start; } }
-  #appBox td.notes-cell { color: var(--muted); font-size: 13px; white-space: pre-wrap; }
-  #appNew { display: block; margin: 0 0 12px; }
-  #appNew[hidden] { display: none; }
-  footer { color: var(--muted); font-size: 13px; text-align: center; margin-top: 28px; }
-  footer a { color: var(--accent); }
+  .ftag { display: inline-flex; gap: 2px; align-items: center; font: 11.5px var(--mono); padding: 1px 4px 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); margin: 1px 2px 1px 0; }
+  .ftag button { padding: 0 4px; color: var(--muted); }
+  .card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .card-head h2 { margin: 0; }
+  .card-head .sub { margin: 0; }
 </style>
 </head>
 <body>
-<main>
-  <header>
-    <div class="logo">m</div>
-    <h1>myweb</h1>
-    <span class="pill" id="version">v…</span>
-    <span class="pill" id="mode">checking…</span>
-    <span class="pill" id="auth" hidden></span>
-    <span class="pill ok" id="live" hidden title="file changes arrive over /events">● live</span>
-  </header>
-  <p class="lead">
-    A tiny local web server for your data files. It serves the directory you start it in (<code>-d</code>),
-    lets pages list, read, write and upload files over a small HTTP API, and hosts a web app at <code>/</code>.
-    This file manager is always at <code>/_myweb/</code>; serve your own app at <code>/</code> with <code>-web &lt;dir&gt;</code>.
-  </p>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#/" id="home"><span class="logo">m</span><span>myweb</span></a>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" data-tab="files" aria-selected="true">Files</button>
+      <button role="tab" data-tab="recent">Recent</button>
+      <button role="tab" data-tab="apps">Apps<span class="badge" id="appsBadge" hidden title="an update is available"></span></button>
+      <button role="tab" data-tab="shares">Shares</button>
+      <button role="tab" data-tab="trash">Trash</button>
+      <button role="tab" data-tab="dev"><span class="tab-long">Developer</span><span class="tab-short">Dev</span></button>
+    </nav>
+    <button class="status" id="statusBtn" aria-haspopup="dialog" aria-expanded="false" title="Server status and settings">
+      <span class="dot" id="statusDot"></span><span id="statusText">…</span>
+    </button>
+  </div>
+</header>
 
-  <div class="notice" id="signin">
+<div class="pop" id="statusPop" hidden role="dialog" aria-label="Server status">
+  <dl>
+    <dt>Version</dt><dd id="stVersion">…</dd>
+    <dt>Files</dt><dd id="stMode">…</dd>
+    <dt>Sign-in</dt><dd id="stAuth">…</dd>
+    <dt>Live updates</dt><dd id="stLive">off</dd>
+    <dt>Trash</dt><dd id="stTrash">…</dd>
+    <dt id="stDiskT" hidden>Disk</dt><dd id="stDisk" hidden></dd>
+  </dl>
+  <div class="row"><span class="sub" style="margin:0">Theme</span>
+    <div class="seg" id="themeSeg"><button data-theme-set="auto">Auto</button><button data-theme-set="light">Light</button><button data-theme-set="dark">Dark</button></div>
+  </div>
+  <hr>
+  <div class="row">
+    <button class="link" type="button" id="keysBtn" style="padding-left:0">Keyboard shortcuts</button>
+    <a class="link" href="#dev" id="devLink">Developer</a>
+    <button class="danger authed" type="button" id="stopBtn">Stop server…</button>
+  </div>
+</div>
+
+<main>
+  <div class="notice" id="signin" hidden>
     <strong>Not signed in.</strong> <span id="signinHow">Writing, uploading and commands need this server's access token.
     Open the link printed in the terminal (or press <code>o</code> in the terminal UI) to sign in this browser.</span>
   </div>
 
-  <section id="appBox" hidden>
-    <div class="head">
-      <h2 id="appName">App</h2>
-      <span class="pill" id="appVer"></span>
-      <span class="pill" id="appState"></span>
-      <span class="grow"></span>
-      <a class="btn" href="/" target="_blank" rel="noopener">Open the app</a>
-      <button class="authed" id="appCheck">Check for updates</button>
-      <button class="authed" id="appLatest" hidden title="serve the newest version and install updates again">Follow updates</button>
+  <!-- ===== Files ===== -->
+  <div data-view="files">
+    <div class="fbar">
+      <nav class="crumbs" id="crumbs" aria-label="Folder"></nav>
+      <div class="tools">
+        <div class="searchbox">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input type="text" id="q" placeholder="Filter · Enter searches inside" aria-label="Filter this folder; press Enter to search names and contents below it" autocomplete="off">
+          <kbd>/</kbd>
+        </div>
+        <div class="seg" role="group" aria-label="View">
+          <button type="button" data-mode="list" title="List" aria-label="List view"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg></button>
+          <button type="button" data-mode="grid" title="Grid" aria-label="Grid view"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg></button>
+        </div>
+        <button type="button" class="caret writable" id="newBtn" aria-haspopup="menu">New</button>
+        <button type="button" class="primary caret writable" id="upBtn" aria-haspopup="menu">Upload</button>
+        <button type="button" class="icon-btn" id="moreBtn" aria-haspopup="menu" aria-label="More" title="More">⋯</button>
+      </div>
     </div>
-    <p class="sub" id="appSub"></p>
-    <div class="notice" id="appNew" hidden></div>
-    <p class="notes" id="appNotes"></p>
-    <details id="appVersions">
-      <summary><span id="appListTitle">Installed versions</span> <span class="sub" id="appCount"></span></summary>
-      <div class="table-wrap" style="margin-top:10px">
-        <table class="files"><thead><tr><th>Version</th><th>Release notes</th><th></th></tr></thead>
-        <tbody id="appRows"></tbody></table>
-      </div>
-      <div class="row" style="margin-top:10px"><button id="appAll">Show every published version</button></div>
-    </details>
-    <div class="msg" id="appMsg"></div>
-  </section>
-
-  <section id="appsSection" hidden>
-    <details id="appsBox">
-      <summary>Installed apps <span class="sub" id="appsNote"></span></summary>
-      <div class="table-wrap" style="margin-top:10px">
-        <table class="files"><thead><tr><th>App</th><th>Version</th><th>Folders it may use</th><th></th></tr></thead>
-        <tbody id="appsRows"></tbody></table>
-      </div>
-      <p class="sub" style="margin:8px 0 0">Each app is served on a port of its own and reaches only its folders of the data folder. <code>myweb app</code> in a terminal does the same.</p>
-      <div class="msg" id="appsMsg"></div>
-    </details>
-  </section>
-
-  <section>
-    <details id="catBox">
-      <summary>App catalog <span class="sub" id="catNote">web apps you can install and open</span></summary>
-      <div class="cat-tools"><input type="text" id="catQ" placeholder="Search apps" aria-label="Search apps"><span id="catTags"></span></div>
-      <div class="cat-list" id="catList"><div class="empty">Loading…</div></div>
-      <div class="row" style="margin-top:10px">
-        <button class="authed" id="catRefresh">Refresh</button>
-        <span class="sub" style="margin:0">From the catalogs this myweb reads (<code>myweb app catalog</code> in a terminal; add one with <code>app catalog add URL -key KEY</code>).</span>
-      </div>
-      <div class="msg" id="catMsg"></div>
-    </details>
-  </section>
-
-  <section>
-    <h2>Files</h2>
-    <p class="sub">Listing via <code>GET /ls/</code>, kept current by <code>/events</code>; files open via <code>/f/</code>.</p>
-    <form class="row" id="search">
-      <input type="text" id="q" placeholder="Search file names and contents in this folder" aria-label="Search">
-      <button>Search</button>
-    </form>
-    <div class="panel" id="results" hidden style="margin:0 0 14px">
-      <h3><span class="grow" id="resTitle"></span><button class="link plain" type="button" id="resClose">close</button></h3>
+    <div class="selbar" id="selbar" hidden>
+      <span id="selNote"></span><span class="grow"></span>
+      <a class="btn" id="selZip" download>Download .zip</a>
+      <button type="button" class="writable" id="selMove">Move…</button>
+      <button type="button" class="writable" id="selCopy">Copy…</button>
+      <button type="button" class="writable danger" id="selDel">Delete</button>
+      <button type="button" class="link" id="selClear">Clear</button>
+    </div>
+    <div class="panel" id="results" hidden>
+      <h3><span class="grow" id="resTitle"></span><button class="link" type="button" id="resClose">Close</button></h3>
       <div id="resBody"></div>
     </div>
-    <div class="bar">
-      <div class="crumbs" id="crumbs"></div>
-      <span class="sub" id="selNote"></span>
-      <button class="link plain" type="button" id="selClear" hidden>clear</button>
-      <button class="writable" type="button" id="selMove" hidden title="move them into another folder (or drag them onto one)">Move…</button>
-      <button class="writable" type="button" id="selDel" hidden title="folders with everything in them; it all goes to the trash">Delete</button>
-      <label class="check sub" title="files whose name starts with a dot, e.g. .DS_Store and ._name that macOS leaves over WebDAV"><input type="checkbox" id="showHidden"> hidden files<span id="hiddenCount"></span></label>
-      <button class="writable" type="button" id="mkdirBtn" title="POST /cmd/mkdir">New folder</button>
-      <a class="btn" id="zipBtn" href="/zip/" download title="GET /zip/&lt;folder&gt;">Download folder as .zip</a>
+    <div class="sizenote" id="sizeNote" hidden></div>
+    <div class="fpanel" id="fpanel">
+      <div id="fileView"><div class="empty">Loading…</div></div>
     </div>
-    <div class="table-wrap">
-      <table class="files">
-        <thead><tr><th class="sel"><input type="checkbox" id="selAll" aria-label="Select all"></th><th>Name</th><th style="text-align:right">Size</th><th style="text-align:right">Modified</th><th></th></tr></thead>
-        <tbody id="files"><tr><td colspan="5" class="empty">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="msg" id="fmsg"></div>
-    <div class="panel" id="hist" hidden>
-      <h3><span class="grow">Versions of <code id="histPath"></code></span><button class="link plain" id="histClose">close</button></h3>
-      <div class="table-wrap">
-        <table class="files"><thead><tr><th>Saved</th><th style="text-align:right">Size</th><th></th></tr></thead>
-        <tbody id="histRows"></tbody></table>
-      </div>
-    </div>
-  </section>
+    <input type="file" id="ufile" multiple hidden>
+    <input type="file" id="udir" webkitdirectory multiple hidden>
+  </div>
 
-  <section>
-    <details id="shareBox">
-      <summary>Share links <span class="sub" id="shareNote">open a folder or file without the token</span></summary>
-      <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:8px;align-items:center">
-        <input type="text" id="sharePath" placeholder="/photos" aria-label="Folder or file to share" style="flex:1;min-width:160px">
-        <select id="shareKind" aria-label="Kind of link"><option value="read">to read</option><option value="upload">to send files (folder)</option></select>
-        <select id="shareDays" aria-label="How long it works"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="365">1 year</option></select>
-        <button class="authed" id="shareMake">Make link</button>
-      </div>
-      <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:8px;align-items:center">
-        <input type="password" id="sharePass" placeholder="Password (optional)" aria-label="Password (optional)" autocomplete="new-password" style="flex:1;min-width:160px;max-width:260px">
-        <select id="shareMaxDl" aria-label="Downloads allowed"><option value="0" selected>any number of downloads</option><option value="1">1 download</option><option value="3">3 downloads</option><option value="10">10 downloads</option></select>
-      </div>
-      <div class="row" id="shareNew" hidden style="margin-top:10px;gap:8px;align-items:center">
-        <input type="text" id="shareURL" readonly aria-label="The new link" style="flex:1;font-family:var(--mono)">
-        <button id="shareCopy" type="button">Copy</button>
-      </div>
-      <div class="msg" id="shareMsg"></div>
-      <div class="table-wrap">
-        <table class="files"><thead><tr><th>Path</th><th>Kind</th><th style="text-align:right">Expires</th><th></th></tr></thead>
-        <tbody id="shareRows"></tbody></table>
-      </div>
-    </details>
-  </section>
-
-  <section>
-    <details id="trashBox">
-      <summary>Trash <span class="sub" id="trashNote"></span></summary>
-      <div class="table-wrap" style="margin-top:10px">
-        <table class="files"><thead><tr><th>File</th><th style="text-align:right">Deleted</th><th style="text-align:right">Size</th><th></th></tr></thead>
-        <tbody id="trashRows"></tbody></table>
-      </div>
-      <div class="row" style="margin-top:10px"><button class="writable" id="emptyTrash">Empty trash</button></div>
-    </details>
-  </section>
-
-  <div class="grid">
-    <section>
-      <h2>Write a file</h2>
-      <p class="sub"><code>POST /w/&lt;path&gt;</code> with the content as the body.</p>
-      <div class="field">
-        <label for="wpath">Path (relative to the current folder)</label>
-        <input type="text" id="wpath" value="hello.txt">
-      </div>
-      <div class="field">
-        <label for="wbody">Content</label>
-        <textarea id="wbody">Hello from myweb!</textarea>
-      </div>
-      <button class="primary writable" id="wbtn">Save</button>
-      <div class="msg" id="wmsg"></div>
-    </section>
-
-    <section>
-      <h2>Upload</h2>
-      <p class="sub">Into the current folder via <code>POST /up/&lt;folder&gt;</code>. You can also drop files or folders on the file list.</p>
-      <label class="drop writable-drop" id="drop">
-        <input type="file" id="ufile" multiple hidden>
-        Drop files or folders here, or click to choose files
-      </label>
-      <div class="row" style="margin-top:10px">
-        <label class="btn"><input type="file" id="udir" webkitdirectory multiple hidden>Choose a folder…</label>
-        <label class="check"><input type="checkbox" id="uover"> replace existing files (the old one is kept as a version)</label>
-      </div>
-      <div class="progress" id="uprog" hidden><div></div></div>
-      <div class="msg" id="umsg"></div>
+  <!-- ===== Recent ===== -->
+  <div data-view="recent" hidden>
+    <section class="card">
+      <div class="card-head"><h2>Recent changes</h2><span class="sub">made through myweb: here, the API, the network drive and share links</span><span class="grow"></span><button type="button" id="recentRefresh">Refresh</button></div>
+      <div id="recentList"><div class="empty">Loading…</div></div>
     </section>
   </div>
 
-  <section style="margin-top:18px">
-    <h2>API</h2>
-    <p class="sub">Every endpoint returns JSON. Errors look like <code>{"success":0,"error":"…"}</code> with a matching HTTP status.</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
-        <tbody>
-          <tr><td class="method">GET</td><td class="mono">/f/&lt;path&gt;</td><td>Read a file (or directory index)</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/ls/&lt;dir&gt;</td><td>List a directory as JSON</td></tr>
-          <tr><td class="method">POST</td><td class="mono">/w/&lt;path&gt;</td><td>Write the request body to a file (creates folders)</td></tr>
-          <tr><td class="method">POST</td><td class="mono">/rm/&lt;path&gt;</td><td>Remove a file</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/zip/&lt;folder&gt;</td><td>Download a folder as a .zip; <code>?f=name&amp;f=…</code> only those entries (unpack one with <code>/cmd/unzip</code>)</td></tr>
-          <tr><td class="method">POST</td><td class="mono">/up/&lt;folder&gt;</td><td>Multipart upload of any number of files (names may contain sub-folders); <code>?onconflict=rename|overwrite|fail</code></td></tr>
-          <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>One file (field <code>myFile</code>) into <code>uploads/&lt;md5&gt;_&lt;name&gt;</code>, e.g. for editor.js</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/proxy?url=…</td><td>CORS proxy: fetch a public URL (forwards <code>Range</code>) and return it as is</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version, read-only and sign-in state</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List commands (incl. <code>find</code>, <code>grep</code>, <code>mv</code>, <code>history</code>, <code>restore</code>, <code>trash</code>, <code>untrash</code>)</td></tr>
-          <tr><td class="method">POST</td><td class="mono">/cmd/&lt;name&gt;</td><td>Run a plugin command (JSON body in, <code>{"success":1,"result":…}</code> out)</td></tr>
-          <tr><td class="method">GET</td><td class="mono">/version</td><td>Server version</td></tr>
-          <tr><td class="method">WS</td><td class="mono">/events</td><td>File-change events: send <code>{"op":"watch","path":"/dir"}</code>, receive <code>{"type":"change",…}</code></td></tr>
-          <tr><td class="method">WS</td><td class="mono">/echo</td><td>WebSocket echo (<a href="/echotest">test page</a>)</td></tr>
-          <tr><td class="method">POST</td><td class="mono">/cmd/stopServer</td><td>Stop the server (same-origin only, <a href="/ctrl/">control page</a>)</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="sub" style="margin:14px 0 0">
-      When the server runs with <code>-auth</code>, writes and commands need the access token: send <code>Authorization: Bearer &lt;token&gt;</code>, or sign in once via
-      <code>/?token=&lt;token&gt;</code> (sets a cookie). Missing token → <code>401</code>.
-      Read-only mode (<code>-r</code>, or <code>r</code> in the terminal UI) → <code>403</code>.
-      Writes and deletes take <code>If-Match: &lt;ETag from /f/&gt;</code> (or <code>If-None-Match: *</code> to only create);
-      a changed file → <code>412</code>. Overwritten files keep their previous versions, deleted ones go to the trash.
+  <!-- ===== Apps ===== -->
+  <div data-view="apps" hidden>
+    <section class="card" id="appBox" hidden>
+      <div class="head">
+        <h2 id="appName">App</h2>
+        <span class="pill" id="appVer"></span>
+        <span class="pill" id="appState"></span>
+        <span class="grow"></span>
+        <a class="btn" href="/" target="_blank" rel="noopener">Open the app</a>
+        <button class="authed" id="appCheck">Check for updates</button>
+        <button class="authed" id="appLatest" hidden title="serve the newest version and install updates again">Follow updates</button>
+      </div>
+      <p class="sub" id="appSub"></p>
+      <div class="notice" id="appNew" hidden></div>
+      <p class="notes" id="appNotes"></p>
+      <details id="appVersions">
+        <summary><span id="appListTitle">Installed versions</span> <span class="sub" id="appCount" style="font-weight:400"></span></summary>
+        <div class="table-wrap" style="margin-top:10px">
+          <table><thead><tr><th>Version</th><th>Release notes</th><th></th></tr></thead>
+          <tbody id="appRows"></tbody></table>
+        </div>
+        <div class="row" style="margin-top:10px"><button id="appAll">Show every published version</button></div>
+      </details>
+    </section>
+
+    <section class="card" id="appsSection" hidden>
+      <div class="card-head"><h2>Installed apps</h2><span class="sub" id="appsNote"></span></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>App</th><th>Version</th><th>Folders it may use</th><th></th></tr></thead>
+        <tbody id="appsRows"></tbody></table>
+      </div>
+      <p class="sub" style="margin:10px 0 0">Each app is served on a port of its own and reaches only its folders of the data folder. <code>myweb app</code> in a terminal does the same.</p>
+    </section>
+
+    <section class="card" id="catBox">
+      <div class="card-head"><h2>App catalog</h2><span class="sub" id="catNote">web apps you can install and open</span><span class="grow"></span><button class="authed" id="catRefresh">Refresh</button></div>
+      <div class="cat-tools"><input type="text" id="catQ" placeholder="Search apps" aria-label="Search apps"><span id="catTags"></span></div>
+      <div class="msg err" id="catErr"></div>
+      <div class="cat-list" id="catList"><div class="empty">Loading…</div></div>
+      <p class="sub" style="margin:12px 0 0">From the catalogs this myweb reads (<code>myweb app catalog</code> in a terminal; add one with <code>app catalog add URL -key KEY</code>).</p>
+    </section>
+  </div>
+
+  <!-- ===== Shares ===== -->
+  <div data-view="shares" hidden>
+    <section class="card">
+      <div class="card-head"><h2>Share links</h2><span class="sub" id="shareNote">open a folder or file without the token</span><span class="grow"></span><button class="primary authed" id="shareNewBtn">New link…</button></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>Path</th><th>Kind</th><th style="text-align:right">Expires</th><th></th></tr></thead>
+        <tbody id="shareRows"></tbody></table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== Trash ===== -->
+  <div data-view="trash" hidden>
+    <section class="card">
+      <div class="card-head"><h2>Trash</h2><span class="sub" id="trashNote"></span><span class="grow"></span><button class="danger writable" id="emptyTrash">Empty trash…</button></div>
+      <div class="table-wrap">
+        <table><thead><tr><th>File</th><th style="text-align:right">Deleted</th><th style="text-align:right">Size</th><th></th></tr></thead>
+        <tbody id="trashRows"></tbody></table>
+      </div>
+    </section>
+  </div>
+
+  <!-- ===== Developer ===== -->
+  <div data-view="dev" hidden>
+    <p class="lead">
+      myweb serves the data folder (<code>-d</code>) over a small HTTP API, so pages can list, read, write and upload files,
+      and hosts a web app at <code>/</code> (<code>-web &lt;dir&gt;</code>). This file manager is always at <code>/_myweb/</code>.
+      The file list uses <code>GET /ls/</code> and stays current over <code>/events</code>; files open via <code>/f/</code>.
     </p>
-  </section>
+    <div class="grid2" style="margin-bottom:16px">
+      <section class="card">
+        <h2>Write a file</h2>
+        <p class="sub"><code>POST /w/&lt;path&gt;</code> with the content as the body.</p>
+        <div class="field">
+          <label for="wpath">Path (relative to the folder open in Files)</label>
+          <input type="text" id="wpath" value="hello.txt">
+        </div>
+        <div class="field">
+          <label for="wbody">Content</label>
+          <textarea id="wbody">Hello from myweb!</textarea>
+        </div>
+        <button class="primary writable" id="wbtn">Save</button>
+      </section>
+      <section class="card">
+        <h2>Plugin commands</h2>
+        <p class="sub">Registered in Go with <code>srv.RegisterCmd(name, fn, opts…)</code> and served at <code>POST /cmd/&lt;name&gt;</code>.</p>
+        <div class="row">
+          <select id="cname" aria-label="Command" style="flex:1"></select>
+          <button class="primary authed" id="crun">Run</button>
+        </div>
+        <div class="field" style="margin-top:10px">
+          <label for="cparams">JSON params</label>
+          <textarea id="cparams" style="min-height:56px">{}</textarea>
+        </div>
+        <pre class="out" id="cout" hidden></pre>
+      </section>
+    </div>
 
-  <section>
-    <h2>Plugin commands</h2>
-    <p class="sub">Registered in Go with <code>srv.RegisterCmd(name, fn, opts…)</code> and served at <code>POST /cmd/&lt;name&gt;</code>.</p>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Command</th><th>Description</th></tr></thead>
-        <tbody id="cmds"><tr><td colspan="2" class="empty">Loading…</td></tr></tbody>
-      </table>
-    </div>
-    <div class="row" style="margin-top:14px">
-      <select id="cname" aria-label="Command"></select>
-      <button class="primary authed" id="crun">Run</button>
-    </div>
-    <div class="field" style="margin-top:10px">
-      <label for="cparams">JSON params</label>
-      <textarea id="cparams" style="min-height:56px">{}</textarea>
-    </div>
-    <pre class="out" id="cout" hidden></pre>
-  </section>
+    <section class="card">
+      <h2>API</h2>
+      <p class="sub">Every endpoint returns JSON. Errors look like <code>{"success":0,"error":"…"}</code> with a matching HTTP status.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Method</th><th>Path</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="method">GET</td><td class="mono">/f/&lt;path&gt;</td><td>Read a file (or directory index)</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/ls/&lt;dir&gt;</td><td>List a directory as JSON</td></tr>
+            <tr><td class="method">POST</td><td class="mono">/w/&lt;path&gt;</td><td>Write the request body to a file (creates folders)</td></tr>
+            <tr><td class="method">POST</td><td class="mono">/rm/&lt;path&gt;</td><td>Remove a file</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/zip/&lt;folder&gt;</td><td>Download a folder as a .zip; <code>?f=name&amp;f=…</code> only those entries (unpack one with <code>/cmd/unzip</code>)</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/thumb/&lt;path&gt;?w=256</td><td>A small JPEG (or PNG) of an image, for lists; made once and kept</td></tr>
+            <tr><td class="method">POST</td><td class="mono">/up/&lt;folder&gt;</td><td>Multipart upload of any number of files (names may contain sub-folders); <code>?onconflict=rename|overwrite|fail</code></td></tr>
+            <tr><td class="method">POST</td><td class="mono">/cmd/uploadFile</td><td>One file (field <code>myFile</code>) into <code>uploads/&lt;md5&gt;_&lt;name&gt;</code>, e.g. for editor.js</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/cmd/fetchUrl?url=…</td><td>Fetch OpenGraph metadata for a link</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/proxy?url=…</td><td>CORS proxy: fetch a public URL (forwards <code>Range</code>) and return it as is</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/cmd/status</td><td>Version, read-only and sign-in state</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/cmd/</td><td>List commands (incl. <code>find</code>, <code>grep</code>, <code>mv</code>, <code>cp</code>, <code>rm</code>, <code>du</code>, <code>activity</code>, <code>history</code>, <code>restore</code>, <code>trash</code>, <code>untrash</code>)</td></tr>
+            <tr><td class="method">POST</td><td class="mono">/cmd/&lt;name&gt;</td><td>Run a plugin command (JSON body in, <code>{"success":1,"result":…}</code> out)</td></tr>
+            <tr><td class="method">GET</td><td class="mono">/version</td><td>Server version</td></tr>
+            <tr><td class="method">WS</td><td class="mono">/events</td><td>File-change events: send <code>{"op":"watch","path":"/dir"}</code>, receive <code>{"type":"change",…}</code></td></tr>
+            <tr><td class="method">WS</td><td class="mono">/echo</td><td>WebSocket echo (<a class="link" href="/echotest">test page</a>)</td></tr>
+            <tr><td class="method">POST</td><td class="mono">/cmd/stopServer</td><td>Stop the server (same-origin only, <a class="link" href="/ctrl/">control page</a>)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="sub" style="margin:14px 0 0">
+        When the server runs with <code>-auth</code>, writes and commands need the access token: send <code>Authorization: Bearer &lt;token&gt;</code>, or sign in once via
+        <code>/?token=&lt;token&gt;</code> (sets a cookie). Missing token → <code>401</code>.
+        Read-only mode (<code>-r</code>, or <code>r</code> in the terminal UI) → <code>403</code>.
+        Writes and deletes take <code>If-Match: &lt;ETag from /f/&gt;</code> (or <code>If-None-Match: *</code> to only create);
+        a changed file → <code>412</code>. Overwritten files keep their previous versions, deleted ones go to the trash.
+      </p>
+    </section>
 
-  <dialog id="pv">
-    <div class="pv-head">
-      <strong id="pvTitle"></strong><span class="sub" id="pvMeta"></span><span class="grow"></span>
-      <button class="link plain writable" id="pvEdit" hidden title="change it here; the old content is kept as a version">edit</button>
-      <a id="pvRaw" target="_blank" rel="noopener">open raw</a><a id="pvDl" download>download</a>
-      <button class="link plain" id="pvClose" autofocus>close</button>
-    </div>
-    <div id="pvBody"></div>
-  </dialog>
-
-  <footer>myweb · <a href="/ctrl/">control</a></footer>
+    <section class="card">
+      <h2>Commands on this server</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Command</th><th>Description</th></tr></thead>
+          <tbody id="cmds"><tr><td colspan="2" class="empty">Sign in to list them.</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 </main>
+
+<div class="menu" id="menu" role="menu" hidden></div>
+<div id="toasts" role="status" aria-live="polite"></div>
+<div id="dropOverlay" hidden><div id="dropText">Drop to upload</div></div>
+<div class="upl" id="upl" hidden aria-live="polite">
+  <div class="upl-head"><strong id="uplTitle"></strong><span class="grow"></span><button class="icon-btn kebab" id="uplClose" aria-label="Close">✕</button></div>
+  <div class="progress"><div id="uplBar"></div></div>
+  <ul id="uplList"></ul>
+</div>
+<div id="stopped" hidden>
+  <div><div class="logo" style="margin:0 auto 14px;width:40px;height:40px;font-size:20px">m</div>
+  <h2>Server stopped</h2><p class="sub">You can close this tab. Start <code>myweb</code> again to come back.</p></div>
+</div>
+
+<dialog id="pv">
+  <div class="pv-head">
+    <button class="icon-btn" id="pvPrev" aria-label="Previous file" title="Previous (←)">‹</button>
+    <button class="icon-btn" id="pvNext" aria-label="Next file" title="Next (→)">›</button>
+    <strong id="pvTitle"></strong><span class="sub" id="pvMeta" style="margin:0"></span><span class="grow"></span>
+    <button class="writable" id="pvEdit" hidden title="change it here; the old content is kept as a version">Edit</button>
+    <a class="btn" id="pvRaw" target="_blank" rel="noopener">Open raw</a><a class="btn" id="pvDl" download>Download</a>
+    <button id="pvClose" autofocus aria-label="Close">✕</button>
+  </div>
+  <div id="pvBody"></div>
+</dialog>
+
+<dialog id="ask" class="small">
+  <form class="dlg" id="askForm">
+    <h3 id="askTitle"></h3>
+    <p id="askText"></p>
+    <input type="text" id="askInput" hidden autocomplete="off" spellcheck="false">
+    <div class="dlg-acts"><button type="button" id="askCancel">Cancel</button><button class="primary" id="askOk">OK</button></div>
+  </form>
+</dialog>
+
+<dialog id="pick" class="medium">
+  <form class="dlg" id="pickForm">
+    <h3 id="pickTitle"></h3>
+    <nav class="crumbs" id="pickCrumbs"></nav>
+    <div class="pick-list" id="pickList"></div>
+    <div class="field"><label for="pickPath">Folder (one that doesn't exist yet is made)</label><input type="text" id="pickPath" autocomplete="off" spellcheck="false"></div>
+    <div id="pickExtra"></div>
+    <div class="dlg-acts"><button type="button" id="pickCancel">Cancel</button><button class="primary" id="pickOk">OK</button></div>
+  </form>
+</dialog>
+
+<dialog id="shareDlg" class="medium">
+  <form class="dlg" id="shareForm">
+    <h3>Share link</h3>
+    <p>Opens a folder or file without this server's token, until it expires or you revoke it.</p>
+    <div class="field"><label for="sharePath">Folder or file</label><input type="text" id="sharePath" placeholder="/photos" autocomplete="off"></div>
+    <div class="row" style="margin-bottom:10px">
+      <select id="shareKind" aria-label="Kind of link"><option value="read">to read</option><option value="upload">to send files (folder)</option></select>
+      <select id="shareDays" aria-label="How long it works"><option value="1">1 day</option><option value="7" selected>7 days</option><option value="30">30 days</option><option value="365">1 year</option></select>
+      <select id="shareMaxDl" aria-label="Downloads allowed"><option value="0" selected>any number of downloads</option><option value="1">1 download</option><option value="3">3 downloads</option><option value="10">10 downloads</option></select>
+    </div>
+    <div class="field"><input type="password" id="sharePass" placeholder="Password (optional)" aria-label="Password (optional)" autocomplete="new-password"></div>
+    <div class="row" id="shareNew" hidden>
+      <input type="text" id="shareURL" readonly aria-label="The new link" style="flex:1;width:auto">
+      <button id="shareCopy" type="button">Copy</button>
+    </div>
+    <div class="msg" id="shareMsg"></div>
+    <div class="dlg-acts"><button type="button" id="shareClose">Close</button><button class="primary authed" id="shareMake">Make link</button></div>
+  </form>
+</dialog>
+
+<dialog id="histDlg" class="medium">
+  <div class="dlg">
+    <h3>Versions of <code id="histPath"></code></h3>
+    <p>Kept each time the file is overwritten. Restoring keeps the current one as a version too.</p>
+    <div class="table-wrap" id="histList" style="max-height:50vh;overflow:auto">
+      <table><thead><tr><th>Saved</th><th style="text-align:right">Size</th><th></th></tr></thead>
+      <tbody id="histRows"></tbody></table>
+    </div>
+    <div id="histDiff" hidden>
+      <div class="diff-bar">
+        <button type="button" id="diffBack">← All versions</button>
+        <label>Compare with <select id="diffWith"></select></label>
+        <span class="diff-stat" id="diffStat"></span>
+      </div>
+      <div class="diff" id="diffOut"></div>
+    </div>
+    <div class="dlg-acts"><button type="button" class="writable" id="diffRestore" hidden>Restore this version</button><button type="button" id="histClose">Close</button></div>
+  </div>
+</dialog>
+
+<dialog id="keys" class="small">
+  <div class="dlg">
+    <h3>Keyboard shortcuts</h3>
+    <dl class="keys">
+      <dt><kbd>↑</kbd> <kbd>↓</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>move through the files</dd>
+      <dt><kbd>Enter</kbd></dt><dd>open the folder or file</dd>
+      <dt><kbd>Space</kbd></dt><dd>preview</dd>
+      <dt><kbd>x</kbd></dt><dd>select or unselect</dd>
+      <dt><kbd>Ctrl</kbd> <kbd>A</kbd></dt><dd>select all</dd>
+      <dt><kbd>F2</kbd></dt><dd>rename</dd>
+      <dt><kbd>Delete</kbd></dt><dd>move to the trash</dd>
+      <dt><kbd>Backspace</kbd></dt><dd>up one folder</dd>
+      <dt><kbd>/</kbd></dt><dd>filter or search</dd>
+      <dt><kbd>Esc</kbd></dt><dd>clear the selection</dd>
+      <dt><kbd>←</kbd> <kbd>→</kbd></dt><dd>in a preview: the previous or next file</dd>
+      <dt><kbd>?</kbd></dt><dd>this list</dd>
+    </dl>
+    <div class="dlg-acts"><button type="button" id="keysClose">Close</button></div>
+  </div>
+</dialog>
 
 <script>
 (() => {
@@ -445,10 +787,17 @@
   let readOnly = false;
   let authed = true;
   let keepsVersions = true;
+  let trashDays = 0;
+  let online = true, live = false;
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
   const join = (a, b) => (a.endsWith("/") ? a : a + "/") + b.replace(/^\/+/, "");
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem("myweb." + k); return v === null ? d : v; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem("myweb." + k, v); } catch {} },
+  };
 
   function size(n) {
     if (n < 1024) return n + " B";
@@ -456,40 +805,257 @@
     do { n /= 1024; i++; } while (n >= 1024 && i < u.length - 1);
     return n.toFixed(1) + " " + u[i];
   }
+  const dateFmt = [false, true].map((precise) => new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: precise ? "medium" : "short" }));
   function when(t, precise) {
     const d = new Date(t);
-    return isNaN(d) ? "" : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: precise ? "medium" : "short" });
+    return isNaN(d) ? "" : dateFmt[precise ? 1 : 0].format(d);
   }
   function msg(el, text, ok) { el.textContent = text; el.className = "msg " + (ok ? "ok" : "err"); }
   async function errText(r) {
     try { const j = await r.json(); return j.error || r.statusText; } catch { return r.status + " " + r.statusText; }
   }
+  const post = (url, body) => fetch(url, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  const canWrite = () => !readOnly && authed;
+
+  // ---- toasts: what happened, with an optional action (Undo) ----
+  function toast(text, kind, opts = {}) {
+    const box = $("toasts");
+    const t = document.createElement("div");
+    t.className = "toast" + (kind === "err" ? " err" : "");
+    t.innerHTML = `<span></span>`;
+    t.firstChild.textContent = text;
+    const close = () => t.remove();
+    if (opts.action) {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = opts.action.label;
+      b.onclick = () => { close(); opts.action.fn(); };
+      t.append(b);
+    }
+    const x = document.createElement("button");
+    x.type = "button"; x.className = "x"; x.textContent = "✕"; x.setAttribute("aria-label", "Dismiss");
+    x.onclick = close;
+    t.append(x);
+    box.append(t);
+    while (box.children.length > 4) box.firstChild.remove();
+    if (!opts.sticky) setTimeout(close, opts.ms || (opts.action ? 9000 : kind === "err" ? 8000 : 4000));
+    return { close };
+  }
+  const fail = async (what, r) => { toast(`${what}: ${await errText(r)}`, "err"); onFail(r); };
+
+  // ---- dialogs in the page, not prompt()/confirm() ----
+  // ask resolves to true (or the text entered) or null when cancelled.
+  function ask({ title, text = "", input, ok = "OK", danger = false }) {
+    return new Promise((resolve) => {
+      const d = $("ask"), inp = $("askInput");
+      $("askTitle").textContent = title;
+      $("askText").textContent = text;
+      $("askText").hidden = !text;
+      $("askOk").textContent = ok;
+      $("askOk").className = "primary" + (danger ? " danger" : "");
+      inp.hidden = input === undefined;
+      if (input !== undefined) inp.value = input.value || "", inp.placeholder = input.placeholder || "";
+      const done = (v) => { d.close(); resolve(v); };
+      $("askForm").onsubmit = (e) => {
+        e.preventDefault();
+        if (input === undefined) return done(true);
+        const v = inp.value.trim();
+        if (v) done(v);
+      };
+      $("askCancel").onclick = () => done(null);
+      d.oncancel = (e) => { e.preventDefault(); done(null); };
+      d.showModal();
+      if (input !== undefined) {
+        inp.focus();
+        const dot = input.selectBase ? inp.value.lastIndexOf(".") : -1;
+        inp.setSelectionRange(0, dot > 0 ? dot : inp.value.length); // the name, not its extension
+      } else (danger ? $("askCancel") : $("askOk")).focus();
+    });
+  }
+
+  // pickFolder: choose (or type) a folder; extra is more of the form, read by
+  // extraValue when it closes. Resolves to {path, extra} or null.
+  const FOLDER_SVG = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
+  function pickFolder({ title, start, ok = "OK", exclude = [], extra = "", extraValue }) {
+    return new Promise((resolve) => {
+      const d = $("pick");
+      $("pickTitle").textContent = title;
+      $("pickOk").textContent = ok;
+      $("pickExtra").innerHTML = extra;
+      const browse = async (dir) => {
+        $("pickPath").value = dir;
+        const parts = dir.split("/").filter(Boolean);
+        let acc = "", html = `<a href="#" data-pick-dir="/">root</a>`;
+        for (const p of parts) { acc += "/" + p; html += `<span>/</span><a href="#" data-pick-dir="${esc(acc)}">${esc(p)}</a>`; }
+        $("pickCrumbs").innerHTML = html;
+        const list = $("pickList");
+        list.innerHTML = `<div class="empty">Loading…</div>`;
+        try {
+          const r = await fetch("/ls" + enc(dir));
+          if (!r.ok) throw new Error(await errText(r));
+          const dirs = (await r.json()).filter((f) => f.isdir && !f.name.startsWith(".")).sort((a, b) => a.name.localeCompare(b.name));
+          if ($("pickPath").value !== dir) return; // moved on meanwhile
+          list.innerHTML = (dir !== "/" ? `<button type="button" data-pick-dir="${esc(dir.slice(0, dir.lastIndexOf("/")) || "/")}"><span class="ficon">↰</span>Up one folder</button>` : "") +
+            (dirs.map((f) => {
+              const p = join(dir, f.name), off = exclude.some((x) => p === x || p.startsWith(x + "/"));
+              return `<button type="button" data-pick-dir="${esc(p)}" ${off ? "disabled" : ""}><span class="ficon k-folder">${FOLDER_SVG}</span>${esc(f.name)}</button>`;
+            }).join("") || `<div class="empty">No folders in here.</div>`);
+        } catch (e) { list.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+      };
+      d.onclick = (e) => {
+        const a = e.target.closest("[data-pick-dir]");
+        if (a && !a.disabled) { e.preventDefault(); browse(a.dataset.pickDir); }
+      };
+      const done = (v) => { d.close(); resolve(v); };
+      $("pickForm").onsubmit = (e) => {
+        e.preventDefault();
+        let p = $("pickPath").value.trim();
+        if (!p) return;
+        p = (p.startsWith("/") ? p : join(start, p)).replace(/\/+$/, "") || "/";
+        done({ path: p, extra: extraValue ? extraValue() : null });
+      };
+      $("pickCancel").onclick = () => done(null);
+      d.oncancel = (e) => { e.preventDefault(); done(null); };
+      d.showModal();
+      browse(start);
+      $("pickOk").focus();
+    });
+  }
+
+  // ---- menus: the ⋯ buttons and right-click ----
+  const menuEl = $("menu");
+  let menuAnchor = null;
+  function openMenu(at, items) {
+    closeMenu();
+    menuEl.innerHTML = items.map((it, i) => it.sep ? `<div class="sep"></div>`
+      : it.head ? `<div class="mhead">${esc(it.head)}</div>`
+      : `<button type="button" role="menuitem" data-mi="${i}" ${it.disabled ? "disabled" : ""} class="${it.danger ? "danger" : ""}">` +
+        (it.check !== undefined ? `<span class="chk">${it.check ? "✓" : ""}</span>` : "") +
+        `${esc(it.label)}${it.hint ? `<span class="hint">${esc(it.hint)}</span>` : ""}</button>`).join("");
+    menuEl.hidden = false;
+    const mw = menuEl.offsetWidth, mh = menuEl.offsetHeight;
+    let x, y;
+    if (at instanceof Element) {
+      const r = at.getBoundingClientRect();
+      x = r.right - mw; y = r.bottom + 4;
+      if (y + mh > innerHeight - 8) y = r.top - mh - 4;
+      menuAnchor = at; at.setAttribute("aria-expanded", "true");
+    } else {
+      x = at.x; y = at.y;
+      if (y + mh > innerHeight - 8) y -= mh;
+    }
+    menuEl.style.left = Math.max(8, Math.min(x, innerWidth - mw - 8)) + "px";
+    menuEl.style.top = Math.max(8, Math.min(y, innerHeight - mh - 8)) + "px";
+    menuEl.onclick = (e) => {
+      const b = e.target.closest("[data-mi]");
+      if (!b) return;
+      const it = items[+b.dataset.mi];
+      closeMenu(true);
+      it.fn();
+    };
+    menuEl.querySelector("button:not(:disabled)")?.focus();
+  }
+  function closeMenu(refocus) {
+    if (menuEl.hidden) return;
+    menuEl.hidden = true;
+    if (menuAnchor) { menuAnchor.setAttribute("aria-expanded", "false"); if (refocus === "anchor") menuAnchor.focus(); }
+    menuAnchor = null;
+  }
+  menuEl.addEventListener("keydown", (e) => {
+    const bs = [...menuEl.querySelectorAll("button:not(:disabled)")];
+    const i = bs.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); bs[(i + 1) % bs.length]?.focus(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); bs[(i - 1 + bs.length) % bs.length]?.focus(); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeMenu("anchor"); }
+    else if (e.key === "Tab") closeMenu();
+  });
+  document.addEventListener("mousedown", (e) => {
+    if (!menuEl.hidden && !menuEl.contains(e.target) && !(menuAnchor && menuAnchor.contains(e.target))) closeMenu();
+    if (!$("statusPop").hidden && !$("statusPop").contains(e.target) && !$("statusBtn").contains(e.target)) togglePop(false);
+  });
+  window.addEventListener("resize", () => { closeMenu(); togglePop(false); });
+  window.addEventListener("scroll", () => closeMenu(), true);
+  const menuButton = (btn, items) => btn.addEventListener("click", () => {
+    if (menuAnchor === btn) return closeMenu();
+    openMenu(btn, items());
+  });
+
+  // ---- status: one dot in the header, details in a popover ----
+  function renderStatus() {
+    const dot = $("statusDot");
+    let cls = "ok", text = $("stVersion").textContent;
+    if (!online) cls = "err", text = "offline";
+    else if (!authed) cls = "warn", text = "not signed in";
+    else if (readOnly) cls = "warn", text = "read-only";
+    dot.className = "dot " + cls + (online && live ? " live" : "");
+    $("statusText").textContent = text;
+    $("statusBtn").title = `${online ? "online" : "offline"} · ${readOnly ? "read-only" : "read-write"}${live ? " · live updates" : ""}`;
+    $("stLive").textContent = live ? "on" : "off";
+  }
+  function togglePop(open) {
+    const p = $("statusPop"), b = $("statusBtn");
+    open = open ?? p.hidden;
+    if (open === !p.hidden) return;
+    p.hidden = !open;
+    b.setAttribute("aria-expanded", open);
+    if (open) {
+      const r = b.getBoundingClientRect();
+      p.style.top = r.bottom + 8 + "px";
+      p.style.left = Math.max(8, Math.min(r.right - p.offsetWidth, innerWidth - p.offsetWidth - 8)) + "px";
+    }
+  }
+  $("statusBtn").onclick = () => togglePop();
+  // Escape closes it wherever the focus is (after a click it's on the button)
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || $("statusPop").hidden) return;
+    e.stopImmediatePropagation();
+    togglePop(false);
+    $("statusBtn").focus();
+  }, true);
+
+  function setTheme(t) {
+    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    else delete document.documentElement.dataset.theme;
+    store.set("theme", t);
+    document.querySelectorAll("[data-theme-set]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.themeSet === (t || "auto")));
+  }
+  setTheme(store.get("theme", "auto"));
+  $("themeSeg").onclick = (e) => { const b = e.target.closest("[data-theme-set]"); if (b) setTheme(b.dataset.themeSet); };
+
+  $("stopBtn").onclick = async () => {
+    togglePop(false);
+    if (!await ask({ title: "Stop this server?", text: "This file manager and the apps it serves stop working until myweb is started again.", ok: "Stop server", danger: true })) return;
+    let r;
+    try { r = await post("/cmd/stopServer", {}); } catch { r = null; } // it may go before it answers
+    if (r && !r.ok) return fail("Could not stop the server", r);
+    $("stopped").hidden = false;
+    online = false; ws && ws.close();
+  };
+  $("keysBtn").onclick = () => { togglePop(false); $("keys").showModal(); };
+  $("devLink").onclick = () => togglePop(false);
+  $("keysClose").onclick = () => $("keys").close();
 
   function setMode(ro) {
     readOnly = ro;
-    const m = $("mode");
-    m.textContent = ro ? "read-only" : "read-write";
-    m.className = "pill " + (ro ? "warn" : "ok");
+    $("stMode").textContent = ro ? "read-only" : "read-write";
     applyLocks();
   }
 
   function applyLocks() {
-    const noWrite = readOnly || !authed;
+    const noWrite = !canWrite();
     document.querySelectorAll(".writable").forEach((b) => (b.disabled = noWrite));
     document.querySelectorAll(".authed").forEach((b) => (b.disabled = !authed));
-    $("drop").style.opacity = noWrite ? 0.45 : 1;
+    renderStatus();
   }
 
   function setAuth(enabled, ok, user, multiUser) {
     authed = !enabled || ok;
-    const a = $("auth");
-    a.hidden = !enabled;
-    a.textContent = ok ? (user ? `${user.name} · ${user.role}` : "signed in") : "not signed in";
+    $("stAuth").textContent = !enabled ? "not needed" : ok ? (user ? `${user.name} · ${user.role}` : "signed in") : "not signed in";
     $("signinHow").textContent = multiUser
       ? "Open your personal sign-in link (your admin creates it with myweb-team user add)."
       : "Writing, uploading and commands need this server's access token. Open the link printed in the terminal (or press o in the terminal UI) to sign in this browser.";
-    a.className = "pill " + (ok ? "ok" : "warn");
-    $("signin").classList.toggle("show", !authed);
+    $("signin").hidden = authed;
     applyLocks();
   }
 
@@ -500,19 +1066,58 @@
   async function status() {
     try {
       const j = await (await fetch("/cmd/status")).json();
-      $("version").textContent = "v" + j.version;
-      setMode(j.readOnly);
+      online = true;
+      $("stVersion").textContent = "v" + j.version;
       keepsVersions = j.versions > 0;
-      $("trashNote").textContent = j.trashDays > 0 ? `deleted files are kept ${j.trashDays} days` : "off: deletes are permanent";
+      trashDays = j.trashDays || 0;
+      const t = trashDays > 0 ? `deleted files are kept ${plural(trashDays, "day")}` : "off: deletes are permanent";
+      $("trashNote").textContent = t;
+      $("stTrash").textContent = trashDays > 0 ? `${plural(trashDays, "day")}` : "off";
+      const disk = j.disk;
+      $("stDiskT").hidden = $("stDisk").hidden = !disk;
+      if (disk) {
+        const used = 1 - disk.free / disk.total, low = disk.free < disk.total / 20 || disk.free < 2 ** 30;
+        $("stDisk").innerHTML = `${size(disk.free)} free of ${size(disk.total)}<span class="diskbar${low ? " low" : ""}" title="${Math.round(used * 100)}% used"><span style="width:${(used * 100).toFixed(1)}%"></span></span>`;
+      }
+      setMode(j.readOnly);
       const wasAuthed = authed;
       setAuth(j.auth, j.authed, j.user, j.multiUser);
       if (authed && (!wasAuthed || !$("cname").options.length)) loadCmds();
     } catch {
-      $("version").textContent = "offline"; $("version").className = "pill err";
+      online = false;
+      renderStatus();
     }
   }
 
-  // The web app at "/" when it is installed from a distribution server
+  // ---- tabs, in the address: #/folder for Files, #apps, #shares, #trash, #dev ----
+  const TABS = ["files", "recent", "apps", "shares", "trash", "dev"];
+  let tab = "files";
+  const fromHash = () => { const h = location.hash.slice(1); try { return decodeURIComponent(h); } catch { return h; } };
+  function showTab(t) {
+    tab = t;
+    document.querySelectorAll("[data-tab]").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === t));
+    document.querySelectorAll("[data-view]").forEach((v) => (v.hidden = v.dataset.view !== t));
+    if (t === "apps") { loadApp(false); loadApps(); loadCatalog(false); }
+    if (t === "shares") loadShares();
+    if (t === "trash") loadTrash();
+    if (t === "recent") loadRecent();
+    document.title = t === "files" ? `${cwd === "/" ? "Files" : cwd.split("/").pop()} · myweb` : `${t === "dev" ? "Developer" : t[0].toUpperCase() + t.slice(1)} · myweb`;
+  }
+  function route() {
+    const h = fromHash();
+    if (h === "share") { history.replaceState(null, "", "#" + enc(cwd)); showTab("files"); load(cwd).then(receiveShare); return; }
+    if (TABS.includes(h)) { showTab(h); return; }
+    load(h.startsWith("/") ? h : "/");
+    showTab("files");
+  }
+  window.addEventListener("hashchange", route);
+  document.querySelector(".tabs").onclick = (e) => {
+    const b = e.target.closest("[data-tab]");
+    if (b) location.hash = b.dataset.tab === "files" ? enc(cwd) : b.dataset.tab;
+  };
+  const goDir = (dir) => { location.hash = enc(dir); };
+
+  // ---- the app at "/" when installed from a distribution server ----
   // (-web-from or -app): POST /cmd/app reports it; no such command, no panel.
   let appPoll = null;
   async function loadApp(check) {
@@ -523,7 +1128,7 @@
       });
     } catch { return; }
     if (r.status === 404 || r.status === 401) { $("appBox").hidden = true; return; }
-    if (!r.ok) { msg($("appMsg"), "Check failed: " + await errText(r), false); return; }
+    if (!r.ok) { fail("Check failed", r); return; }
     const st = (await r.json()).result;
     renderApp(st);
     if (check) appPoll = { since: st.checked || "", from: st.current, until: Date.now() + 120000 };
@@ -533,10 +1138,13 @@
     } else if (appPoll) {
       const from = appPoll.from;
       appPoll = null;
-      if (st.current !== from) msg($("appMsg"), `Updated to ${st.current}. Open pages of the app can reload now.`, true);
-      else msg($("appMsg"), st.status === "up to date" ? `Checked: ${st.current} is the latest.` : st.status, st.status === "up to date");
+      if (st.current !== from) toast(`Updated to ${st.current}. Open pages of the app can reload now.`);
+      else toast(st.status === "up to date" ? `Checked: ${st.current} is the latest.` : st.status, st.status === "up to date" ? "ok" : "err");
     }
   }
+
+  let appUpdate = false, appsUpdate = false;
+  const renderBadge = () => ($("appsBadge").hidden = !(appUpdate || appsUpdate));
 
   function renderApp(st) {
     $("appBox").hidden = false;
@@ -547,7 +1155,7 @@
     s.textContent = st.pinned ? "pinned to " + st.pinned : !st.updates ? "updates off" : busy ? (st.checking ? "checking…" : st.status) : st.status === "up to date" ? "up to date" : "update problem";
     s.className = "pill " + (st.pinned ? "warn" : !st.updates ? "" : busy ? "warn" : st.status === "up to date" ? "ok" : "err");
     s.title = st.status;
-    let sub = `Served at <a href="/" target="_blank" rel="noopener">/</a>, installed from <code>${esc(st.manifest)}</code>.`;
+    let sub = `Served at <a class="link" href="/" target="_blank" rel="noopener">/</a>, installed from <code>${esc(st.manifest)}</code>.`;
     if (st.checked) sub += ` Last checked ${esc(when(st.checked))}.`;
     const grants = new Set((st.grants || []).map((g) => g.path));
     const access = (st.access || []).map((f) => `<code>${esc(f.path)}</code>${f.readOnly ? " (read only)" : ""}${grants.has(f.path) ? " (granted)" : ""}`);
@@ -562,6 +1170,7 @@
         (st.latestNotes ? `<br><span class="sub">${esc(st.latestNotes)}</span>` : "");
       n.hidden = false;
     } else n.hidden = true;
+    appUpdate = !n.hidden; renderBadge();
     $("appCheck").hidden = !st.updates;
     $("appCheck").disabled = !authed || busy;
     $("appLatest").hidden = !st.pinned;
@@ -579,27 +1188,26 @@
       ? appAvail.map((m) => ({ v: m.version, notes: m.notes || "", where: installed.includes(m.version) ? "" : "published " + new Date(m.published).toLocaleDateString(undefined, { dateStyle: "medium" }) }))
       : installed.map((v) => ({ v, notes: notes[v] || "", where: "" }));
     $("appListTitle").textContent = appAvail ? "Published versions" : "Installed versions";
-    $("appCount").textContent = appAvail ? `${appAvail.length} published, ${installed.length} installed` : installed.length + (installed.length === 1 ? " version" : " versions") + " kept";
+    $("appCount").textContent = appAvail ? `${appAvail.length} published, ${installed.length} installed` : plural(installed.length, "version") + " kept";
     $("appAll").hidden = !!appAvail;
     $("appRows").innerHTML = rows.map((r) =>
       `<tr><td class="mono">${esc(r.v)}${r.v === st.current ? '<span class="tag">serving</span>' : ""}` +
       (r.where ? `<div class="when">${esc(r.where)}</div>` : "") + `</td>` +
       `<td class="notes-cell">${esc(r.notes)}</td>` +
-      `<td style="text-align:right">${r.v === st.current ? "" : `<button class="link plain authed" data-use="${esc(r.v)}" ${authed ? "" : "disabled"}>use</button>`}</td></tr>`).join("");
+      `<td style="text-align:right">${r.v === st.current ? "" : `<button class="link authed" data-use="${esc(r.v)}" ${authed ? "" : "disabled"}>Use</button>`}</td></tr>`).join("");
   }
 
   async function appPost(body) {
-    const r = await fetch("/cmd/app", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const r = await post("/cmd/app", body);
     if (!r.ok) { const e = await errText(r); onFail(r); throw new Error(e); }
     return (await r.json()).result;
   }
   async function useVersion(v) {
-    msg($("appMsg"), v === "latest" ? "Switching to the newest version…" : `Switching to ${v}…`, true);
     try {
       const st = await appPost({ use: v });
       renderApp(st);
-      msg($("appMsg"), st.pinned ? `Now serving ${st.current}; updates are off until "Follow updates".` : `Following updates; serving ${st.current}.`, true);
-    } catch (e) { msg($("appMsg"), "Could not switch: " + e.message, false); }
+      toast(st.pinned ? `Now serving ${st.current}; updates are off until "Follow updates".` : `Following updates; serving ${st.current}.`);
+    } catch (e) { toast("Could not switch: " + e.message, "err"); }
   }
   $("appRows").onclick = (e) => { const b = e.target.closest("[data-use]"); if (b) useVersion(b.dataset.use); };
   $("appLatest").onclick = () => useVersion("latest");
@@ -609,9 +1217,79 @@
       appAvail = st.available || [];
       renderApp(st);
       $("appVersions").open = true;
-    } catch (e) { msg($("appMsg"), "Could not list the published versions: " + e.message, false); }
+    } catch (e) { toast("Could not list the published versions: " + e.message, "err"); }
   };
-  $("appCheck").onclick = () => { $("appMsg").textContent = ""; loadApp(true); };
+  $("appCheck").onclick = () => loadApp(true);
+
+  // ---- files ----
+  // listing: the folder as /ls/ gave it; shown: what the view shows (filter, sort)
+  let listing = [], shown = [], loaded = null, filter = "";
+  let sortKey = store.get("sort", "name"), sortDir = +store.get("sortDir", "1") || 1;
+  let mode = store.get("view", "list");
+  let showHidden = store.get("showHidden", "0") === "1";
+  let replaceOnUpload = false;
+  let cur = -1; // the keyboard's row
+  let renaming = false, reloadLater = false;
+  const chosen = new Set(); // selected names in this folder
+
+  const ext = (p) => (p.match(/\.([^./]+)$/) || [, ""])[1].toLowerCase();
+  const KIND = {};
+  for (const [kind, exts] of Object.entries({
+    image: "png jpg jpeg gif webp svg bmp ico avif",
+    video: "mp4 webm m4v mov ogv",
+    audio: "mp3 wav ogg oga flac m4a aac opus",
+    pdf: "pdf",
+    markdown: "md markdown mdown",
+    csv: "csv",
+    tsv: "tsv tab bed gff gtf",
+    json: "json geojson webmanifest",
+    code: "js mjs cjs ts tsx jsx go py rb rs c h cc cpp hpp java kt swift sh bash zsh html htm css scss xml yaml yml toml ini sql r lua php",
+    text: "txt log",
+    archive: "zip tar gz tgz bz2 xz zst 7z rar",
+  })) for (const e of exts.split(" ")) KIND[e] = kind;
+
+  const SVG = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+  const PAGE = `<path d="M6 3h8l4 4v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v4h4"/>`;
+  const ICONS = {
+    folder: ["k-folder", FOLDER_SVG],
+    image: ["k-image", SVG(`<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="m21 16-5-5-9 9"/>`)],
+    video: ["k-video", SVG(`<rect x="3" y="5" width="13" height="14" rx="2"/><path d="m16 10 5-3v10l-5-3"/>`)],
+    audio: ["k-audio", SVG(`<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>`)],
+    pdf: ["k-pdf", SVG(PAGE + `<path d="M8.5 13h7M8.5 16.5h5"/>`)],
+    doc: ["", SVG(PAGE + `<path d="M8.5 12h7M8.5 15h7M8.5 18h4"/>`)],
+    table: ["k-table", SVG(`<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18M9 4v16"/>`)],
+    code: ["k-code", SVG(`<path d="m8 8-4 4 4 4M16 8l4 4-4 4M13.5 6l-3 12"/>`)],
+    archive: ["k-archive", SVG(`<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M12 3v2M12 7v2M12 11v2"/><rect x="10.5" y="14" width="3" height="4" rx="1"/>`)],
+    file: ["", SVG(PAGE)],
+  };
+  const iconFor = (f) => {
+    if (f.isdir) return ICONS.folder;
+    const k = KIND[ext(f.name)];
+    return ICONS[{ markdown: "doc", text: "doc", csv: "table", tsv: "table", json: "code" }[k] || k] || ICONS.file;
+  };
+  // Pictures in the list come from /thumb/ (small, made once on the server);
+  // the kinds it doesn't make are shown as they are, when small enough.
+  const THUMBED = new Set(["png", "jpg", "jpeg", "gif", "webp"]), AS_IS_BYTES = 2 * 1024 * 1024;
+  const DPR = Math.min(window.devicePixelRatio || 1, 2);
+  function thumbURL(f, p) {
+    const e = ext(f.name);
+    if (f.isdir || KIND[e] !== "image") return "";
+    // one size for the list and the grid (a few KB), so they share the server's copy
+    if (THUMBED.has(e)) return `/thumb${enc(p)}?w=${DPR > 1.4 ? 512 : 256}&v=${f.size}-${f.t}`;
+    return f.size <= AS_IS_BYTES ? "/f" + enc(p) : "";
+  }
+  // a picture that can't be shown becomes the kind's icon
+  $("fileView").addEventListener("error", (e) => {
+    const img = e.target;
+    if (img.tagName !== "IMG" || !img.closest("#items")) return;
+    const f = shown[+img.closest("[data-i]")?.dataset.i];
+    img.outerHTML = f ? iconFor(f)[1] : "";
+  }, true);
+  // Big folders show a window of CHUNK rows, shown[from..to), which grows
+  // as the list scrolls either way; a jump far off (End) shows a new window.
+  const CHUNK = 200;
+  let from = 0, to = 0;
+  const collator = new Intl.Collator(undefined, { numeric: true });
 
   function renderCrumbs() {
     const parts = cwd.split("/").filter(Boolean);
@@ -619,185 +1297,381 @@
     let acc = "";
     for (const p of parts) {
       acc += "/" + p;
-      html += `<span>/</span><a href="#${esc(acc)}" data-dir="${esc(acc)}">${esc(p)}</a>`;
+      html += `<span>/</span><a href="#${esc(enc(acc))}" data-dir="${esc(acc)}">${esc(p)}</a>`;
     }
     $("crumbs").innerHTML = html;
   }
 
-  // selection, for "Download … as .zip"
-  const chosen = new Set();
-  let shownDir = null;
-  function updateSelection() {
-    const n = chosen.size;
-    const q = [...chosen].map((f) => "f=" + encodeURIComponent(f)).join("&");
-    $("zipBtn").href = "/zip" + enc(cwd) + (q ? "?" + q : "");
-    $("zipBtn").textContent = n ? `Download ${n} as .zip` : "Download folder as .zip";
-    $("selNote").textContent = n ? `${n} selected` : "";
-    $("selClear").hidden = $("selMove").hidden = $("selDel").hidden = !n;
-    const boxes = document.querySelectorAll("#files [data-pick]");
-    $("selAll").checked = n > 0 && n === boxes.length;
-    $("selAll").indeterminate = n > 0 && n < boxes.length;
+  let revealAfterLoad = ""; // a name to select once the folder is listed
+  // reveal opens p's folder with p selected
+  function reveal(p) {
+    const i = p.lastIndexOf("/"), dir = p.slice(0, i) || "/";
+    revealAfterLoad = p.slice(i + 1);
+    if (dir === cwd && tab === "files") load(cwd); else location.hash = enc(dir);
   }
-  document.addEventListener("change", (e) => {
-    const box = e.target.closest("[data-pick]");
-    if (box) {
-      box.checked ? chosen.add(box.dataset.pick) : chosen.delete(box.dataset.pick);
-      box.closest("tr").classList.toggle("picked", box.checked);
-    } else if (e.target.id === "selAll") {
-      document.querySelectorAll("#files [data-pick]").forEach((b) => {
-        b.checked = e.target.checked;
-        e.target.checked ? chosen.add(b.dataset.pick) : chosen.delete(b.dataset.pick);
-        b.closest("tr").classList.toggle("picked", b.checked);
-      });
-    } else return;
-    updateSelection();
-  });
-  $("selClear").onclick = () => { chosen.clear(); load(cwd); };
-
   async function load(dir) {
-    cwd = dir || "/";
+    dir = dir || "/";
+    if (renaming) { reloadLater = true; return; }
+    const moved = dir !== loaded;
+    cwd = dir;
     watchCwd();
     renderCrumbs();
-    const body = $("files");
+    if (moved) {
+      chosen.clear(); cur = -1; filter = ""; $("q").value = "";
+      $("results").hidden = true;
+      if (tab === "files") document.title = `${cwd === "/" ? "Files" : cwd.split("/").pop()} · myweb`;
+    }
     try {
       const r = await fetch("/ls" + enc(cwd));
       if (!r.ok) throw new Error(await errText(r));
-      let items = await r.json();
-      const dotted = items.filter((f) => f.name.startsWith("."));
-      $("hiddenCount").textContent = dotted.length && !showHidden ? ` (${dotted.length})` : "";
-      if (!showHidden) items = items.filter((f) => !f.name.startsWith("."));
-      items.sort((a, b) => (b.isdir - a.isdir) || a.name.localeCompare(b.name));
-      if (cwd !== shownDir) chosen.clear();
-      shownDir = cwd;
-      for (const n of [...chosen]) if (!items.some((f) => f.name === n)) chosen.delete(n);
-      updateSelection();
-      if (!items.length) { body.innerHTML = `<tr><td colspan="5" class="empty">This folder is empty.</td></tr>`; return; }
-      const thumbs = items.filter((f) => KIND[ext(f.name)] === "image").length <= MAX_THUMBS;
-      body.innerHTML = items.map((f) => {
-        const p = join(cwd, f.name);
-        const thumb = thumbs && KIND[ext(f.name)] === "image" && f.size <= THUMB_BYTES
-          ? `<img class="thumb" src="/f${esc(enc(p))}" alt="" loading="lazy" decoding="async">` : `<span class="icon">·</span>`;
-        const link = f.isdir
-          ? `<a href="#${esc(p)}" data-dir="${esc(p)}" draggable="false"><span class="icon">▸</span>${esc(f.name)}/</a>`
-          : `<a href="/f${esc(enc(p))}" target="_blank" rel="noopener" data-preview="${esc(p)}" draggable="false">${thumb}${esc(f.name)}</a>`;
-        const off = readOnly || !authed ? "disabled" : "";
-        const mv = `<button class="link plain writable" data-mv="${esc(p)}" ${off}>rename</button>`;
-        const hist = f.isdir || !keepsVersions ? "" : `<button class="link plain" data-hist="${esc(p)}">history</button>`;
-        const rm = `<button class="link writable" data-rm="${esc(p)}" data-isdir="${f.isdir ? 1 : ""}" ${off}>delete</button>`;
-        const share = `<button class="link plain authed" data-share="${esc(p)}" data-isdir="${f.isdir ? 1 : ""}" ${authed ? "" : "disabled"} title="a link that opens it without the token">share</button>`;
-        const zip = f.isdir ? `<a class="link" href="/zip${esc(enc(p))}" download title="download as .zip">zip</a>`
-          : /\.zip$/i.test(f.name) ? `<button class="link plain writable" data-unzip="${esc(p)}" ${off} title="unpack into a new folder next to it">extract</button>` : "";
-        const on = chosen.has(f.name);
-        const sel = `<input type="checkbox" data-pick="${esc(f.name)}" ${on ? "checked" : ""} aria-label="Select ${esc(f.name)}">`;
-        const drag = readOnly || !authed ? "" : ` draggable="true" data-drag="${esc(f.name)}"`;
-        const into = f.isdir ? ` data-into="${esc(p)}"` : "";
-        return `<tr${on ? ' class="picked"' : ""}${drag}${into}><td class="sel">${sel}</td><td class="name">${link}</td><td class="num">${f.isdir ? "" : size(f.size)}</td><td class="num">${when(f.modtime)}</td><td class="num">${zip}${share}${hist}${mv}${rm}</td></tr>`;
-      }).join("");
-      applyLocks();
-      loadTrash();
+      if (cwd !== dir) return; // another folder was opened meanwhile
+      listing = await r.json();
+      for (const f of listing) f.t = Date.parse(f.modtime) || 0;
+      const keep = moved ? null : { from, to }; // a reload keeps the rows shown
+      loaded = dir;
+      const names = new Set(listing.map((f) => f.name));
+      for (const n of [...chosen]) if (!names.has(n)) chosen.delete(n);
+      if (moved) renderSizeNote();
+      if (revealAfterLoad && names.has(revealAfterLoad)) {
+        const name = revealAfterLoad;
+        revealAfterLoad = "";
+        render(keep);
+        setCur(shown.findIndex((f) => f.name === name));
+      } else render(keep);
     } catch (e) {
-      body.innerHTML = `<tr><td colspan="5" class="empty">Could not list ${esc(cwd)}: ${esc(e.message)}</td></tr>`;
+      listing = []; shown = [];
+      $("fileView").innerHTML = `<div class="empty">Could not list ${esc(cwd)}: ${esc(e.message)}</div>`;
+      updateSelection();
     }
+    if (tab === "trash") loadTrash();
   }
 
-  document.addEventListener("click", async (e) => {
-    const pvLink = e.target.closest("a[data-preview]");
-    if (pvLink && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button)) {
-      e.preventDefault(); // ctrl/cmd-click still opens the raw file
-      preview(pvLink.getAttribute("href"), pvLink.dataset.preview, pvLink.dataset.label);
+  // render shows the folder's entries (filtered, sorted): the window keep
+  // ({from, to}), else the first CHUNK; and the row with the cursor.
+  function render(keep) {
+    const curName = shown[cur]?.name;
+    const q = filter.toLowerCase();
+    shown = listing.filter((f) => (showHidden || !f.name.startsWith(".")) && (!q || f.name.toLowerCase().includes(q)));
+    const by = {
+      name: (a, b) => collator.compare(a.name, b.name),
+      size: (a, b) => (sizeOf(a) - sizeOf(b)) || collator.compare(a.name, b.name),
+      modtime: (a, b) => (a.t - b.t) || collator.compare(a.name, b.name),
+    }[sortKey] || ((a, b) => collator.compare(a.name, b.name));
+    shown.sort((a, b) => (b.isdir - a.isdir) || sortDir * by(a, b));
+    cur = curName ? shown.findIndex((f) => f.name === curName) : -1;
+    document.querySelectorAll("[data-mode]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === mode));
+    const view = $("fileView");
+    if (!shown.length) {
+      from = to = 0;
+      const hidden = listing.length - shown.length;
+      view.innerHTML = `<div class="empty">${filter ? `Nothing here matches “${esc(filter)}”. Press Enter to search inside the files below ${esc(cwd)}.`
+        : hidden ? `Only hidden files here (${hidden}). Show them from the ⋯ menu.` : `This folder is empty.${canWrite() ? " Drop files anywhere on the page to upload them." : ""}`}</div>`;
+      updateSelection();
       return;
     }
-    const dir = e.target.closest("[data-dir]");
-    if (dir) { e.preventDefault(); location.hash = dir.dataset.dir; return; }
-    const hist = e.target.closest("[data-hist]");
-    if (hist) { showHistory(hist.dataset.hist); return; }
-    const rs = e.target.closest("[data-restore]");
-    if (rs) {
-      const r = await post("/cmd/restore", { path: $("histPath").textContent, version: rs.dataset.restore });
-      if (r.ok) { msg($("wmsg"), "Restored " + $("histPath").textContent, true); load(cwd); showHistory($("histPath").textContent); }
-      else { msg($("wmsg"), "Restore failed: " + await errText(r), false); onFail(r); }
-      return;
+    from = Math.min(keep?.from || 0, Math.max(0, shown.length - CHUNK));
+    to = Math.min(shown.length, Math.max(from + CHUNK, keep?.to || 0));
+    if (cur >= 0 && (cur < from || cur >= to)) [from, to] = windowAt(cur);
+    const rows = shown.slice(from, to).map((f, i) => rowHTML(f, from + i)).join("");
+    if (mode === "grid") view.innerHTML = `${lessHTML()}<div class="tiles" id="items">${rows}</div>${moreHTML()}`;
+    else {
+      const th = (k, label, cls) => `<th class="${cls}"><button type="button" class="sort" data-sort="${k}" aria-label="Sort by ${label}">${label}${sortKey === k ? `<span aria-hidden="true">${sortDir > 0 ? "↑" : "↓"}</span>` : ""}</button></th>`;
+      view.innerHTML = `${lessHTML()}<div class="table-wrap"><table class="files"><thead><tr><th class="sel"><input type="checkbox" id="selAll" aria-label="Select all"></th>` +
+        th("name", "Name", "") + th("size", "Size", "r c-size") + th("modtime", "Modified", "r c-time") + `<th class="act"></th></tr></thead>` +
+        `<tbody id="items">${rows}</tbody></table></div>${moreHTML()}`;
     }
-    const ut = e.target.closest("[data-untrash]");
-    if (ut) {
-      let r = await post("/cmd/untrash", { id: ut.dataset.untrash });
-      if (r.status === 409 && confirm(await errText(r) + "\n\nReplace it? (the current file is kept as a version)")) {
-        r = await post("/cmd/untrash", { id: ut.dataset.untrash, overwrite: true });
-      }
-      if (!r.ok && r.status !== 409) { msg($("wmsg"), "Put back failed: " + await errText(r), false); onFail(r); }
-      loadTrash(); load(cwd);
-      return;
+    watchMore();
+    updateSelection();
+  }
+
+  function rowHTML(f, i) {
+    const p = join(cwd, f.name);
+    const [kcls, svg] = iconFor(f);
+    const src = thumbURL(f, p);
+    const img = src ? `<img src="${esc(src)}" alt="" loading="lazy" decoding="async">` : "";
+    const href = f.isdir ? `#${esc(enc(p))}` : `/f${esc(enc(p))}`;
+    const attrs = f.isdir ? `data-dir="${esc(p)}"` : `target="_blank" rel="noopener" data-preview="${esc(p)}" data-from-list`;
+    const on = chosen.has(f.name);
+    const dsize = sizeOf(f);
+    const meta = dsize >= 0 ? `${size(dsize)} · ${when(f.modtime)}` : when(f.modtime);
+    const sel = `<input type="checkbox" data-pick="${esc(f.name)}" ${on ? "checked" : ""} aria-label="Select ${esc(f.name)}">`;
+    const kebab = `<button type="button" class="kebab" data-row-menu="${i}" aria-haspopup="menu" aria-label="Actions for ${esc(f.name)}">⋯</button>`;
+    const rowAttrs = `data-i="${i}"${canWrite() ? ` draggable="true" data-drag="${esc(f.name)}"` : ""}${f.isdir ? ` data-into="${esc(p)}"` : ""}`;
+    const cls = (on ? " picked" : "") + (i === cur ? " cur" : "");
+    if (mode === "grid") {
+      return `<div class="tile${cls}" ${rowAttrs}><label class="tsel">${sel}</label>
+        <a class="open" href="${href}" ${attrs} draggable="false"><div class="thumb ${kcls}">${img || svg}</div>
+        <span class="fname" data-fname title="${esc(f.name)}">${esc(f.name)}</span><span class="tmeta">${esc(f.isdir ? (dsize >= 0 ? "folder · " + size(dsize) : "folder") : size(f.size))}</span></a>${kebab}</div>`;
     }
-    const mv = e.target.closest("[data-mv]");
-    if (mv) {
-      const from = mv.dataset.mv;
-      const to = prompt("Move or rename to:", from);
-      if (!to || to === from) return;
-      const r = await fetch("/cmd/mv", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ from, to: to.startsWith("/") ? to : join(cwd, to) }),
-      });
-      if (!r.ok) { msg($("wmsg"), "Rename failed: " + await errText(r), false); onFail(r); }
-      load(cwd);
-      return;
-    }
-    const uz = e.target.closest("[data-unzip]");
-    if (uz) {
-      uz.disabled = true;
-      msg($("fmsg"), "Extracting " + uz.dataset.unzip + "…", true);
-      const r = await post("/cmd/unzip", { path: uz.dataset.unzip });
-      if (r.ok) {
-        const { result: x } = await r.json();
-        msg($("fmsg"), `Extracted ${x.files} file${x.files === 1 ? "" : "s"} (${size(x.bytes)}) into ${x.to}`, true);
-      } else { msg($("fmsg"), "Extract failed: " + await errText(r), false); onFail(r); }
-      load(cwd);
-      return;
-    }
-    const sh = e.target.closest("[data-share]");
-    if (sh) {
-      $("shareBox").open = true;
-      $("sharePath").value = sh.dataset.share;
-      if (!sh.dataset.isdir) $("shareKind").value = "read";
-      $("shareNew").hidden = true;
-      msg($("shareMsg"), "Choose who it is for and how long, then Make link.", true);
-      $("shareBox").scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
-    const rv = e.target.closest("[data-revoke]");
-    if (rv) {
-      const r = await post("/cmd/shareRevoke", { id: rv.dataset.revoke });
-      if (!r.ok) { msg($("shareMsg"), "Revoke failed: " + await errText(r), false); onFail(r); }
-      loadShares();
-      return;
-    }
-    const rm = e.target.closest("[data-rm]");
-    if (rm) {
-      if (rm.dataset.isdir) { removePaths([rm.dataset.rm]); return; }
-      const r = await fetch("/rm" + enc(rm.dataset.rm), { method: "POST" });
-      if (!r.ok) { msg($("wmsg"), "Delete failed: " + await errText(r), false); onFail(r); }
-      load(cwd);
-    }
+    return `<tr class="${cls.trim()}" ${rowAttrs}><td class="sel">${sel}</td>
+      <td class="name"><a class="open" href="${href}" ${attrs} draggable="false"><span class="ficon ${kcls}">${img || svg}</span>
+        <span style="min-width:0"><span class="fname" data-fname title="${esc(f.name)}">${esc(f.name)}</span><span class="meta-sm">${esc(meta)}</span></span></a></td>
+      <td class="num c-size">${dsize >= 0 ? size(dsize) : ""}</td><td class="num c-time">${when(f.modtime)}</td><td class="act">${kebab}</td></tr>`;
+  }
+
+  // the rows not shown: a line above and below the list that brings more
+  // when it scrolls into view (or is clicked)
+  const windowAt = (i) => { const f = Math.max(0, Math.min(i - CHUNK / 2, shown.length - CHUNK)); return [f, Math.min(shown.length, f + CHUNK)]; };
+  const span = () => `Showing ${(from + 1).toLocaleString()}–${to.toLocaleString()} of ${shown.length.toLocaleString()}`;
+  const lessHTML = () => from > 0 ? `<button type="button" class="more" id="less">${span()} · show earlier</button>` : "";
+  const moreHTML = () => to < shown.length ? `<button type="button" class="more" id="more">${span()} · show more</button>` : "";
+  function updateEnds() {
+    if (from === 0) $("less")?.remove(); else if ($("less")) $("less").textContent = `${span()} · show earlier`;
+    if (to >= shown.length) $("more")?.remove(); else if ($("more")) $("more").textContent = `${span()} · show more`;
+  }
+  function showMore(upTo) {
+    const n = Math.min(shown.length, Math.max(upTo || 0, to + CHUNK));
+    if (n <= to) return;
+    $("items").insertAdjacentHTML("beforeend", shown.slice(to, n).map((f, i) => rowHTML(f, to + i)).join(""));
+    to = n;
+    updateEnds();
+    updateSelection();
+  }
+  function showEarlier(downTo) {
+    const n = Math.max(0, Math.min(downTo ?? Infinity, from - CHUNK));
+    if (n >= from) return;
+    const first = itemEl(from), top = first?.getBoundingClientRect().top;
+    $("items").insertAdjacentHTML("afterbegin", shown.slice(n, from).map((f, i) => rowHTML(f, n + i)).join(""));
+    from = n;
+    if (first) window.scrollBy(0, first.getBoundingClientRect().top - top); // what was in view stays
+    updateEnds();
+    updateSelection();
+  }
+  let moreObserver = null;
+  function watchMore() {
+    moreObserver?.disconnect();
+    if (!("IntersectionObserver" in window)) return;
+    moreObserver = new IntersectionObserver((es) => {
+      for (const e of es) if (e.isIntersecting) e.target.id === "more" ? showMore() : showEarlier();
+    }, { rootMargin: "600px 0px" });
+    for (const id of ["less", "more"]) if ($(id)) moreObserver.observe($(id));
+  }
+  $("fileView").addEventListener("click", (e) => {
+    if (e.target.id === "more") showMore();
+    else if (e.target.id === "less") showEarlier();
   });
 
-  // dotfiles (.DS_Store, ._name, .git …) are hidden unless asked for, per browser
-  let showHidden = false;
-  try { showHidden = localStorage.getItem("myweb.showHidden") === "1"; } catch {}
-  $("showHidden").checked = showHidden;
-  $("showHidden").onchange = () => {
-    showHidden = $("showHidden").checked;
-    try { localStorage.setItem("myweb.showHidden", showHidden ? "1" : "0"); } catch {}
-    load(cwd);
-  };
+  const itemEls = () => [...document.querySelectorAll("#items [data-i]")];
+  const itemEl = (i) => document.querySelector(`#items [data-i="${i}"]`);
+  function setCur(i, scroll = true) {
+    if (!shown.length) return;
+    itemEl(cur)?.classList.remove("cur");
+    cur = Math.max(0, Math.min(i, shown.length - 1));
+    if (cur >= to) cur - to < CHUNK ? showMore(cur + 1) : render({ from: windowAt(cur)[0], to: windowAt(cur)[1] });
+    else if (cur < from) from - cur < CHUNK ? showEarlier(cur) : render({ from: windowAt(cur)[0], to: windowAt(cur)[1] });
+    const el = itemEl(cur);
+    el?.classList.add("cur");
+    if (el && scroll) el.scrollIntoView({ block: "nearest" });
+  }
+  // syncPicked shows the selection on the rows shown
+  function syncPicked() {
+    for (const el of itemEls()) {
+      const on = chosen.has(shown[+el.dataset.i]?.name);
+      el.classList.toggle("picked", on);
+      const b = el.querySelector("[data-pick]");
+      if (b) b.checked = on;
+    }
+  }
+  function pickAll(on) {
+    for (const f of shown) on ? chosen.add(f.name) : chosen.delete(f.name);
+    syncPicked();
+    updateSelection();
+  }
 
-  // ---- new folder, move, delete several ----
-  $("mkdirBtn").onclick = async () => {
-    const name = (prompt("New folder in " + cwd + ":", "") || "").trim();
+  function updateSelection() {
+    const n = chosen.size;
+    const q = [...chosen].map((f) => "f=" + encodeURIComponent(f)).join("&");
+    $("selZip").href = "/zip" + enc(cwd) + (q ? "?" + q : "");
+    $("selNote").textContent = n ? `${n} selected` : "";
+    $("selbar").hidden = !n;
+    const all = $("selAll");
+    if (all) {
+      all.checked = n > 0 && n === shown.length;
+      all.indeterminate = n > 0 && n < shown.length;
+    }
+    applyLocks();
+  }
+  function pick(name, on, i) {
+    on ? chosen.add(name) : chosen.delete(name);
+    if (i === undefined) i = shown.findIndex((f) => f.name === name);
+    const el = itemEl(i);
+    if (el) { el.classList.toggle("picked", on); const b = el.querySelector("[data-pick]"); if (b) b.checked = on; }
+  }
+  document.addEventListener("change", (e) => {
+    const box = e.target.closest("[data-pick]");
+    if (box) pick(box.dataset.pick, box.checked, +box.closest("[data-i]")?.dataset.i);
+    else if (e.target.id === "selAll") return pickAll(e.target.checked);
+    else return;
+    updateSelection();
+  });
+  $("selClear").onclick = () => { chosen.clear(); render(); };
+
+  // filter as you type; Enter searches names and contents below this folder
+  $("q").addEventListener("input", () => { filter = $("q").value.trim(); cur = -1; render(); });
+  $("q").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); search($("q").value.trim()); }
+    else if (e.key === "Escape") { $("q").value = ""; filter = ""; render(); $("q").blur(); }
+    else if (e.key === "ArrowDown") { e.preventDefault(); $("q").blur(); setCur(0); }
+  });
+  document.querySelectorAll("[data-mode]").forEach((b) => (b.onclick = () => { mode = b.dataset.mode; store.set("view", mode); render(); }));
+  $("fileView").addEventListener("click", (e) => {
+    const s = e.target.closest("[data-sort]");
+    if (s) {
+      if (sortKey === s.dataset.sort) sortDir = -sortDir; else { sortKey = s.dataset.sort; sortDir = sortKey === "name" ? 1 : -1; }
+      store.set("sort", sortKey); store.set("sortDir", sortDir);
+      render();
+      return;
+    }
+    const km = e.target.closest("[data-row-menu]");
+    if (km) { setCur(+km.dataset.rowMenu, false); openMenu(km, itemMenu(shown[+km.dataset.rowMenu])); return; }
+    const row = e.target.closest("[data-i]");
+    if (row && !e.target.closest("a, input, button, label")) setCur(+row.dataset.i, false);
+  });
+  $("fileView").addEventListener("contextmenu", (e) => {
+    const row = e.target.closest("[data-i]");
+    if (!row || e.target.closest("input")) return;
+    e.preventDefault();
+    const f = shown[+row.dataset.i];
+    setCur(+row.dataset.i, false);
+    openMenu({ x: e.clientX, y: e.clientY }, chosen.size > 1 && chosen.has(f.name) ? selectionMenu() : itemMenu(f));
+  });
+
+  // the actions on one file or folder
+  function itemMenu(f) {
+    const p = join(cwd, f.name), off = !canWrite();
+    const items = [{ head: f.name }];
+    if (f.isdir) items.push({ label: "Open", hint: "Enter", fn: () => goDir(p) }, { label: "Download as .zip", fn: () => download("/zip" + enc(p), f.name + ".zip") });
+    else items.push(
+      { label: "Preview", hint: "Space", fn: () => preview("/f" + enc(p), p, "", true) },
+      { label: "Open in a new tab", fn: () => window.open("/f" + enc(p), "_blank", "noopener") },
+      { label: "Download", fn: () => download("/f" + enc(p), f.name) });
+    if (!f.isdir && keepsVersions) items.push({ label: "Versions…", fn: () => showHistory(p) });
+    if (/\.zip$/i.test(f.name)) items.push({ label: "Extract here", disabled: off, fn: () => unzip(p) });
+    items.push({ sep: 1 },
+      { label: "Rename", hint: "F2", disabled: off, fn: () => renameInline(f.name) },
+      { label: "Move to…", disabled: off, fn: () => moveDialog([f.name]) },
+      { label: "Copy to…", disabled: off, fn: () => copyDialog([f.name]) },
+      { label: "Duplicate", disabled: off, fn: () => duplicate(f.name) },
+      { label: "Share…", disabled: !authed, fn: () => shareDialog(p, f.isdir) },
+      { sep: 1 },
+      { label: "Delete", hint: "Del", danger: true, disabled: off, fn: () => removePaths([p]) });
+    return items;
+  }
+  function selectionMenu() {
+    const names = [...chosen], off = !canWrite();
+    return [{ head: `${names.length} selected` },
+      { label: `Download ${names.length} as .zip`, fn: () => $("selZip").click() },
+      { label: "Move to…", disabled: off, fn: () => moveDialog(names) },
+      { label: "Copy to…", disabled: off, fn: () => copyDialog(names) },
+      { sep: 1 },
+      { label: "Delete", danger: true, disabled: off, fn: () => removePaths(names.map((n) => join(cwd, n))) }];
+  }
+  function download(url, name) {
+    const a = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.append(a); a.click(); a.remove();
+  }
+
+  menuButton($("newBtn"), () => [
+    { label: "Folder…", disabled: !canWrite(), fn: newFolder },
+    { label: "Text file…", disabled: !canWrite(), fn: newFile },
+  ]);
+  menuButton($("upBtn"), () => [
+    { label: "Files…", disabled: !canWrite(), fn: () => $("ufile").click() },
+    { label: "A folder…", disabled: !canWrite(), fn: () => $("udir").click() },
+    { sep: 1 },
+    { label: "Replace files with the same name", check: replaceOnUpload, fn: () => { replaceOnUpload = !replaceOnUpload; toast(replaceOnUpload ? "Uploads replace files with the same name (the old one is kept as a version)." : "Uploads with a name that's taken get a new name."); } },
+  ]);
+  menuButton($("moreBtn"), () => {
+    const dotted = listing.filter((f) => f.name.startsWith(".")).length;
+    return [
+      { label: "Download this folder as .zip", fn: () => download("/zip" + enc(cwd), (cwd.split("/").pop() || "files") + ".zip") },
+      { label: "Search inside files…", fn: () => { $("q").focus(); toast("Type, then press Enter to search names and contents."); } },
+      { label: "Folder sizes", hint: dirSizes?.dir === cwd ? "↻" : "", fn: () => folderSizes() },
+      { sep: 1 },
+      { head: "Sort by" },
+      ...[["name", "Name"], ["size", "Size"], ["modtime", "Modified"]].map(([k, l]) => ({ label: l, check: sortKey === k, hint: sortKey === k ? (sortDir > 0 ? "↑" : "↓") : "", fn: () => {
+        if (sortKey === k) sortDir = -sortDir; else { sortKey = k; sortDir = k === "name" ? 1 : -1; }
+        store.set("sort", sortKey); store.set("sortDir", sortDir); render();
+      } })),
+      { sep: 1 },
+      { label: `Show hidden files${dotted ? ` (${dotted})` : ""}`, check: showHidden, fn: () => { showHidden = !showHidden; store.set("showHidden", showHidden ? "1" : "0"); render(); } },
+      { label: "Keyboard shortcuts", hint: "?", fn: () => $("keys").showModal() },
+    ];
+  });
+
+  // ---- new, rename, move, delete ----
+  async function newFolder() {
+    const name = await ask({ title: "New folder", text: `In ${cwd}`, input: { placeholder: "name" }, ok: "Create" });
     if (!name) return;
-    const r = await post("/cmd/mkdir", { path: name.startsWith("/") ? name : join(cwd, name) });
-    if (r.ok) msg($("fmsg"), "Made " + (name.startsWith("/") ? name : join(cwd, name)), true);
-    else { msg($("fmsg"), "New folder failed: " + await errText(r), false); onFail(r); }
+    const p = name.startsWith("/") ? name : join(cwd, name);
+    const r = await post("/cmd/mkdir", { path: p });
+    if (!r.ok) return fail("New folder failed", r);
+    toast("Made " + p);
     load(cwd);
-  };
+  }
+  async function newFile() {
+    const name = await ask({ title: "New text file", text: `In ${cwd}`, input: { value: "untitled.txt", selectBase: true }, ok: "Create" });
+    if (!name) return;
+    const p = name.startsWith("/") ? name : join(cwd, name);
+    const r = await fetch("/w" + enc(p), { method: "POST", headers: { "If-None-Match": "*", "Content-Type": "text/plain; charset=utf-8" }, body: "" });
+    if (r.status === 412) return toast(`${p} exists already`, "err");
+    if (!r.ok) return fail("Could not create it", r);
+    load(cwd);
+    await preview("/f" + enc(p), p);
+    if (!$("pvEdit").hidden) $("pvEdit").click();
+  }
+
+  function renameInline(name) {
+    const i = shown.findIndex((f) => f.name === name);
+    const el = document.querySelector(`#items [data-i="${i}"]`);
+    const span = el && el.querySelector("[data-fname]");
+    if (!span) return;
+    renaming = true;
+    const link = span.closest("a");
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.className = "rename"; inp.value = name; inp.setAttribute("aria-label", "New name");
+    const wrap = document.createElement("span"); // keeps the icon beside the name being edited
+    wrap.className = "fname-wrap";
+    const ic = link.querySelector(".ficon, .thumb");
+    if (ic) wrap.append(ic.cloneNode(true));
+    wrap.append(inp);
+    link.replaceWith(wrap);
+    el.removeAttribute("draggable");
+    inp.focus();
+    const dot = shown[i].isdir ? -1 : name.lastIndexOf(".");
+    inp.setSelectionRange(0, dot > 0 ? dot : name.length);
+    let done = false;
+    const finish = async (save) => {
+      if (done) return;
+      done = true;
+      const to = inp.value.trim();
+      renaming = false;
+      if (save && to && to !== name) {
+        const r = await post("/cmd/mv", { from: join(cwd, name), to: to.startsWith("/") ? to : join(cwd, to) });
+        if (!r.ok) await fail("Rename failed", r);
+        else if (chosen.delete(name)) chosen.add(to);
+      }
+      reloadLater = false;
+      await load(cwd);
+      const j = shown.findIndex((f) => f.name === (save && to ? to : name));
+      if (j >= 0) setCur(j);
+    };
+    inp.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); finish(false); }
+    });
+    inp.addEventListener("blur", () => finish(true));
+  }
+
+  async function moveDialog(names) {
+    const res = await pickFolder({
+      title: names.length === 1 ? `Move ${names[0]} to…` : `Move ${names.length} items to…`,
+      start: cwd, ok: "Move here", exclude: names.map((n) => join(cwd, n)),
+    });
+    if (res) moveInto(names, res.path);
+  }
   // moveInto moves names (in the folder shown) into the folder dest.
   async function moveInto(names, dest) {
     dest = dest.replace(/\/+$/, "") || "/";
@@ -810,53 +1684,153 @@
       else { failed.push(n + ": " + await errText(r)); onFail(r); }
     }
     for (const n of names) chosen.delete(n);
-    if (failed.length) msg($("fmsg"), `Moved ${moved}; not moved: ${failed.join("; ")}`, false);
-    else if (moved) msg($("fmsg"), `Moved ${moved} into ${dest}`, true);
+    if (failed.length) toast(`Moved ${moved}; not moved: ${failed.join("; ")}`, "err");
+    else if (moved) toast(`Moved ${plural(moved, "item")} into ${dest}`, "ok", { action: { label: "Open", fn: () => goDir(dest) } });
     load(cwd);
   }
-  $("selMove").onclick = () => {
-    const dest = (prompt(`Move ${chosen.size} into which folder? (made if it doesn't exist)`, cwd) || "").trim();
-    if (dest) moveInto([...chosen], dest.startsWith("/") ? dest : join(cwd, dest));
-  };
-  // removePaths deletes files and folders; everything goes to the trash.
-  async function removePaths(paths) {
-    const what = paths.length === 1 ? paths[0] : `${paths.length} items`;
-    if (!confirm(`Delete ${what}, with everything in ${paths.length === 1 ? "it" : "them"}? It all goes to the trash.`)) return;
-    const r = await post("/cmd/rm", { paths });
-    if (r.ok) {
-      const { result: x } = await r.json();
-      x.failed = x.failed || [];
-      msg($("fmsg"), `Moved ${x.files} file${x.files === 1 ? "" : "s"} to the trash` + (x.failed.length ? `; could not remove ${x.failed.join(", ")}` : ""), !x.failed.length);
-    } else { msg($("fmsg"), "Delete failed: " + await errText(r), false); onFail(r); }
-    for (const p of paths) chosen.delete(p.split("/").pop());
+  $("selMove").onclick = () => moveDialog([...chosen]);
+  $("selCopy").onclick = () => copyDialog([...chosen]);
+
+  // ---- copy ----
+  async function copyDialog(names) {
+    const res = await pickFolder({
+      title: names.length === 1 ? `Copy ${names[0]} to…` : `Copy ${names.length} items to…`,
+      start: cwd, ok: "Copy here", exclude: names.map((n) => join(cwd, n)),
+    });
+    if (res) copyInto(names, res.path.replace(/\/+$/, "") || "/");
+  }
+  // copyInto copies names (in the folder shown) into dest; a name taken
+  // there gets a new one ("a (1).txt"), as uploads do.
+  async function copyInto(names, dest) {
+    let copied = 0, files = 0; const failed = [], renamed = [];
+    const t = names.length > 1 || listing.find((f) => f.name === names[0])?.isdir ? toast(`Copying ${plural(names.length, "item")}…`, "ok", { sticky: true }) : null;
+    for (const n of names) {
+      const from = join(cwd, n);
+      if (dest === from || dest.startsWith(from + "/")) { failed.push(n + ": can't copy a folder into itself"); continue; }
+      const r = await post("/cmd/cp", { from, to: join(dest, n), rename: true });
+      if (!r.ok) { failed.push(n + ": " + await errText(r)); onFail(r); continue; }
+      const { result } = await r.json();
+      copied++; files += result.files;
+      if (result.to !== join(dest, n)) renamed.push(result.to.split("/").pop());
+    }
+    t?.close?.();
+    for (const n of names) chosen.delete(n);
+    if (failed.length) toast(`Copied ${copied}; not copied: ${failed.join("; ")}`, "err");
+    else if (copied) toast(`Copied ${plural(copied, "item")}${files > copied ? ` (${plural(files, "file")})` : ""} into ${dest}${renamed.length ? ` as ${renamed.join(", ")}` : ""}`, "ok", dest === cwd ? {} : { action: { label: "Open", fn: () => goDir(dest) } });
     load(cwd);
+  }
+  async function duplicate(name) {
+    const r = await post("/cmd/cp", { from: join(cwd, name), to: join(cwd, name), rename: true });
+    if (!r.ok) return fail("Duplicate failed", r);
+    const { result } = await r.json();
+    revealAfterLoad = result.to.split("/").pop();
+    toast(`Made ${revealAfterLoad}`);
+    load(cwd);
+  }
+
+  // ---- folder sizes ----
+  let dirSizes = null; // {dir, folders: {name: {size, files}}, size, files, kept}
+  async function folderSizes() {
+    const dir = cwd;
+    const note = $("sizeNote");
+    note.hidden = false;
+    note.innerHTML = `Adding up ${esc(dir)}…`;
+    const r = await post("/cmd/du", { path: dir });
+    if (cwd !== dir) return;
+    if (!r.ok) { note.hidden = true; return fail("Could not add up the sizes", r); }
+    dirSizes = { dir, ...(await r.json()).result };
+    sortKey = "size"; sortDir = -1; // biggest first
+    renderSizeNote();
+    render({ from, to });
+  }
+  function renderSizeNote() {
+    const note = $("sizeNote"), d = dirSizes;
+    if (!d || d.dir !== cwd) { note.hidden = true; return; }
+    note.hidden = false;
+    const kept = d.kept ? Object.entries({ versions: d.kept.history, trash: d.kept.trash, thumbnails: d.kept.thumbs }).filter(([, n]) => n > 0) : [];
+    note.innerHTML = `<span><strong>${size(d.size)}</strong> in ${plural(d.files, "file")} in ${esc(d.dir)}${d.partial ? " (stopped early: more than it could count)" : ""}</span>` +
+      (kept.length ? `<span>kept by myweb: ${kept.map(([k, n]) => `${k} ${size(n)}`).join(" · ")}${d.kept.trash > 0 && canWrite() ? ` <button type="button" class="link" data-goto-trash>Trash</button>` : ""}</span>` : "") +
+      `<span class="grow"></span><button type="button" class="link" data-size-close>Hide</button>`;
+  }
+  $("sizeNote").addEventListener("click", (e) => {
+    if (e.target.closest("[data-size-close]")) { dirSizes = null; $("sizeNote").hidden = true; render({ from, to }); }
+    else if (e.target.closest("[data-goto-trash]")) location.hash = "trash";
+  });
+  const sizeOf = (f) => f.isdir ? (dirSizes?.dir === cwd ? dirSizes.folders[f.name]?.size ?? -1 : -1) : f.size;
+
+  // removePaths moves files and folders to the trash, with Undo; without a
+  // trash, deleting is for good, so it asks first.
+  async function removePaths(paths) {
+    if (!paths.length) return;
+    const what = paths.length === 1 ? paths[0].split("/").pop() : plural(paths.length, "item");
+    if (trashDays <= 0 && !await ask({ title: `Delete ${what} for good?`, text: "The trash is off on this server, so this can't be undone.", ok: "Delete", danger: true })) return;
+    const r = await post("/cmd/rm", { paths });
+    for (const p of paths) chosen.delete(p.split("/").pop());
+    if (!r.ok) { await fail("Delete failed", r); load(cwd); return; }
+    const { result: x } = await r.json();
+    const ids = x.trash || [], failed = x.failed || [];
+    const text = (trashDays > 0 ? `Moved ${what} to the trash` : `Deleted ${what}`) + (failed.length ? `; could not remove ${failed.join(", ")}` : "");
+    toast(text, failed.length ? "err" : "ok", ids.length ? { action: { label: "Undo", fn: () => untrashAll(ids) } } : {});
+    load(cwd);
+  }
+  async function untrashAll(ids) {
+    let back = 0; const kept = [];
+    for (const id of ids) {
+      const r = await post("/cmd/untrash", { id });
+      if (r.ok) back++;
+      else { kept.push(await errText(r)); onFail(r); }
+    }
+    toast(kept.length ? `Put back ${back}; ${kept.join("; ")}` : `Put back ${plural(back, "file")}`, kept.length ? "err" : "ok");
+    load(cwd);
+    if (tab === "trash") loadTrash();
   }
   $("selDel").onclick = () => removePaths([...chosen].map((n) => join(cwd, n)));
 
-  // drag rows onto a folder row, or a folder in the path above, to move them
+  async function unzip(p) {
+    toast("Extracting " + p + "…");
+    const r = await post("/cmd/unzip", { path: p });
+    if (!r.ok) return fail("Extract failed", r);
+    const { result: x } = await r.json();
+    toast(`Extracted ${plural(x.files, "file")} (${size(x.bytes)}) into ${x.to}`, "ok", { action: { label: "Open", fn: () => goDir(x.to) } });
+    load(cwd);
+  }
+
+  // links: folders open in the list, files in the preview
+  document.addEventListener("click", (e) => {
+    const pvLink = e.target.closest("a[data-preview]");
+    if (pvLink && !(e.ctrlKey || e.metaKey || e.shiftKey || e.button)) {
+      e.preventDefault(); // ctrl/cmd-click still opens the raw file
+      preview(pvLink.getAttribute("href"), pvLink.dataset.preview, pvLink.dataset.label, pvLink.hasAttribute("data-from-list"));
+      return;
+    }
+    const dir = e.target.closest("[data-dir]");
+    if (dir && !(e.ctrlKey || e.metaKey)) { e.preventDefault(); goDir(dir.dataset.dir); }
+  });
+
+  // ---- drag rows onto a folder row, or a folder in the path above, to move them ----
   const DRAG = "application/x-myweb-names";
   let dragging = null;
-  $("files").addEventListener("dragstart", (e) => {
+  $("fileView").addEventListener("dragstart", (e) => {
     const row = e.target.closest("[data-drag]");
     if (!row) return;
     const n = row.dataset.drag;
     dragging = chosen.has(n) ? [...chosen] : [n];
     e.dataTransfer.setData(DRAG, JSON.stringify(dragging));
     e.dataTransfer.effectAllowed = "move";
-    for (const r of document.querySelectorAll("#files [data-drag]")) r.classList.toggle("dragged", dragging.includes(r.dataset.drag));
+    for (const r of itemEls()) r.classList.toggle("dragged", dragging.includes(r.dataset.drag));
   });
-  $("files").addEventListener("dragend", () => {
+  $("fileView").addEventListener("dragend", () => {
     dragging = null;
     document.querySelectorAll(".dragged, .target").forEach((x) => x.classList.remove("dragged", "target"));
   });
   const dropTarget = (e) => {
     if (!dragging) return null;
-    const t = e.target.closest("#files [data-into], #crumbs [data-dir]");
+    const t = e.target.closest("#items [data-into], #crumbs [data-dir]");
     if (!t) return null;
     const dest = t.dataset.into || t.dataset.dir;
     return dragging.some((n) => join(cwd, n) === dest) || dest === cwd ? null : t;
   };
-  for (const zone of [$("files"), $("crumbs")]) {
+  for (const zone of [$("fileView"), $("crumbs")]) {
     zone.addEventListener("dragover", (e) => {
       const t = dropTarget(e);
       document.querySelectorAll(".target").forEach((x) => x !== t && x.classList.remove("target"));
@@ -876,6 +1850,45 @@
     });
   }
 
+  // ---- keyboard ----
+  document.addEventListener("keydown", (e) => {
+    if (e.defaultPrevented || document.querySelector("dialog[open]") || !menuEl.hidden || renaming) return;
+    if (e.target.closest("input, textarea, select, [contenteditable]")) return;
+    if ((e.key === "Enter" || e.key === " ") && e.target.closest("a, button, summary")) return; // they act themselves
+    if (e.key === "?") { e.preventDefault(); $("keys").showModal(); return; }
+    if (tab !== "files" || e.altKey && e.key !== "ArrowUp") return;
+    const mod = e.ctrlKey || e.metaKey;
+    const f = shown[cur];
+    const step = (d) => { e.preventDefault(); setCur(cur < 0 ? 0 : cur + d); };
+    const cols = () => {
+      if (mode !== "grid") return 1;
+      const els = itemEls().slice(0, 64); // the first row is enough
+      return Math.max(1, els.filter((el) => el.offsetTop === els[0].offsetTop).length);
+    };
+    if (e.key === "/" && !mod) { e.preventDefault(); $("q").focus(); $("q").select(); }
+    else if (e.key === "ArrowDown" || (e.key === "j" && !mod)) step(cols());
+    else if (e.key === "ArrowUp" && e.altKey || e.key === "Backspace") { e.preventDefault(); if (cwd !== "/") goDir(cwd.slice(0, cwd.lastIndexOf("/")) || "/"); }
+    else if (e.key === "ArrowUp" || (e.key === "k" && !mod)) step(-cols());
+    else if (mode === "grid" && e.key === "ArrowRight") step(1);
+    else if (mode === "grid" && e.key === "ArrowLeft") step(-1);
+    else if (e.key === "Home") { e.preventDefault(); setCur(0); }
+    else if (e.key === "End") { e.preventDefault(); setCur(shown.length - 1); }
+    else if (mod && e.key.toLowerCase() === "a") { e.preventDefault(); pickAll(true); }
+    else if (e.key === "Escape") { if (chosen.size) { chosen.clear(); render(); } else $("results").hidden = true; }
+    else if (!f) return;
+    else if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      const p = join(cwd, f.name);
+      if (f.isdir) goDir(p); else preview("/f" + enc(p), p, "", true);
+    }
+    else if (e.key === "x" && !mod) { pick(f.name, !chosen.has(f.name), cur); updateSelection(); }
+    else if (e.key === "F2" && canWrite()) { e.preventDefault(); renameInline(f.name); }
+    else if (e.key === "Delete" && canWrite()) {
+      e.preventDefault();
+      removePaths(chosen.size ? [...chosen].map((n) => join(cwd, n)) : [join(cwd, f.name)]);
+    }
+  });
+
   // ---- installed apps: POST /cmd/apps (no such command: no panel) ----
   let appsPoll = null;
   async function loadApps() {
@@ -886,25 +1899,27 @@
     const rows = $("appsRows");
     if (!r.ok) { rows.innerHTML = `<tr><td colspan="4" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
     const list = (await r.json()).result;
-    $("appsNote").textContent = list.length ? `${list.length} app${list.length === 1 ? "" : "s"}` : "none yet: install one from the catalog below";
+    $("appsNote").textContent = list.length ? plural(list.length, "app") : "none yet: install one from the catalog below";
+    appsUpdate = list.some((a) => a.latest && a.current && a.latest !== a.current); renderBadge();
     const off = authed ? "" : "disabled";
     rows.innerHTML = list.length ? list.map((a) => {
       const granted = new Set((a.grants || []).map((g) => g.path));
-      const folders = (a.access || []).map((f) => `<span class="tag" title="${f.readOnly ? "read only" : "read and write"}${granted.has(f.path) ? ", granted" : ", its own"}">${esc(f.path)}${f.readOnly ? " (read)" : ""}${granted.has(f.path)
-        ? ` <button class="link authed" data-app-deny="${esc(a.name)}" data-folder="${esc(f.path)}" title="take it back" ${off}>✕</button>` : ""}</span>`).join(" ") || `<span class="sub">none</span>`;
+      const folders = (a.access || []).map((f) => `<span class="ftag" title="${f.readOnly ? "read only" : "read and write"}${granted.has(f.path) ? ", granted" : ", its own"}">${esc(f.path)}${f.readOnly ? " (read)" : ""}${granted.has(f.path)
+        ? `<button class="link authed" data-app-deny="${esc(a.name)}" data-folder="${esc(f.path)}" title="take it back" aria-label="Take back ${esc(f.path)}" ${off}>✕</button>` : ""}</span>`).join(" ") || `<span class="sub">none</span>`;
       const ver = esc(a.current || "not installed") + (a.pinned ? ` <span class="sub">(kept)</span>` : "") +
         (a.latest && a.latest !== a.current ? ` <span class="pill warn">${esc(a.latest)} available</span>` : "") +
-        (a.status && a.status !== "up to date" ? `<div class="sub">${esc(a.status)}</div>` : "");
-      const where = a.main ? "at /" : a.url ? "" : `<span class="sub">not served here</span>`;
-      const open = a.url ? `<a class="link" href="${esc(appLink(a.url))}" target="_blank" rel="noopener">open</a>` : "";
-      return `<tr><td class="name"><strong>${esc(a.name)}</strong>${a.default ? ` <span class="sub">· default</span>` : ""} ${where}</td>
+        (a.status && a.status !== "up to date" ? `<div class="sub" style="margin:0">${esc(a.status)}</div>` : "");
+      const where = a.main ? `<span class="sub">at /</span>` : a.url ? "" : `<span class="sub">not served here</span>`;
+      return `<tr><td><strong>${esc(a.name)}</strong>${a.default ? ` <span class="sub">· default</span>` : ""} ${where}</td>
         <td>${ver}</td><td>${folders}</td>
-        <td class="num">${open}<button class="link plain authed" data-app-update="${esc(a.name)}" ${a.noKey ? "disabled" : off}>check for updates</button><button class="link plain authed" data-app-allow="${esc(a.name)}" ${off}>allow a folder…</button>${a.main ? "" : `<button class="link authed" data-app-remove="${esc(a.name)}" ${off}>remove</button>`}</td></tr>`;
+        <td style="text-align:right;white-space:nowrap">${a.url ? `<a class="btn" href="${esc(appLink(a.url))}" target="_blank" rel="noopener">Open</a> ` : ""}<button class="kebab" data-app-menu="${esc(a.name)}" aria-haspopup="menu" aria-label="Actions for ${esc(a.name)}">⋯</button></td></tr>`;
     }).join("") : `<tr><td colspan="4" class="empty">No apps installed.</td></tr>`;
+    appsList = list;
     // while an update check runs, look again
     clearTimeout(appsPoll);
     if (list.some((a) => /checking|downloading/i.test(a.status || ""))) appsPoll = setTimeout(loadApps, 1500);
   }
+  let appsList = [];
   // appLink: an app's port at the name this page was opened with (on a
   // network the server's own guess may not be it)
   function appLink(u) {
@@ -916,37 +1931,51 @@
   }
   async function appsDo(body, done) {
     const r = await post("/cmd/apps", body);
-    if (r.ok) msg($("appsMsg"), done, true);
-    else { msg($("appsMsg"), await errText(r), false); onFail(r); }
+    if (r.ok) toast(done);
+    else await fail("Could not do it", r);
     loadApps();
   }
-  $("appsRows").addEventListener("click", (e) => {
+  async function allowFolder(name) {
+    const res = await pickFolder({
+      title: `Let ${name} use a folder`, start: cwd, ok: "Allow",
+      extra: `<span class="field-label">It may</span><div class="radios">
+        <label><input type="radio" name="acc" value="read" checked><span>read its files <span class="sub">(read only)</span></span></label>
+        <label><input type="radio" name="acc" value="write"><span>read and change its files</span></label></div>`,
+      extraValue: () => $("pickForm").elements.acc.value === "write",
+    });
+    if (res) appsDo({ name, allow: res.path, write: res.extra }, `${name} may now ${res.extra ? "read and change" : "read"} ${res.path}`);
+  }
+  $("appsRows").addEventListener("click", async (e) => {
     const b = e.target.closest("button");
     if (!b) return;
     const d = b.dataset;
-    if (d.appUpdate) appsDo({ name: d.appUpdate, update: true }, `Checking ${d.appUpdate} for an update…`);
-    else if (d.appDeny) appsDo({ name: d.appDeny, deny: d.folder }, `${d.appDeny} may no longer use ${d.folder}`);
-    else if (d.appAllow) {
-      const f = (prompt(`Let ${d.appAllow} use which folder of the data folder?`, cwd) || "").trim();
-      if (!f) return;
-      const write = confirm(`May ${d.appAllow} also change files in ${f}?\n\nOK: read and write. Cancel: read only.`);
-      appsDo({ name: d.appAllow, allow: f, write }, `${d.appAllow} may now ${write ? "read and change" : "read"} ${f}`);
-    } else if (d.appRemove) {
-      if (confirm(`Remove ${d.appRemove} and all its installed versions? Its files in the data folder stay.`))
-        appsDo({ name: d.appRemove, remove: true }, `${d.appRemove} removed`);
+    if (d.appDeny) appsDo({ name: d.appDeny, deny: d.folder }, `${d.appDeny} may no longer use ${d.folder}`);
+    else if (d.appMenu) {
+      const a = appsList.find((x) => x.name === d.appMenu) || {};
+      openMenu(b, [
+        { head: a.name },
+        { label: "Check for updates", disabled: !authed || a.noKey, fn: () => appsDo({ name: a.name, update: true }, `Checking ${a.name} for an update…`) },
+        { label: "Allow a folder…", disabled: !authed, fn: () => allowFolder(a.name) },
+        ...(a.main ? [] : [{ sep: 1 }, { label: "Remove…", danger: true, disabled: !authed, fn: async () => {
+          if (await ask({ title: `Remove ${a.name}?`, text: "All its installed versions go. Its files in the data folder stay.", ok: "Remove", danger: true }))
+            appsDo({ name: a.name, remove: true }, `${a.name} removed`);
+        } }]),
+      ]);
     }
   });
-  $("appsBox").addEventListener("toggle", () => { if ($("appsBox").open) loadApps(); });
 
   // the app catalog
-  let catalog = [];
+  let catalog = [], catLoaded = false;
   async function loadCatalog(refresh) {
-    const r = await post("/cmd/catalog", refresh ? { refresh: true } : {});
+    if (catLoaded && !refresh) return;
+    let r;
+    try { r = await post("/cmd/catalog", refresh ? { refresh: true } : {}); } catch { return; }
+    if (r.status === 404) { $("catBox").hidden = true; return; }
     if (!r.ok) { $("catList").innerHTML = `<div class="empty">${esc(await errText(r))}</div>`; onFail(r); return; }
     const { result } = await r.json();
-    catalog = result.apps;
-    msg($("catMsg"), (result.errors || []).join("; "), false);
-    $("catNote").textContent = catalog.length ? `${catalog.length} app${catalog.length === 1 ? "" : "s"}` : "";
+    catalog = result.apps; catLoaded = true;
+    $("catErr").textContent = (result.errors || []).join("; ");
+    $("catNote").textContent = catalog.length ? plural(catalog.length, "app") : "web apps you can install and open";
     renderCatalog();
   }
   let catTag = "";
@@ -956,14 +1985,14 @@
     if (catTag && !tags.includes(catTag)) catTag = "";
     $("catTags").innerHTML = tags.map((t) => `<button type="button" class="tag${t === catTag ? " on" : ""}" data-cat-tag="${esc(t)}">${esc(t)}</button>`).join(" ");
     const q = $("catQ").value.trim().toLowerCase();
-    const shown = catalog.filter((a) => (!catTag || (a.tags || []).includes(catTag)) &&
+    const shownApps = catalog.filter((a) => (!catTag || (a.tags || []).includes(catTag)) &&
       (!q || [a.name, a.title, a.description, ...(a.tags || [])].join(" ").toLowerCase().includes(q)));
-    if (!shown.length) { $("catList").innerHTML = `<div class="empty">No app matches.</div>`; return; }
+    if (!shownApps.length) { $("catList").innerHTML = `<div class="empty">No app matches.</div>`; return; }
     const off = authed ? "" : "disabled";
     const web = (u) => /^https?:\/\//i.test(u || ""); // only http(s) links reach the page
-    $("catList").innerHTML = shown.map((a) => {
+    $("catList").innerHTML = shownApps.map((a) => {
       const state = a.installed ? `<span class="pill ok">${esc(a.installed)}${a.running ? " · running" : ""}</span>` : "";
-      const home = web(a.homepage) ? ` <a class="link" href="${esc(a.homepage)}" target="_blank" rel="noopener">about</a>` : "";
+      const home = web(a.homepage) ? ` <a class="link" href="${esc(a.homepage)}" target="_blank" rel="noopener">About</a>` : "";
       const act = a.installed
         ? `<button class="primary authed" data-cat-open="${esc(a.name)}" ${off}>Open</button>`
         : `<button class="primary authed" data-cat-install="${esc(a.name)}" ${off}>Install</button>`;
@@ -983,7 +2012,6 @@
     const t = e.target.closest("[data-cat-tag]");
     if (t) { catTag = catTag === t.dataset.catTag ? "" : t.dataset.catTag; renderCatalog(); }
   });
-  $("catBox").addEventListener("toggle", () => { if ($("catBox").open) loadCatalog(false); });
   $("catRefresh").onclick = () => loadCatalog(true);
   $("catList").addEventListener("click", async (e) => {
     const ins = e.target.closest("[data-cat-install]");
@@ -995,8 +2023,8 @@
       if (r.ok) {
         const { result } = await r.json();
         catalog = result.apps; renderCatalog(); loadApps();
-        msg($("catMsg"), `Installed ${name}. Open starts it in the background.`, true);
-      } else { msg($("catMsg"), `Install failed: ${await errText(r)}`, false); onFail(r); renderCatalog(); }
+        toast(`Installed ${name}. Open starts it in the background.`);
+      } else { await fail("Install failed", r); renderCatalog(); }
     }
     if (op) {
       const name = op.dataset.catOpen;
@@ -1006,69 +2034,276 @@
       if (r.ok) {
         const { result } = await r.json();
         if (win) win.location = result.url; else location.href = result.url;
-        msg($("catMsg"), "", true);
-        loadCatalog(false);
+        loadCatalog(true);
       } else {
         if (win) win.close();
-        msg($("catMsg"), `Could not open ${name}: ${await errText(r)}`, false); onFail(r); renderCatalog();
+        await fail(`Could not open ${name}`, r); renderCatalog();
       }
     }
   });
 
-  const post = (url, body) => fetch(url, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-  });
-
+  // ---- versions of a file ----
+  let histVersions = [];
   async function showHistory(p) {
-    $("hist").hidden = false;
+    const d = $("histDlg");
     $("histPath").textContent = p;
+    showDiffView(false);
     const rows = $("histRows");
     rows.innerHTML = `<tr><td colspan="3" class="empty">Loading…</td></tr>`;
+    if (!d.open) d.showModal();
     const r = await post("/cmd/history", { path: p });
     if (!r.ok) { rows.innerHTML = `<tr><td colspan="3" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
-    const vs = (await r.json()).result.versions;
-    const off = readOnly || !authed ? "disabled" : "";
-    rows.innerHTML = vs.length ? vs.map((v) => `<tr>
-        <td class="name"><a href="${esc(v.url)}" target="_blank" rel="noopener" data-preview="${esc($("histPath").textContent)}" data-label="version of ${when(v.time, true)}">${when(v.time, true)}</a></td>
-        <td class="num">${size(v.size)}</td>
-        <td class="num"><button class="link plain writable" data-restore="${esc(v.version)}" ${off}>restore</button></td></tr>`).join("")
+    const vs = histVersions = (await r.json()).result.versions;
+    const off = canWrite() ? "" : "disabled";
+    rows.innerHTML = vs.length ? vs.map((v, i) => `<tr>
+        <td><a class="link" style="padding:0" href="${esc(v.url)}" target="_blank" rel="noopener" data-preview="${esc(p)}" data-label="version of ${when(v.time, true)}">${when(v.time, true)}</a></td>
+        <td class="num" style="text-align:right">${size(v.size)}</td>
+        <td style="text-align:right;white-space:nowrap"><button class="link" data-compare="${i}">Compare</button><button class="link writable" data-restore="${esc(v.version)}" ${off}>Restore</button></td></tr>`).join("")
       : `<tr><td colspan="3" class="empty">No earlier versions yet: they are kept each time the file is overwritten.</td></tr>`;
   }
-  $("histClose").onclick = () => ($("hist").hidden = true);
+  $("histRows").addEventListener("click", async (e) => {
+    const cmp = e.target.closest("[data-compare]");
+    if (cmp) return compareVersion(+cmp.dataset.compare);
+    const rs = e.target.closest("[data-restore]");
+    if (!rs) return;
+    restoreVersion(rs.dataset.restore);
+  });
+  async function restoreVersion(version) {
+    const p = $("histPath").textContent;
+    const r = await post("/cmd/restore", { path: p, version });
+    if (!r.ok) return fail("Restore failed", r);
+    toast("Restored " + p);
+    load(cwd); showHistory(p);
+  }
+  $("histClose").onclick = () => $("histDlg").close();
 
+  // Compare: what changed between a version and the current file (or the
+  // version before it), line by line.
+  let diffAt = 0;
+  function showDiffView(on) {
+    $("histDiff").hidden = !on;
+    $("histList").hidden = on;
+    $("diffRestore").hidden = !on || !canWrite();
+    $("histDlg").classList.toggle("wide", on);
+    $("histDlg").classList.toggle("medium", !on);
+  }
+  $("diffBack").onclick = () => showDiffView(false);
+  $("diffWith").onchange = () => compareVersion(diffAt, $("diffWith").value);
+  $("diffRestore").onclick = () => restoreVersion(histVersions[diffAt].version);
+  const DIFF_MAX_BYTES = 4 * 1024 * 1024;
+  async function textOf(url) {
+    const r = await fetch(url, { cache: "no-store" });
+    if (r.status === 404) return { missing: true };
+    if (!r.ok) throw new Error(await errText(r));
+    const b = new Uint8Array(await r.arrayBuffer());
+    if (b.length > DIFF_MAX_BYTES) return { tooBig: true };
+    if (b.subarray(0, 8000).includes(0)) return { binary: true };
+    return { text: new TextDecoder().decode(b) };
+  }
+  async function compareVersion(i, against = "current") {
+    diffAt = i;
+    const p = $("histPath").textContent, v = histVersions[i], older = histVersions[i + 1];
+    showDiffView(true);
+    $("diffWith").innerHTML = `<option value="current">the current file</option>` +
+      (older ? `<option value="before">the version before it (${esc(when(older.time, true))})</option>` : "");
+    $("diffWith").value = against === "before" && older ? "before" : "current";
+    $("diffStat").innerHTML = "";
+    const out = $("diffOut");
+    out.innerHTML = `<div class="note">Comparing…</div>`;
+    // from → to: older on the left, as the change happened
+    const [fromLabel, fromURL, toLabel, toURL] = $("diffWith").value === "before"
+      ? [when(older.time, true), older.url, when(v.time, true), v.url]
+      : [when(v.time, true), v.url, "now", "/f" + enc(p)];
+    let a, b;
+    try { [a, b] = await Promise.all([textOf(fromURL), textOf(toURL)]); }
+    catch (err) { out.innerHTML = `<div class="note">${esc(err.message)}</div>`; return; }
+    const note = (t) => (out.innerHTML = `<div class="note">${t}</div>`);
+    if (b.missing) return note("The file is not there any more.");
+    if (a.tooBig || b.tooBig) return note("Too large to compare here (over 4 MB).");
+    if (a.binary || b.binary) return note("Not a text file: open the versions to see them.");
+    if (a.text === b.text) return note(`No changes between ${esc(fromLabel)} and ${esc(toLabel)}.`);
+    const lines = (t) => { const l = t.split(/\r?\n/); if (l.length > 1 && l[l.length - 1] === "") l.pop(); return l; };
+    const ops = lineDiff(lines(a.text), lines(b.text));
+    if (!ops) return note("Too many changes to show line by line.");
+    const adds = ops.filter((o) => o[0] === "+").length, dels = ops.filter((o) => o[0] === "-").length;
+    $("diffStat").innerHTML = `${esc(fromLabel)} → ${esc(toLabel)} &nbsp; <span class="add">+${adds}</span> <span class="del">−${dels}</span>`;
+    out.innerHTML = `<table>${diffRows(ops)}</table>`;
+    out.querySelector("tr.add, tr.del")?.scrollIntoView({ block: "center" });
+  }
+
+  // lineDiff returns the edit script from lines a to lines b, as [op, line]
+  // with op " " (both), "-" (only a) or "+" (only b); Myers' algorithm. null
+  // when they differ in more than maxD lines.
+  function lineDiff(a, b, maxD = 2000) {
+    let s = 0;
+    while (s < a.length && s < b.length && a[s] === b[s]) s++;
+    let ea = a.length, eb = b.length;
+    while (ea > s && eb > s && a[ea - 1] === b[eb - 1]) { ea--; eb--; }
+    const A = a.slice(s, ea), B = b.slice(s, eb), N = A.length, M = B.length;
+    const head = a.slice(0, s).map((l) => [" ", l]), tail = a.slice(ea).map((l) => [" ", l]);
+    if (!N || !M) return [...head, ...A.map((l) => ["-", l]), ...B.map((l) => ["+", l]), ...tail];
+    const max = N + M, off = max + 1, V = new Int32Array(2 * max + 3), trace = [];
+    for (let d = 0; d <= Math.min(max, maxD); d++) {
+      trace.push(V.slice(off - d - 1, off + d + 2)); // V before step d, k in [-d-1, d+1]
+      for (let k = -d; k <= d; k += 2) {
+        let x = k === -d || (k !== d && V[off + k - 1] < V[off + k + 1]) ? V[off + k + 1] : V[off + k - 1] + 1;
+        let y = x - k;
+        while (x < N && y < M && A[x] === B[y]) { x++; y++; }
+        V[off + k] = x;
+        if (x < N || y < M) continue;
+        const mid = []; // walk back from (N, M)
+        for (let dd = d; dd > 0; dd--) {
+          const P = trace[dd], at = (kk) => P[kk + dd + 1], kk = x - y;
+          const pk = kk === -dd || (kk !== dd && at(kk - 1) < at(kk + 1)) ? kk + 1 : kk - 1;
+          const px = at(pk), py = px - pk;
+          while (x > px && y > py) { mid.push([" ", A[--x]]); y--; }
+          if (x === px) mid.push(["+", B[--y]]); else mid.push(["-", A[--x]]);
+        }
+        while (x > 0 && y > 0) { mid.push([" ", A[--x]]); y--; }
+        return [...head, ...mid.reverse(), ...tail];
+      }
+    }
+    return null;
+  }
+
+  // diffRows: the changes with 3 lines around each, line numbers of both
+  function diffRows(ops, ctx = 3) {
+    const keep = new Uint8Array(ops.length);
+    ops.forEach((o, i) => { if (o[0] !== " ") for (let j = Math.max(0, i - ctx); j <= Math.min(ops.length - 1, i + ctx); j++) keep[j] = 1; });
+    let html = "", an = 0, bn = 0, skipped = 0;
+    const gap = () => { if (skipped) html += `<tr class="gap"><td colspan="4">⋯ ${skipped.toLocaleString()} unchanged line${skipped > 1 ? "s" : ""}</td></tr>`; skipped = 0; };
+    ops.forEach(([op, line], i) => {
+      if (op !== "+") an++;
+      if (op !== "-") bn++;
+      if (!keep[i]) { skipped++; return; }
+      gap();
+      const cls = op === "+" ? "add" : op === "-" ? "del" : "";
+      html += `<tr class="${cls}"><td class="ln">${op === "+" ? "" : an}</td><td class="ln">${op === "-" ? "" : bn}</td><td class="sg">${op === " " ? "" : op === "-" ? "−" : "+"}</td><td>${esc(line) || " "}</td></tr>`;
+    });
+    gap();
+    return html;
+  }
+
+  // ---- recent changes (the server's activity log) ----
+  let recentLimit = 100;
+  async function loadRecent(more) {
+    if (more) recentLimit += 200; else recentLimit = 100;
+    const box = $("recentList");
+    const r = await post("/cmd/activity", { limit: recentLimit });
+    if (!r.ok) { box.innerHTML = `<div class="empty">${esc(await errText(r))}</div>`; onFail(r); return; }
+    const { items, more: hasMore } = (await r.json()).result;
+    if (!items.length) { box.innerHTML = `<div class="empty">Nothing changed yet. Uploads, saves, moves and deletes made through myweb show here.</div>`; return; }
+    const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric" });
+    const timeFmt = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
+    const dayOf = (d) => { const t = new Date(); t.setHours(0, 0, 0, 0); const n = Math.round((t - new Date(d).setHours(0, 0, 0, 0)) / 864e5); return n === 0 ? "Today" : n === 1 ? "Yesterday" : dayFmt.format(new Date(d)); };
+    let html = "", day = "";
+    for (const it of items) {
+      const d = dayOf(it.t);
+      if (d !== day) { html += `<div class="rc-day">${esc(d)}</div>`; day = d; }
+      html += `<div class="rc"><div class="what">${recentText(it)}</div><span class="when" title="${esc(when(it.t, true))}">${esc(timeFmt.format(new Date(it.first !== it.t && it.count > 1 ? it.first : it.t)))}${it.count > 1 && it.first !== it.t ? "–" + esc(timeFmt.format(new Date(it.t))) : ""}</span></div>`;
+    }
+    if (hasMore) html += `<div style="text-align:center;margin-top:10px"><button type="button" id="recentMore">Show older</button></div>`;
+    box.innerHTML = html;
+  }
+  // recentText says what happened, with links to where
+  function recentText(it) {
+    const at = (p) => p ? `<a class="link p" href="#" data-reveal="${esc(p)}" style="padding:0">${esc(p)}</a>` : "a place you can't see";
+    const folderGroup = it.names && (it.names.length > 1 || it.path !== it.names[0] && !it.path.endsWith("/" + it.names[0]));
+    const names = it.names?.length > 1 ? ` <span class="sub">${it.names.map(esc).join(", ")}${it.n > it.names.length ? ", …" : ""}</span>` : "";
+    const n = it.n || it.count;
+    const by = (it.who ? ` <span class="sub">by ${esc(it.who)}</span>` : "") + (it.via ? ` <span class="sub">· ${it.via === "dav" ? "network drive" : it.via === "share" ? "share link" : esc(it.via)}</span>` : "");
+    const verb = (v) => `<span class="op">${v}</span> `;
+    let t;
+    switch (it.op) {
+      case "upload": t = folderGroup ? `${verb("Uploaded")}${plural(n, "file")} to ${at(it.path)}${names}` : `${verb("Uploaded")}${at(it.path)}${it.size ? ` <span class="sub">${size(it.size)}</span>` : ""}`; break;
+      case "save": t = folderGroup ? `${verb("Saved")}${plural(n, "file")} in ${at(it.path)}${names}` : `${verb("Saved")}${at(it.path)}${it.count > 1 ? ` <span class="sub">${it.count} times</span>` : ""}`; break;
+      case "delete": t = folderGroup ? `${verb("Deleted")}${plural(n, "item")} in ${esc(it.path)}${names}` : `${verb("Deleted")}<span class="mono">${esc(it.path)}</span>${it.n > 1 ? ` <span class="sub">${plural(it.n, "file")}</span>` : ""}`; break;
+      case "move": t = `${verb("Moved")}<span class="mono">${esc(it.path || "…")}</span> to ${at(it.to)}`; break;
+      case "copy": t = `${verb("Copied")}${at(it.path)} to ${at(it.to)}${it.n > 1 ? ` <span class="sub">${plural(it.n, "file")}</span>` : ""}`; break;
+      case "mkdir": t = `${verb("Made folder")}${at(it.path)}`; break;
+      case "restore": t = `${verb("Restored")}an earlier version of ${at(it.path)}`; break;
+      case "untrash": t = `${verb("Put back")}${at(it.path)}`; break;
+      case "unzip": t = `${verb("Extracted")}${at(it.path)} into ${at(it.to)} <span class="sub">${plural(it.n || 0, "file")}</span>`; break;
+      default: t = `${verb(esc(it.op))}${at(it.path)}`;
+    }
+    if (it.op === "delete" && trashDays > 0) t += ` <button type="button" class="link" data-goto-trash style="padding:0 4px">Trash</button>`;
+    return t + by;
+  }
+  $("recentList").addEventListener("click", (e) => {
+    const a = e.target.closest("[data-reveal]");
+    if (a) { e.preventDefault(); reveal(a.dataset.reveal); return; }
+    if (e.target.closest("[data-goto-trash]")) location.hash = "trash";
+    else if (e.target.id === "recentMore") loadRecent(true);
+  });
+  $("recentRefresh").onclick = () => loadRecent();
+
+  // ---- trash ----
   async function loadTrash() {
-    if (!$("trashBox").open) return;
     const rows = $("trashRows");
     const r = await post("/cmd/trash", {});
     if (!r.ok) { rows.innerHTML = `<tr><td colspan="4" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
     const items = (await r.json()).result.items;
-    const off = readOnly || !authed ? "disabled" : "";
+    const off = canWrite() ? "" : "disabled";
+    $("emptyTrash").hidden = !items.length;
     rows.innerHTML = items.length ? items.map((it) => `<tr>
-        <td class="name"><a href="${esc(it.url)}" target="_blank" rel="noopener" data-preview="${esc(it.path)}" data-label="in the trash">${esc(it.path)}</a></td>
-        <td class="num">${when(it.time, true)}</td><td class="num">${size(it.size)}</td>
-        <td class="num"><button class="link plain writable" data-untrash="${esc(it.id)}" ${off}>put back</button></td></tr>`).join("")
+        <td><a class="link mono" style="padding:0" href="${esc(it.url)}" target="_blank" rel="noopener" data-preview="${esc(it.path)}" data-label="in the trash">${esc(it.path)}</a>${it.by ? ` <span class="sub">by ${esc(it.by)}</span>` : ""}</td>
+        <td class="num" style="text-align:right;white-space:nowrap">${when(it.time, true)}</td><td class="num" style="text-align:right">${size(it.size)}</td>
+        <td style="text-align:right"><button class="link writable" data-untrash="${esc(it.id)}" ${off}>Put back</button></td></tr>`).join("")
       : `<tr><td colspan="4" class="empty">The trash is empty.</td></tr>`;
   }
-  $("trashBox").addEventListener("toggle", loadTrash);
+  $("trashRows").addEventListener("click", async (e) => {
+    const ut = e.target.closest("[data-untrash]");
+    if (!ut) return;
+    let r = await post("/cmd/untrash", { id: ut.dataset.untrash });
+    if (r.status === 409) {
+      const why = await errText(r);
+      if (!await ask({ title: "Replace the file?", text: why + ". The current file is kept as a version.", ok: "Replace" })) return;
+      r = await post("/cmd/untrash", { id: ut.dataset.untrash, overwrite: true });
+    }
+    if (!r.ok) await fail("Put back failed", r);
+    else { const { result } = await r.json(); toast("Put back " + result.path, "ok", { action: { label: "Show", fn: () => goDir(result.path.slice(0, result.path.lastIndexOf("/")) || "/") } }); }
+    loadTrash(); load(cwd);
+  });
+  $("emptyTrash").onclick = async () => {
+    if (!await ask({ title: "Empty the trash?", text: "Everything in it is deleted for good.", ok: "Empty trash", danger: true })) return;
+    const r = await post("/cmd/emptyTrash", {});
+    if (!r.ok) await fail("Empty trash failed", r); else toast("The trash is empty.");
+    loadTrash();
+  };
 
   // ---- share links ----
   async function loadShares() {
-    if (!$("shareBox").open) return;
     const rows = $("shareRows");
     const r = await post("/cmd/shares", {});
     if (!r.ok) { rows.innerHTML = `<tr><td colspan="4" class="empty">${esc(await errText(r))}</td></tr>`; onFail(r); return; }
     const list = (await r.json()).result;
-    $("shareNote").textContent = list.length ? `${list.length} link${list.length === 1 ? "" : "s"}` : "open a folder or file without the token";
+    $("shareNote").textContent = list.length ? plural(list.length, "link") : "open a folder or file without the token";
     const used = (sh) => sh.upload ? `${sh.files || 0} received, ${size(sh.bytes || 0)} of ${size(sh.maxBytes)}`
-      : sh.maxDownloads ? `${sh.downloads || 0} of ${sh.maxDownloads} downloads` : `${sh.downloads || 0} download${sh.downloads === 1 ? "" : "s"}`;
+      : sh.maxDownloads ? `${sh.downloads || 0} of ${sh.maxDownloads} downloads` : plural(sh.downloads || 0, "download");
     rows.innerHTML = list.length ? list.map((sh) => `<tr>
-        <td class="name mono">${esc(sh.path)}</td><td>${sh.upload ? "send files" : "read"}${sh.password ? " · password" : ""} <span class="sub">· ${used(sh)}</span></td>
-        <td class="num">${when(sh.expires)}</td>
-        <td class="num">${sh.url ? `<button class="link plain" data-copy-link="${esc(sh.url)}">copy</button>` : ""}<button class="link authed" data-revoke="${esc(sh.id)}">revoke</button></td></tr>`).join("")
-      : `<tr><td colspan="4" class="empty">No share links. Use “share” on a file or folder.</td></tr>`;
+        <td class="mono">${esc(sh.path)}</td><td>${sh.upload ? "send files" : "read"}${sh.password ? " · password" : ""} <span class="sub">· ${used(sh)}</span></td>
+        <td class="num" style="text-align:right;white-space:nowrap">${when(sh.expires)}</td>
+        <td style="text-align:right;white-space:nowrap">${sh.url ? `<button class="link" data-copy-link="${esc(sh.url)}">Copy</button>` : ""}<button class="link danger authed" data-revoke="${esc(sh.id)}">Revoke</button></td></tr>`).join("")
+      : `<tr><td colspan="4" class="empty">No share links. Use “Share…” in a file's ⋯ menu, or New link.</td></tr>`;
   }
-  $("shareBox").addEventListener("toggle", loadShares);
-  $("shareMake").onclick = async () => {
+  function shareDialog(p, isDir) {
+    $("sharePath").value = p || "";
+    $("sharePath").readOnly = !!p;
+    $("shareKind").value = "read";
+    $("shareKind").querySelector('[value="upload"]').disabled = p !== undefined && !isDir;
+    $("shareMaxDl").hidden = false;
+    $("sharePass").value = "";
+    $("shareNew").hidden = true;
+    $("shareMsg").textContent = "";
+    $("shareMake").hidden = false;
+    $("shareDlg").showModal();
+    (p ? $("shareMake") : $("sharePath")).focus();
+  }
+  $("shareNewBtn").onclick = () => shareDialog(undefined, true);
+  $("shareClose").onclick = () => $("shareDlg").close();
+  $("shareKind").onchange = () => ($("shareMaxDl").hidden = $("shareKind").value === "upload");
+  $("shareForm").onsubmit = async (e) => {
+    e.preventDefault();
     const path = $("sharePath").value.trim();
     if (!path) { msg($("shareMsg"), "Which folder or file? e.g. /photos", false); return; }
     const upload = $("shareKind").value === "upload";
@@ -1078,29 +2313,27 @@
     const { result: x } = await r.json();
     $("shareURL").value = x.url;
     $("shareNew").hidden = false;
-    $("shareURL").select();
+    $("shareMake").hidden = true;
     $("sharePass").value = "";
-    msg($("shareMsg"), (x.password ? "Send the password another way than the link. " : "") + (x.local ? "This server listens on this machine only; other machines reach the link when it runs with -global or -tunnel." : ""), true);
-    loadShares();
+    msg($("shareMsg"), (x.password ? "Send the password another way than the link. " : "") + (x.local ? "This server listens on this machine only; other machines reach the link when it runs with -global or -tunnel." : "Anyone with the link can open it."), true);
+    copyLink(x.url, true);
+    if (tab === "shares") loadShares();
   };
-  async function copyLink(u) {
-    $("shareURL").value = u;
-    $("shareNew").hidden = false;
-    try { await navigator.clipboard.writeText(u); msg($("shareMsg"), "Copied.", true); }
-    catch { $("shareURL").select(); msg($("shareMsg"), "Press Ctrl+C (⌘C) to copy.", true); }
+  async function copyLink(u, quiet) {
+    try { await navigator.clipboard.writeText(u); toast(quiet ? "Link made and copied." : "Link copied."); }
+    catch { if ($("shareDlg").open) $("shareURL").select(); else toast("Could not copy: " + u, "err"); }
   }
   $("shareCopy").onclick = () => copyLink($("shareURL").value);
-  $("shareKind").onchange = () => ($("shareMaxDl").hidden = $("shareKind").value === "upload");
-  $("shareRows").addEventListener("click", (e) => {
+  $("shareRows").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-copy-link]");
-    if (b) copyLink(b.dataset.copyLink);
+    if (b) return copyLink(b.dataset.copyLink);
+    const rv = e.target.closest("[data-revoke]");
+    if (rv) {
+      const r = await post("/cmd/shareRevoke", { id: rv.dataset.revoke });
+      if (!r.ok) await fail("Revoke failed", r); else toast("Link revoked: it no longer opens.");
+      loadShares();
+    }
   });
-  $("emptyTrash").onclick = async () => {
-    if (!confirm("Permanently delete everything in the trash?")) return;
-    const r = await post("/cmd/emptyTrash", {});
-    if (!r.ok) { msg($("wmsg"), "Empty trash failed: " + await errText(r), false); onFail(r); }
-    loadTrash();
-  };
 
   // ---- search: names (find) and contents (grep) under the current folder ----
   function highlight(text, q) {
@@ -1109,12 +2342,10 @@
     const re = new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
     return t.replace(re, (m) => `<mark>${m}</mark>`);
   }
-  $("search").onsubmit = async (e) => {
-    e.preventDefault();
-    const q = $("q").value.trim();
+  async function search(q) {
     if (!q) return;
     $("results").hidden = false;
-    $("resTitle").textContent = `Searching for "${q}" in ${cwd}…`;
+    $("resTitle").textContent = `Searching for “${q}” in ${cwd}…`;
     $("resBody").innerHTML = "";
     const glob = "*" + q.replace(/[*?[\]\\]/g, "") + "*";
     const [names, hits] = await Promise.all([
@@ -1133,25 +2364,19 @@
         hits.matches.map((m) => `<li><a href="/f${esc(enc(m.path))}" data-preview="${esc(m.path)}">${esc(m.path)}</a>` +
           ` <span class="ln">:${m.line}</span>${highlight(m.text, q)}</li>`).join("") + "</ul>");
     }
-    $("resTitle").textContent = `"${q}" in ${cwd}`;
+    $("resTitle").textContent = `“${q}” in ${cwd}`;
     $("resBody").innerHTML = out.join("") || note("Nothing found.");
-  };
+  }
   $("resClose").onclick = () => ($("results").hidden = true);
-
-  window.addEventListener("hashchange", () => load(decodeURIComponent(location.hash.slice(1)) || "/"));
 
   $("wbtn").onclick = async () => {
     const path = $("wpath").value.trim();
-    if (!path) return msg($("wmsg"), "Enter a path.", false);
+    if (!path) return toast("Enter a path.", "err");
     const r = await fetch("/w" + enc(join(cwd, path)), { method: "POST", body: $("wbody").value });
-    if (r.ok) {
-      const j = await r.json();
-      msg($("wmsg"), `Saved ${j.file.url} (${size(j.file.size)})`, true);
-      load(cwd);
-    } else {
-      msg($("wmsg"), "Save failed: " + await errText(r), false);
-      onFail(r);
-    }
+    if (!r.ok) return fail("Save failed", r);
+    const j = await r.json();
+    toast(`Saved ${j.file.url} (${size(j.file.size)})`);
+    load(cwd);
   };
 
   // ---- uploads: many files and folders, into the current folder, with progress ----
@@ -1178,15 +2403,16 @@
     return out;
   }
 
-  function sendBatch(list, mode) {
+  // The upload panel lists each file (the first SHOWN of them) with its own bar;
+  // a batch's progress is spread over its files by their sizes.
+  const SHOWN = 150;
+  function sendBatch(list, mode, onBytes) {
     return new Promise((resolve) => {
       const fd = new FormData();
       for (const { file, path } of list) fd.append("file", file, path);
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/up" + enc(cwd) + "?onconflict=" + mode);
-      xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) $("uprog").firstElementChild.style.width = (100 * e.loaded / e.total).toFixed(1) + "%";
-      };
+      xhr.upload.onprogress = (e) => { if (e.lengthComputable) onBytes(e.loaded / e.total); };
       xhr.onload = () => {
         let j = {};
         try { j = JSON.parse(xhr.responseText); } catch {}
@@ -1196,76 +2422,118 @@
       xhr.send(fd);
     });
   }
-
+  let uploading = false;
   async function upload(list) {
     if (!list.length) return;
-    if (readOnly || !authed) return msg($("umsg"), readOnly ? "Server is read-only." : "Sign in to upload.", false);
-    const mode = $("uover").checked ? "overwrite" : "rename";
-    const total = list.reduce((n, x) => n + x.file.size, 0);
-    $("uprog").hidden = false;
-    let done = [], error = null;
+    if (!canWrite()) return toast(readOnly ? "The server is read-only." : "Sign in to upload.", "err");
+    if (uploading) return toast("Wait for the uploads in progress to finish.", "err");
+    uploading = true;
+    const dest = cwd, mode = replaceOnUpload ? "overwrite" : "rename";
+    const total = list.reduce((n, x) => n + x.file.size, 0) || 1;
+    $("upl").hidden = false;
+    $("uplClose").hidden = true;
+    $("uplTitle").textContent = `Uploading ${plural(list.length, "file")} (${size(total)}) to ${dest}`;
+    $("uplBar").style.width = "0";
+    $("uplList").innerHTML = list.slice(0, SHOWN).map((x, i) =>
+      `<li data-u="${i}"><span class="n" title="${esc(x.path)}">${esc(x.path)}</span><span class="s">${size(x.file.size)}</span><div class="progress"><div></div></div></li>`).join("") +
+      (list.length > SHOWN ? `<li><span class="s">…and ${list.length - SHOWN} more</span></li>` : "");
+    const li = (i) => i < SHOWN ? $("uplList").children[i] : null;
+    const mark = (i, text, cls) => { const el = li(i); if (el) { el.querySelector(".s").textContent = text; el.querySelector(".s").className = "s " + cls; el.querySelector(".progress").remove(); } };
+    let sent = 0, done = [], error = null;
     for (let i = 0; i < list.length && !error; i += 200) { // the server takes up to 1000 per request
       const batch = list.slice(i, i + 200);
-      msg($("umsg"), `Uploading ${list.length} file${list.length > 1 ? "s" : ""} (${size(total)}) into ${cwd}…`, true);
-      $("uprog").firstElementChild.style.width = "0";
-      const { status, j } = await sendBatch(batch, mode);
-      done = done.concat(j.files || []);
-      if (status !== 200) {
+      const bytes = batch.reduce((n, x) => n + x.file.size, 0);
+      const { status, j } = await sendBatch(batch, mode, (frac) => {
+        $("uplBar").style.width = (100 * (sent + frac * bytes) / total).toFixed(1) + "%";
+        let at = frac * bytes; // fill this batch's files in order
+        batch.forEach((x, k) => {
+          const el = li(i + k);
+          if (!el || !el.querySelector(".progress")) return;
+          const f = x.file.size ? Math.max(0, Math.min(1, at / x.file.size)) : (at >= 0 ? 1 : 0);
+          el.querySelector(".progress > div").style.width = (100 * f).toFixed(0) + "%";
+          at -= x.file.size;
+        });
+      });
+      sent += bytes;
+      const got = j.files || [];
+      done = done.concat(got);
+      if (status === 200) {
+        const byName = new Map(got.map((g) => [g.name, g]));
+        batch.forEach((x, k) => {
+          const g = byName.get(x.path) || got[k];
+          mark(i + k, g && g.renamed ? "renamed: " + g.path.split("/").pop() : "done", "ok");
+        });
+      } else {
         error = j.error || "HTTP " + status;
         onFail({ status });
+        batch.forEach((x, k) => mark(i + k, "failed", "err"));
+        for (let k = i + 200; k < list.length; k++) mark(k, "not sent", "err");
       }
     }
-    $("uprog").hidden = true;
+    uploading = false;
+    $("uplBar").style.width = "100%";
+    $("uplClose").hidden = false;
     const renamed = done.filter((f) => f.renamed).length;
-    const summary = `Uploaded ${done.length} of ${list.length}` + (renamed ? ` (${renamed} renamed, names were taken)` : "");
-    if (error) msg($("umsg"), summary + ". Failed: " + error, false);
-    else if (done.length === 1) {
-      $("umsg").className = "msg ok";
-      $("umsg").innerHTML = `Uploaded <a href="${esc(done[0].url)}" data-preview="${esc(done[0].path)}">${esc(done[0].path)}</a>` + (renamed ? " (renamed: the name was taken)" : "");
-    } else msg($("umsg"), summary, true);
+    $("uplTitle").textContent = error ? `Uploaded ${done.length} of ${list.length}: ${error}` : `Uploaded ${plural(done.length, "file")} to ${dest}` + (renamed ? ` (${renamed} renamed)` : "");
+    if (error) toast(`Upload failed: ${error}`, "err");
+    else setTimeout(() => { if (!uploading && !$("upl").matches(":hover")) $("upl").hidden = true; }, 6000);
     load(cwd);
   }
+  $("uplClose").onclick = () => ($("upl").hidden = true);
 
-  const drop = $("drop");
+  // ---- installed as an app: files shared to it (sw.js keeps them) ----
+  if ("serviceWorker" in navigator && location.pathname.startsWith("/_myweb/") && isSecureContext)
+    navigator.serviceWorker.register("/_myweb/sw.js", { scope: "/_myweb/" }).catch(() => {});
+  async function receiveShare() {
+    if (!("caches" in window)) return;
+    const cache = await caches.open("myweb-share-inbox");
+    const files = [];
+    for (const req of await cache.keys()) {
+      const r = await cache.match(req), b = await r.blob();
+      files.push(new File([b], decodeURIComponent(r.headers.get("X-Name") || "shared"), { type: b.type }));
+    }
+    if (!files.length) return toast("Nothing was shared, or it was saved already.");
+    if (!canWrite()) return toast(readOnly ? "The server is read-only: the shared files were not saved." : "Sign in to save what was shared.", "err");
+    const res = await pickFolder({
+      title: files.length === 1 ? `Save ${files[0].name} to…` : `Save ${files.length} shared files to…`,
+      start: store.get("shareDir", "/"), ok: "Save here",
+    });
+    if (!res) return; // they stay until the next share
+    const dest = res.path.replace(/\/+$/, "") || "/";
+    store.set("shareDir", dest);
+    await caches.delete("myweb-share-inbox");
+    history.replaceState(null, "", "#" + enc(dest));
+    await load(dest);
+    upload(files.map((f) => ({ file: f, path: f.name })));
+  }
   const picked = (input) => {
     upload([...input.files].map((f) => ({ file: f, path: f.webkitRelativePath || f.name })));
     input.value = "";
   };
   $("ufile").onchange = (e) => picked(e.target);
   $("udir").onchange = (e) => picked(e.target);
-  // the upload box and the whole file list accept drops
-  const filesSection = $("files").closest("section");
-  for (const zone of [drop, filesSection]) {
-    const cls = zone === drop ? "over" : "dropping";
-    zone.addEventListener("dragover", (e) => {
-      if (![...(e.dataTransfer.types || [])].includes("Files")) return;
-      e.preventDefault();
-      zone.classList.add(cls);
-    });
-    zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) zone.classList.remove(cls); });
-    zone.addEventListener("drop", async (e) => {
-      e.preventDefault();
-      zone.classList.remove(cls);
-      upload(await filesFromDrop(e.dataTransfer));
-    });
-  }
+  // files dragged in from outside: anywhere on the page, into the folder shown
+  let dragDepth = 0;
+  const outsideFiles = (e) => !dragging && [...(e.dataTransfer?.types || [])].includes("Files");
+  window.addEventListener("dragenter", (e) => {
+    if (!outsideFiles(e)) return;
+    dragDepth++;
+    $("dropText").textContent = canWrite() ? `Drop to upload into ${cwd}` : readOnly ? "The server is read-only" : "Sign in to upload";
+    $("dropOverlay").hidden = false;
+  });
+  window.addEventListener("dragleave", (e) => { if (outsideFiles(e) && --dragDepth <= 0) { dragDepth = 0; $("dropOverlay").hidden = true; } });
+  window.addEventListener("dragover", (e) => { if (outsideFiles(e)) { e.preventDefault(); e.dataTransfer.dropEffect = canWrite() ? "copy" : "none"; } });
+  window.addEventListener("drop", async (e) => {
+    if (!outsideFiles(e)) return;
+    e.preventDefault();
+    dragDepth = 0; $("dropOverlay").hidden = true;
+    if (document.querySelector("dialog[open]")) return;
+    if (tab !== "files") location.hash = enc(cwd);
+    upload(await filesFromDrop(e.dataTransfer));
+  });
 
   // ---- previews ----
   const PREVIEW_BYTES = 512 * 1024;
-  const THUMB_BYTES = 8 * 1024 * 1024, MAX_THUMBS = 300; // thumbnails in the list: small enough images, not too many
-  const ext = (p) => (p.match(/\.([^./]+)$/) || [, ""])[1].toLowerCase();
-  const KIND = {};
-  for (const [kind, exts] of Object.entries({
-    image: "png jpg jpeg gif webp svg bmp ico avif",
-    video: "mp4 webm m4v mov ogv",
-    audio: "mp3 wav ogg oga flac m4a aac opus",
-    pdf: "pdf",
-    markdown: "md markdown mdown",
-    csv: "csv",
-    tsv: "tsv tab bed gff gtf",
-    json: "json geojson webmanifest",
-  })) for (const e of exts.split(" ")) KIND[e] = kind;
-
   async function fetchText(url) {
     const r = await fetch(url, { headers: { Range: "bytes=0-" + (PREVIEW_BYTES - 1) } });
     if (!r.ok) throw new Error(await errText(r));
@@ -1370,10 +2638,20 @@
     return `<div class="md">${out.join("\n")}</div>`;
   }
 
-  async function preview(url, filePath, label) {
+  // pvList: the folder's files when the preview was opened from the list,
+  // for ← and →
+  let pvList = null, pvAt = -1;
+  async function preview(url, filePath, label, fromList) {
     const dlg = $("pv"), body = $("pvBody");
+    if (fromList) {
+      pvList = shown.filter((f) => !f.isdir).map((f) => join(cwd, f.name));
+      pvAt = pvList.indexOf(filePath);
+      const i = shown.findIndex((f) => join(cwd, f.name) === filePath);
+      if (i >= 0) setCur(i, false);
+    } else if (!pvList || !pvList.includes(filePath)) { pvList = null; pvAt = -1; }
+    $("pvPrev").hidden = $("pvNext").hidden = !pvList || pvList.length < 2;
+    $("pvMeta").textContent = label || (pvList && pvList.length > 1 ? `${pvAt + 1} of ${pvList.length}` : "");
     $("pvTitle").textContent = filePath;
-    $("pvMeta").textContent = label || "";
     $("pvRaw").href = url;
     $("pvDl").href = url;
     $("pvDl").download = filePath.split("/").pop();
@@ -1390,6 +2668,7 @@
       else if (kind === "pdf") body.innerHTML = `<iframe src="${esc(url)}" title="PDF"></iframe>`;
       else {
         const t = await fetchText(url);
+        if ($("pvTitle").textContent !== filePath) return; // moved on meanwhile
         if (!t.binary && t.utf8 && !t.truncated) { // whole, and text: it may be edited here
           $("pvEdit").hidden = false;
           $("pvEdit").onclick = () => editText(filePath, t.text, t.etag, url, label);
@@ -1397,7 +2676,7 @@
         }
         const cut = t.truncated ? note(`Showing the first ${size(PREVIEW_BYTES)} of ${size(t.fullSize)}.`) : "";
         if (t.binary) {
-          body.innerHTML = note(`Binary file, ${size(t.fullSize)}: no preview. Use download or open raw.`);
+          body.innerHTML = note(`Binary file, ${size(t.fullSize)}: no preview. Use Download or Open raw.`);
         } else if (kind === "markdown") {
           body.innerHTML = cut + renderMarkdown(t.text, dir);
         } else if (kind === "csv" || kind === "tsv") {
@@ -1419,6 +2698,20 @@
       body.innerHTML = note("Cannot preview: " + e.message);
     }
   }
+  async function pvStep(d) {
+    if (!pvList || pvList.length < 2 || !await unsavedOK()) return;
+    pvAt = (pvAt + d + pvList.length) % pvList.length;
+    const p = pvList[pvAt];
+    preview("/f" + enc(p), p, "", false);
+  }
+  $("pvPrev").onclick = () => pvStep(-1);
+  $("pvNext").onclick = () => pvStep(1);
+  $("pv").addEventListener("keydown", (e) => {
+    if (e.target.closest("textarea, input, video, audio, select") || editing) return;
+    if (e.key === "ArrowRight") { e.preventDefault(); pvStep(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); pvStep(-1); }
+  });
+
   // ---- editing a text file in the preview ----
   let editing = null; // {path, saved}: the text as last saved, to tell unsaved changes
   function editText(filePath, text, etag, url, label) {
@@ -1427,7 +2720,7 @@
     const body = $("pvBody");
     body.innerHTML = `<textarea class="editor" spellcheck="false" aria-label="Contents of ${esc(filePath)}"></textarea>
       <div class="edit-bar"><button class="primary writable" id="edSave">Save</button><button type="button" id="edCancel">Cancel</button>
-      <span class="sub">Ctrl+S (⌘S) saves; the old content is kept as a version</span><span class="msg" id="edMsg" style="margin:0"></span></div>`;
+      <span class="sub" style="margin:0">Ctrl+S (⌘S) saves; the old content is kept as a version</span><span class="msg" id="edMsg"></span></div>`;
     const ta = body.querySelector("textarea");
     ta.value = text;
     ta.focus();
@@ -1438,7 +2731,7 @@
       const r = await fetch("/w" + enc(filePath), { method: "POST", headers, body: ta.value });
       if (r.status === 412) {
         msg($("edMsg"), "It was changed since you opened it.", false);
-        $("edMsg").insertAdjacentHTML("beforeend", ` <button class="link plain" type="button" id="edForce">save mine anyway</button>`);
+        $("edMsg").insertAdjacentHTML("beforeend", ` <button class="link" type="button" id="edForce">Save mine anyway</button>`);
         $("edForce").onclick = () => save(true); // the other change is kept as a version
         return;
       }
@@ -1448,22 +2741,24 @@
       msg($("edMsg"), "Saved.", true);
     };
     $("edSave").onclick = () => save(false);
-    $("edCancel").onclick = () => { if (unsavedOK()) preview(url, filePath, label); };
+    $("edCancel").onclick = async () => { if (await unsavedOK()) preview(url, filePath, label); };
     ta.addEventListener("keydown", (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") { e.preventDefault(); save(false); }
     });
   }
   // unsavedOK asks before throwing away changes not saved.
-  function unsavedOK() {
+  async function unsavedOK() {
     const ta = $("pvBody").querySelector("textarea.editor");
-    return !editing || !ta || ta.value === editing.saved || confirm("Throw away your changes?");
+    return !editing || !ta || ta.value === editing.saved ||
+      !!await ask({ title: "Throw away your changes?", text: `Your changes to ${editing.path} are not saved.`, ok: "Throw away", danger: true });
   }
-  $("pv").addEventListener("cancel", (e) => { if (!unsavedOK()) e.preventDefault(); }); // esc
-
-  $("pvClose").onclick = () => { if (unsavedOK()) $("pv").close(); };
-  $("pv").addEventListener("click", (e) => { if (e.target === $("pv") && unsavedOK()) $("pv").close(); }); // backdrop
+  const closePreview = async () => { if (await unsavedOK()) $("pv").close(); };
+  $("pv").addEventListener("cancel", (e) => { e.preventDefault(); closePreview(); }); // esc
+  $("pvClose").onclick = closePreview;
+  $("pv").addEventListener("click", (e) => { if (e.target === $("pv")) closePreview(); }); // backdrop
   $("pv").addEventListener("close", () => { $("pvBody").innerHTML = ""; if (editing) load(cwd); editing = null; }); // stop media
 
+  // ---- developer: commands ----
   async function loadCmds() {
     const body = $("cmds");
     try {
@@ -1511,24 +2806,27 @@
   // changes, and follow read-only toggles from the terminal UI.
   let ws = null, watched = null, reloadTimer = null, retry = 1000;
   function connect() {
+    if (!$("stopped").hidden) return;
     try {
       ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/events");
     } catch { return; }
-    ws.onopen = () => { retry = 1000; watched = null; watchCwd(); };
+    ws.onopen = () => { retry = 1000; watched = null; online = true; watchCwd(); };
     ws.onmessage = (e) => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
       if (m.type === "hello" || m.type === "status") setMode(m.readOnly);
-      if (m.type === "watching") $("live").hidden = false;
-      if (m.type === "app-updated") { loadApps(); loadApp(false); msg($("appMsg"), `Updated to ${m.version}. Open pages of the app can reload now.`, true); }
+      if (m.type === "watching") { live = true; renderStatus(); }
+      if (m.type === "app-updated") { loadApps(); loadApp(false); toast(`Updated to ${m.version}. Open pages of the app can reload now.`); }
       if (m.type === "change") {
         clearTimeout(reloadTimer);
-        reloadTimer = setTimeout(() => load(cwd), 100);
+        // a big folder is listed again less often while it keeps changing
+        reloadTimer = setTimeout(() => (renaming ? (reloadLater = true) : load(cwd)), listing.length > 5000 ? 1500 : 100);
       }
     };
     ws.onclose = () => {
-      $("live").hidden = true;
+      live = false; renderStatus();
       setTimeout(connect, retry);
       retry = Math.min(retry * 2, 30000);
+      if (retry > 2000) status(); // offline?
     };
   }
   function watchCwd() {
@@ -1541,7 +2839,7 @@
   // still useful when the socket is down
   window.addEventListener("focus", status);
   window.addEventListener("focus", () => loadApp(false));
-  load(decodeURIComponent(location.hash.slice(1)) || "/");
+  route();
 })();
 </script>
 </body>

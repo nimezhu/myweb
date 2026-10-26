@@ -523,6 +523,7 @@ func (s *Server) shareUpload(w http.ResponseWriter, r *http.Request, sh *Share, 
 		}
 		got = append(got, path.Base(landed))
 		s.countShareUpload(sh.ID, size)
+		s.record(Activity{Op: "upload", Path: landed, Size: size, Via: "share"})
 		log.Printf("share %s: received %s", sh.ID, landed)
 	}
 	if len(got) == 0 {

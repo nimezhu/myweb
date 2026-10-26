@@ -3,6 +3,67 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## Unreleased
+
+Changes to know before upgrading:
+
+- New built-in commands `cp`, `du` and `activity`: a Go program that embeds
+  myserver and registers its own command by one of these names now panics
+  at start (as for any name registered twice); rename yours.
+- The data folder's `.myweb` holds two more things: `thumbs/` (thumbnails,
+  made again when needed, left out of backups) and `activity.jsonl` (the
+  Recent view's log).
+- The file manager registers a service worker at `/_myweb/`, for installing
+  it as an app; it handles only files shared to it.
+- Extracting a `.zip` leaves out macOS's `._name` files too.
+
+New:
+
+- The file manager is laid out anew: Files fill the page, and Apps, Shares,
+  Trash and Developer (the API, commands and "write a file") are tabs, each
+  with its own address (`#apps`, …). One status dot in the header holds the
+  version, sign-in, live updates, a light/dark/auto theme and Stop server.
+- Files: a ⋯ menu on each row (and right-click) instead of a row of links;
+  rename in place; Move to… with a folder picker; a toolbar for the
+  selection; sortable columns; a filter that narrows the folder as you type
+  (Enter still searches inside files); icons by kind; a grid view with
+  thumbnails; New → Text file opens it in the editor.
+- Deleting asks nothing when the trash is on and offers Undo instead; with
+  `-trash-days 0` it asks first. `rm` reports the trash ids it made.
+- Keyboard: arrows, Enter, Space to preview, x to select, F2, Delete,
+  Backspace for the folder above, / to filter, ← → between files in a
+  preview, ? for the list.
+- Uploads: drop files anywhere on the page; a panel shows each file's
+  progress and whether it was renamed.
+- No browser prompt or confirm boxes are left; messages are toasts. The
+  control page at `/ctrl/` matches the rest.
+- Thumbnails: `GET /thumb/<path>?w=256` makes a small JPEG (PNG with
+  transparency) of a JPEG, PNG, GIF or WebP image once and keeps it in
+  `.myweb/thumbs`; JPEGs are turned upright by their EXIF orientation. The
+  file manager's list and grid use them instead of the originals, so a
+  folder of photos costs a few KB each to show, not megabytes. Backups
+  leave them out.
+- Big folders: the file manager shows 200 entries at a time and more as
+  you scroll either way; End, Home and the arrows jump without drawing the
+  rest. A folder of 50,000 files opens in a fraction of a second.
+- Copy: `cp` copies files and folders (`rename` picks a free name); *Copy
+  to…* and *Duplicate* in the file manager.
+- Folder sizes: `du` adds up a folder and each folder in it (and, for the
+  whole data folder, what versions, trash and thumbnails take); ⋯ → Folder
+  sizes shows them, biggest first. `/cmd/status` and the status dot show
+  the disk's free space; `myweb doctor` warns when it runs low.
+- Automatic backups: `myweb backup -every 1d [-keep 7] [-to DIR]` makes a
+  running server back up by itself (`-backup-every`, `-backup-keep`,
+  `-backup-to`); `backup -list` shows them, `doctor` warns when the last one
+  failed or is old.
+- Recent: every change made through the server (file manager, API,
+  WebDAV, share links) is logged in `.myweb/activity.jsonl`; the `activity`
+  command and the **Recent** tab show them, grouped, newest first, by whom.
+- Versions → Compare: what changed in a text file between a version and now,
+  line by line.
+- Install the file manager on a phone's home screen (`/_myweb/`, over
+  HTTPS); on Android, share files to it from other apps to upload them.
+
 ## 0.0.4
 
 Changes to know before upgrading:

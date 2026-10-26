@@ -53,6 +53,9 @@ type serveFlags struct {
 	versions, trashDays               *int
 	uploadMax                         *int64
 	logFile                           *string
+	backupEvery                       *every
+	backupKeep                        *int
+	backupTo                          *string
 	cors                              myserver.OriginList
 	version                           *bool
 	webFlags                          *webapp.Flags
@@ -88,6 +91,10 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f.trashDays = fs.Int("trash-days", 30, "days deleted files stay in the trash (0: delete immediately)")
 	f.uploadMax = fs.Int64("upload-max", 100, "largest file accepted by an upload, in MiB")
 	f.logFile = fs.String("log", "", "also append requests and messages to this file (JSON lines)")
+	f.backupEvery = new(every)
+	fs.Var(f.backupEvery, "backup-every", "back up the home and data folder this often, e.g. 1d (off: never)")
+	f.backupKeep = fs.Int("backup-keep", 7, "automatic backups kept")
+	f.backupTo = fs.String("backup-to", "", "where automatic backups go (default <home>/backups)")
 	fs.Var(&f.cors, "cors", fmt.Sprintf("extra browser origins allowed to call the API, comma-separated or repeated\n(e.g. https://app.example.com); also $%s_CORS", env))
 	f.version = fs.Bool("version", false, "print version and exit")
 	fs.BoolVar(f.version, "v", false, "print version and exit (shorthand)")
@@ -402,6 +409,10 @@ func Serve(spec Spec) int {
 	}
 	if !*f.noUpgradeCheck {
 		noticeUpgrade(name, dirs, log.Printf)
+	}
+	if *f.backupEvery > 0 {
+		(&autoBackup{spec: spec, dirs: dirs, data: root, dir: backupsDirFor(dirs, *f.backupTo),
+			every: time.Duration(*f.backupEvery), keep: max(*f.backupKeep, 1), logf: log.Printf}).start()
 	}
 	if app != nil {
 		app.Start(context.Background())

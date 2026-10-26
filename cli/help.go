@@ -19,7 +19,7 @@ var flagGroups = []struct {
 	{"Files", []string{"d", "p", "global", "r", "home", "no-dav"}},
 	{"Web app at /", []string{"app", "web", "web-from", "web-key", "web-version", "no-update", "web-check", "other-apps", "no-manager"}},
 	{"Access", []string{"auth", "token", "cors", "trust-html", "https", "cert", "key", "tunnel"}},
-	{"Safety", []string{"versions", "trash-days", "upload-max"}},
+	{"Safety", []string{"versions", "trash-days", "upload-max", "backup-every", "backup-keep", "backup-to"}},
 	{"Running", []string{"no-tui", "no-open", "log", "new", "no-upgrade-check", "v"}},
 }
 
@@ -30,6 +30,7 @@ var placeholders = map[string]string{
 	"d": "DIR", "p": "PORT", "home": "DIR", "app": "NAME", "web": "DIR", "web-from": "URL",
 	"web-key": "KEY", "web-version": "VERSION", "web-check": "DURATION", "token": "TOKEN",
 	"cors": "ORIGINS", "cert": "FILE", "key": "FILE", "versions": "N", "trash-days": "DAYS", "upload-max": "MIB", "log": "FILE",
+	"backup-every": "TIME", "backup-keep": "N", "backup-to": "DIR",
 }
 
 // noDefault are flags whose default is not worth showing (or is secret:
@@ -309,10 +310,20 @@ private all the same.
   %[1]s restore FILE.zip -dry-run  say what it would do
   %[1]s restore FILE.zip -d DIR    the data folder somewhere else
 
+  %[1]s backup -every 1d           from now on a running %[1]s backs up by itself
+                                when the last one is a day old (12h, 1w, …)
+  %[1]s backup -every 1d -keep 14 -to /mnt/disk/backups
+                                keep 14 (7 if not said), in that folder
+                                (default ~/.%[1]s/backups: better another disk)
+  %[1]s backup -every off          stop
+  %[1]s backup -list               the schedule and the backups made
+
 The data folder of the home (-home DIR) goes back into the home it is
 restored to; another data folder goes back where it was, unless -d. The zip
 holds the token: keep it private. Symbolic links are left out. Restore
-refuses while a server runs from the home.
+refuses while a server runs from the home. The schedule is kept in the
+config (backup-every, backup-keep, backup-to) for servers and services
+started after it; %[1]s doctor says when the last backup failed or is old.
 `,
 	"completion": `shell completion of commands, flags, app names and versions:
 

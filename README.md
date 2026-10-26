@@ -128,6 +128,9 @@ tools, from the same releases (from 0.0.4 on; `version` prints theirs).
 | `-versions N` | `20` | previous versions kept per file on overwrite (`0`: off) |
 | `-trash-days N` | `30` | days deleted files stay in the trash (`0`: delete immediately) |
 | `-upload-max MIB` | `100` | largest file accepted by an upload |
+| `-backup-every TIME` | off | back up the home and data folder this often (`1d`, `12h`, `1w`); see [Backup](#backup-and-restore) |
+| `-backup-keep N` | `7` | automatic backups kept |
+| `-backup-to DIR` | `~/.myweb/backups` | where automatic backups go |
 | `-log FILE` | | also append requests and messages to FILE as JSON lines (rotates at 50 MB) |
 | `-no-tui` | | plain log output |
 | `-no-open` | | don't open the browser on start |
@@ -174,6 +177,21 @@ are hidden unless **hidden files** is ticked. Download a folder, or the
 files and folders you tick, as one `.zip`, and extract a `.zip` into a new
 folder next to it. It updates live as files
 change, and lists and runs the plugin commands.
+
+- **Copy**: *Copy to…* and *Duplicate* in a file's ⋯ menu, *Copy…* for the
+  ticked ones; a name that's taken gets a new one (`a (1).txt`).
+- **Folder sizes** (⋯ → Folder sizes) adds up the folder shown and each
+  folder in it, biggest first, and how much versions, trash and thumbnails
+  take. The status dot says how much of the disk is free.
+- **Recent** lists the changes made through myweb (here, the API, the
+  network drive and share links), newest first, by whom on myweb-team; a
+  path opens its folder with it selected.
+- **Versions → Compare** shows what changed in a text file, line by line,
+  between a version and now (or the version before it), and restores it.
+- **On a phone**, open `/_myweb/` (over HTTPS, see [HTTPS and tunnels](#https-and-tunnels))
+  and *Add to Home screen* / *Install app*: it opens like an app. On Android
+  it is then in the **Share** menu: share photos or files to myweb, choose a
+  folder, and they are uploaded.
 
 **Installed apps** lists every installed app with its version, the folders
 it may use and where this server serves it; there you open one, check it
@@ -459,6 +477,22 @@ differs unless `-force` (it lists them); it refuses while a server runs from
 the home. The zip is readable only by you, and holds the token: keep it
 private. Symbolic links are left out.
 
+**Automatic backups.** A running myweb (or its service) can back up by itself:
+
+```sh
+myweb backup -every 1d                           # daily, into ~/.myweb/backups, keeping 7
+myweb backup -every 12h -keep 14 -to /mnt/usb/myweb
+myweb backup -list                               # the schedule and the backups made
+myweb backup -every off
+```
+
+This sets `backup-every`, `backup-keep` and `backup-to` in the config, for
+servers and services started after it. A backup is made when the newest is
+that old, a minute after a start and then when due; several servers of one
+home take turns. A folder on another disk also keeps them if this disk
+fails. `myweb doctor` says when the last one failed or is older than it
+should be.
+
 ## Several people: myweb-team
 
 `myweb-team` is myweb for a team or lab: everyone signs in with a personal link,
@@ -516,6 +550,7 @@ Paths below are relative to the served folder. Errors are JSON:
 | `POST /up/<dir>` | multipart upload of any number of files; file names may contain sub-folders; `?onconflict=rename` (default, `a (1).txt`) \| `overwrite` \| `fail` |
 | `/dav/<path>` | the data folder over WebDAV (`PROPFIND`, `GET`, `PUT`, `MKCOL`, `MOVE`, `COPY`, `DELETE`, `LOCK`); see Network drive |
 | `GET /zip/<dir>` | the folder as a `.zip`, streamed; `?f=name&f=…` only those entries of it. Leaves out `.myweb` and symbolic links |
+| `GET /thumb/<path>?w=256` | a small JPEG of an image (PNG when it has transparency), its longest side `w` (64, 128, 256, 512 or 1024; rounded up). Reads JPEG (turned upright by its EXIF orientation), PNG, GIF and WebP; an image already that small comes as it is. Made once and kept in `.myweb/thumbs` (left out of backups) |
 | `POST /cmd/uploadFile` | one file (field `myFile`) into `uploads/<md5>_<name>` (for editor.js) |
 
 **Conditional writes.** `/w/` and `/rm/` honour `If-Match: <ETag>` (only if the
@@ -533,6 +568,9 @@ changed.
 | `stat` | `{path}` | exists, size, modification time |
 | `mkdir` | `{path}` | create a folder and its parents |
 | `mv` | `{from, to, overwrite}` | move or rename a file or folder |
+| `cp` | `{from, to, overwrite, rename}` | copy a file or folder (keeps modification times; leaves out symbolic links); `rename` picks a free name (`a (1).txt`) when `to` is taken; returns where it went |
+| `du` | `{path}` | the size and file count of a folder and of each folder in it; for `/`, also what versions, trash and thumbnails take |
+| `activity` | `{limit, dir}` | changes made through the server, newest first: uploads, saves and deletes close in time grouped by folder (`op`, `path`, `to`, `n` files, `count`, `who`, `via`) |
 | `rm` | `{paths}` | delete files and folders; everything in them goes to the trash |
 | `find` | `{dir, pattern, limit}` | files whose name matches a glob |
 | `grep` | `{pattern, dir, glob, regex, ignoreCase, limit}` | lines in text files that contain the pattern |
@@ -545,7 +583,7 @@ changed.
 | `unzip` | `{path, to, onconflict}` | unpack a `.zip` (into a new folder next to it unless `to` is given); files land like uploads, `onconflict` as for `/up/`. Paths can't leave the folder; at most 100,000 files and 16 GiB |
 
 Also: `GET /cmd/fetchUrl?url=` (a page's OpenGraph metadata), `GET /cmd/status`
-(version, read-only and sign-in state), `POST /cmd/app` (the installed web app,
+(version, read-only and sign-in state; signed in, the disk's free and total bytes), `POST /cmd/app` (the installed web app,
 with `-web-from` or `-app`), `POST /cmd/stopServer` (same-origin
 only), `GET /version`.
 

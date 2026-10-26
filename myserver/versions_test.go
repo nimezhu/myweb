@@ -255,6 +255,10 @@ func TestRmCmd(t *testing.T) {
 	if code != 200 || res["files"].(float64) != 3 {
 		t.Fatalf("rm: %d %v", code, res)
 	}
+	trashed, _ := res["trash"].([]interface{})
+	if len(trashed) != 3 {
+		t.Fatalf("rm: trash ids %v", res["trash"])
+	}
 	if x.read("a/b/two.txt") != "<missing>" || x.read("c.txt") != "<missing>" {
 		t.Fatal("not removed")
 	}
@@ -264,6 +268,14 @@ func TestRmCmd(t *testing.T) {
 	_, res = x.cmd("trash", "")
 	if items, _ := res["items"].([]interface{}); len(items) != 3 {
 		t.Fatalf("trash: %v", res)
+	}
+	for _, id := range trashed { // undo: every id puts its file back
+		if code, res := x.cmd("untrash", `{"id":"`+id.(string)+`"}`); code != 200 {
+			t.Fatalf("untrash %v: %d %v", id, code, res)
+		}
+	}
+	if x.read("a/b/two.txt") != "2" || x.read("c.txt") != "3" {
+		t.Fatal("not put back")
 	}
 	for _, c := range []struct {
 		params string
