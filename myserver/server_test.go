@@ -162,3 +162,22 @@ func TestWebVersionAndClient(t *testing.T) {
 		t.Fatalf("client.js: %d %s", resp.StatusCode, resp.Header.Get("Content-Type"))
 	}
 }
+
+func TestProbesAreNotLogged(t *testing.T) {
+	var got []string
+	s := New(Config{Root: t.TempDir(), OnRequest: func(e RequestEvent) { got = append(got, e.Path) }})
+	ts := httptest.NewServer(s.handler())
+	defer ts.Close()
+	probe, _ := http.NewRequest("GET", ts.URL+"/cmd/status", nil)
+	probe.Header.Set(ProbeHeader, "1")
+	if resp, err := http.DefaultClient.Do(probe); err != nil || resp.StatusCode != 200 {
+		t.Fatalf("probe: %v %v", resp, err)
+	}
+	http.Get(ts.URL + "/cmd/status")
+	other, _ := http.NewRequest("GET", ts.URL+"/cmd/ls", nil)
+	other.Header.Set(ProbeHeader, "1") // only status checks are quiet
+	http.DefaultClient.Do(other)
+	if strings.Join(got, " ") != "/cmd/status /cmd/ls" {
+		t.Fatalf("logged: %v", got)
+	}
+}

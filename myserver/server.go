@@ -66,6 +66,11 @@ var DefaultCORS = []string{
 // web app is served at "/".
 const ManagerPath = "/_myweb/"
 
+// ProbeHeader marks myweb's own checks that a server is still up (GET
+// /cmd/status, from "myweb status" and the tray app, every few seconds):
+// they are not logged.
+const ProbeHeader = "X-Myweb-Probe"
+
 // maxPortTries bounds the search for a free port starting at Config.Port.
 const maxPortTries = 100
 

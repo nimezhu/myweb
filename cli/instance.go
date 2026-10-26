@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/nimezhu/myweb/home"
+	"github.com/nimezhu/myweb/myserver"
 )
 
 // instance records a running server in <home>/run/<id>.json, so starting the
@@ -53,7 +54,9 @@ func running(file string) *instance {
 		return nil
 	}
 	// the port may have been reused since: ask the server who it is
-	resp, err := in.client(time.Second).Get(in.base() + "/cmd/status")
+	req, _ := http.NewRequest(http.MethodGet, in.base()+"/cmd/status", nil)
+	req.Header.Set(myserver.ProbeHeader, "1") // not logged
+	resp, err := in.client(time.Second).Do(req)
 	if err != nil {
 		return nil
 	}

@@ -66,7 +66,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		rec := &statusRecorder{ResponseWriter: w}
 		r = s.identify(r) // multi-user: who is this, for every handler below
 		next.ServeHTTP(rec, r)
-		if s.cfg.OnRequest == nil {
+		if s.cfg.OnRequest == nil || isProbe(r) {
 			return
 		}
 		if rec.status == 0 {
@@ -86,6 +86,10 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			User:      userName(UserFrom(r.Context())),
 		})
 	})
+}
+
+func isProbe(r *http.Request) bool {
+	return r.Method == http.MethodGet && r.URL.Path == "/cmd/status" && r.Header.Get(ProbeHeader) != ""
 }
 
 // recoverer keeps one bad request from taking down the whole server.

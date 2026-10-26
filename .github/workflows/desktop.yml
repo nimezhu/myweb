@@ -1,0 +1,25 @@
+# Builds the tray app on a Mac (where it needs cgo) when its code changes, so
+# a release doesn't find out first; the .app is kept as the run's artifact.
+name: desktop
+
+on:
+  push:
+    branches: [main]
+    paths: ["cmd/myweb-desktop/**", "cli/desktop.go", "scripts/desktop-mac.sh", "go.mod", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+
+jobs:
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./cmd/myweb-desktop
+      - run: go test ./cmd/myweb-desktop
+      - run: scripts/desktop-mac.sh 0.0.0-dev dist/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: myweb-desktop-mac
+          path: dist/desktop/*

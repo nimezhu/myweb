@@ -10,7 +10,23 @@ permissions:
   contents: write
 
 jobs:
+  # the tray app's menu bar needs cgo: myweb.app is built on a Mac
+  desktop-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./cmd/myweb-desktop
+      - run: scripts/desktop-mac.sh "$GITHUB_REF_NAME" dist/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-mac
+          path: dist/desktop/*
+
   release:
+    needs: desktop-mac
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +34,13 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go test ./...
+      - uses: actions/download-artifact@v4
+        with:
+          name: desktop-mac
+          path: dist/desktop
       - run: scripts/release-build.sh "$GITHUB_REF_NAME"
+        env:
+          RELEASE_EXTRA: dist/desktop
       # myweb upgrade installs only releases whose checksums.txt is signed
       # with a key built into myweb (selfupdate.Keys)
       - name: sign

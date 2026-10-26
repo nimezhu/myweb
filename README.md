@@ -27,6 +27,8 @@ go build -o myweb .
 The terminal shows the address, the request log and the keys. Without a
 terminal (or with `-no-tui`) it prints plain log lines instead.
 
+Rather not keep a terminal open? Use the [desktop app](#desktop-app-system-tray).
+
 ## Commands
 
 `myweb` with only flags serves files, as above (`myweb serve` is the same).
@@ -158,6 +160,43 @@ tools, from the same releases (from 0.0.4 on; `version` prints theirs).
 
 Copying uses the terminal's clipboard support (OSC 52), including over SSH; the terminal must allow clipboard
 writes. If it does not, `myweb -no-tui -no-open` prints the startup URL for manual copying.
+
+## Desktop app (system tray)
+
+`myweb-desktop` is myweb in the system tray (the menu bar on macOS). While it
+runs, it serves your data folder, and opens the file manager on start. Its
+menu:
+
+- **Open file manager** (or the app served at `/`), and **Apps**: the other
+  installed apps, signed in.
+- **Show data folder**, **Choose data folder…** (kept in
+  `~/.myweb/desktop.json`; until you choose one, it serves myweb's default,
+  as plain `myweb` does), **Stop server** / **Start server**.
+- **Start at login**: a launchd agent on macOS, an entry in
+  `~/.config/autostart` on Linux, the `Run` registry key on Windows. Started
+  at login, it serves without opening the browser.
+- **Show log**: `~/.myweb/logs/desktop.log`, which also holds the server's
+  output.
+- **Quit myweb** stops the server it started. A server it found already
+  serving the folder (`myweb service`, another terminal) keeps running.
+
+It shares `~/.myweb` (the config, apps, catalogs and share links) with the
+`myweb` command, and `myweb status`, `open` and `stop` see its server. Only
+one runs at a time: starting it again opens the file manager. With
+arguments, it is the myweb command line (`myweb-desktop status`), except on
+Windows, where it has no console to print to.
+
+From the [releases](https://github.com/nimezhu/myweb/releases):
+`myweb-desktop_VERSION_darwin_universal.zip` holds `myweb.app` (not
+notarized: on first open, right-click it and choose Open);
+`myweb-desktop_VERSION_windows_ARCH.exe`; `myweb-desktop_VERSION_linux_ARCH`,
+which shows in trays that support StatusNotifierItem (KDE, and GNOME with
+the AppIndicator extension, as on Ubuntu). To build it:
+
+```sh
+go build ./cmd/myweb-desktop               # Linux, or Windows with -ldflags -H=windowsgui
+scripts/desktop-mac.sh 0.0.5               # on a Mac: dist/desktop/…_darwin_universal.zip
+```
 
 ## File manager
 
@@ -718,7 +757,9 @@ git tag -a v0.0.2 -m "myweb 0.0.2" && git push origin main v0.0.2
 
 The release workflow (`.github/workflows/release.yml`) tests, builds myweb,
 myweb-publish and myweb-team for Linux, macOS and Windows (amd64 and arm64)
-with `scripts/release-build.sh`, signs `checksums.txt` with the release key
+with `scripts/release-build.sh` (and myweb-desktop: for Linux and Windows
+there, and `myweb.app` on a Mac with `scripts/desktop-mac.sh`, which
+`.github/workflows/desktop.yml` also runs when its code changes), signs `checksums.txt` with the release key
 (the repository secret `MYWEB_RELEASE_KEY`; its public key is
 `selfupdate.Keys`), and publishes them as a GitHub release; a tag like `v0.1.0-rc.1` makes a prerelease, which `myweb
 upgrade` only installs when asked for by version.
