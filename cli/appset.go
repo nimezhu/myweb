@@ -58,7 +58,7 @@ func (s *appSet) mountAll() {
 	}
 	changed := false
 	present := map[string]bool{}
-	for _, a := range installed {
+	for i, a := range installed {
 		if a.Manifest == mainManifest || a.Key == "" {
 			continue
 		}
@@ -77,7 +77,11 @@ func (s *appSet) mountAll() {
 			log.Printf("%s: %v", a.Name, err)
 			continue
 		}
-		port, err := s.srv.Mount(&myserver.Mount{Access: limitApp(in, s.root), FS: in.FS(), Version: in.Current}, a.Port)
+		want := a.Port
+		if want == 0 { // a port of its own, not one another app keeps
+			want = webapp.FreeAppPort(installed)
+		}
+		port, err := s.srv.Mount(&myserver.Mount{Access: limitApp(in, s.root), FS: in.FS(), Version: in.Current}, want)
 		if err != nil {
 			log.Printf("%s: %v", a.Name, err)
 			continue
@@ -85,6 +89,7 @@ func (s *appSet) mountAll() {
 		switch {
 		case a.Port == 0:
 			in.SetPort(port)
+			installed[i].Port = port
 		case port != a.Port:
 			log.Printf("%s: its port %d is taken; serving it at %d for now (what the browser keeps for it is at %d)", a.Name, a.Port, port, a.Port)
 		}
@@ -134,4 +139,21 @@ func (s *appSet) served() []servedApp {
 		out = append(out, servedApp{Name: m.Name, URL: m.URL})
 	}
 	return out
+}
+
+// appPorts are the ports installed apps keep, but main's (the app at /): a
+// port taken by something else is not replaced by another app's.
+func appPorts(dirs home.Dirs, main *webapp.Installer) map[int]bool {
+	installed, _ := webapp.InstalledApps(dirs.Apps())
+	mainManifest := ""
+	if main != nil {
+		mainManifest = main.Status().Manifest
+	}
+	ports := map[int]bool{}
+	for _, a := range installed {
+		if a.Port != 0 && (mainManifest == "" || a.Manifest != mainManifest) {
+			ports[a.Port] = true
+		}
+	}
+	return ports
 }

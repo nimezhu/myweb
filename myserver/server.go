@@ -104,6 +104,9 @@ type Config struct {
 	AppServer string
 	Port      int  // preferred port; the next free one is used if taken
 	Global    bool // listen on all interfaces instead of 127.0.0.1
+	// Reserved, if set, are ports kept for apps (each app's own): when a
+	// port is taken, the search for the next free one skips them.
+	Reserved func() map[int]bool
 	// Public: reachable from beyond this machine although it listens on
 	// 127.0.0.1 (a tunnel): reads need the token too, as with Global, and
 	// any host name is answered (see checkHost)
@@ -364,8 +367,12 @@ func (s *Server) host() string {
 // (instead of probing first) avoids a race with other processes.
 func (s *Server) listen() (net.Listener, int, error) {
 	var lastErr error
+	reserved := s.reserved()
 	for i := 0; i < maxPortTries; i++ {
 		port := s.cfg.Port + i
+		if i > 0 && reserved[port] {
+			continue
+		}
 		ln, err := net.Listen("tcp", net.JoinHostPort(s.host(), strconv.Itoa(port)))
 		if err == nil {
 			return ln, port, nil
@@ -373,6 +380,13 @@ func (s *Server) listen() (net.Listener, int, error) {
 		lastErr = err
 	}
 	return nil, 0, fmt.Errorf("no free port in %d-%d: %w", s.cfg.Port, s.cfg.Port+maxPortTries-1, lastErr)
+}
+
+func (s *Server) reserved() map[int]bool {
+	if s.cfg.Reserved == nil {
+		return nil
+	}
+	return s.cfg.Reserved()
 }
 
 // Start binds a port and serves in the background. Errors binding the port

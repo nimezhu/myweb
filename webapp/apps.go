@@ -20,7 +20,26 @@ type App struct {
 	Notes    map[string]string // release notes by version, when published
 	Access   []Folder          // the folders it may use: declared and granted
 	Grants   []Folder          // those the user granted
-	Port     int               // its own port, once it has been served beside other apps
+	Port     int               // its own port, once it has been served (at / or beside other apps)
+}
+
+// FirstAppPort is where the apps' own ports start, after myweb's default
+// port (8433). Each app keeps the port it is first given, so its address —
+// and what the browser keeps for it, localStorage and the rest, which is per
+// address — is its own and stays the same from one start to the next.
+const FirstAppPort = 8434
+
+// FreeAppPort is the first port from FirstAppPort that none of apps has.
+func FreeAppPort(apps []App) int {
+	taken := map[int]bool{}
+	for _, a := range apps {
+		taken[a.Port] = true
+	}
+	p := FirstAppPort
+	for taken[p] {
+		p++
+	}
+	return p
 }
 
 // InstalledApps lists the apps installed under dir (e.g. ~/.myweb/apps), by name.

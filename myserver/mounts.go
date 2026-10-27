@@ -83,7 +83,7 @@ func (s *Server) Mount(m *Mount, port int) (int, error) {
 }
 
 // listenMount binds port, else the first free one above the main port that
-// no other app has.
+// no other app has or keeps (Config.Reserved).
 func (s *Server) listenMount(port int) (net.Listener, error) {
 	if port > 0 && s.mounts[port] == nil && port != s.port {
 		if ln, err := net.Listen("tcp", net.JoinHostPort(s.host(), strconv.Itoa(port))); err == nil {
@@ -91,8 +91,9 @@ func (s *Server) listenMount(port int) (net.Listener, error) {
 		}
 	}
 	var lastErr error
+	reserved := s.reserved()
 	for p := s.port + 1; p < s.port+1+maxPortTries; p++ {
-		if s.mounts[p] != nil {
+		if s.mounts[p] != nil || reserved[p] && p != port {
 			continue
 		}
 		ln, err := net.Listen("tcp", net.JoinHostPort(s.host(), strconv.Itoa(p)))

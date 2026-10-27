@@ -3,6 +3,16 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## Unreleased
+
+Changed:
+
+- Each installed app has a port of its own, also when it runs at `/`
+  (`myweb app run NAME`, `-app NAME`): 8434 and up, the one it has beside
+  other apps, kept from one start to the next. Two apps no longer share
+  8433, so what the browser keeps for one (localStorage, its plugins and
+  settings) isn't the other's. `-p` still chooses the port.
+
 ## 0.0.8
 
 Changed:

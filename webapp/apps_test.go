@@ -231,3 +231,17 @@ func TestKeyRotation(t *testing.T) {
 		t.Fatalf("with the new key: %v", err)
 	}
 }
+
+func TestFreeAppPort(t *testing.T) {
+	if p := FreeAppPort(nil); p != FirstAppPort {
+		t.Fatalf("no apps: %d", p)
+	}
+	apps := []App{{Name: "a", Port: FirstAppPort}, {Name: "b"}, {Name: "c", Port: FirstAppPort + 2}}
+	if p := FreeAppPort(apps); p != FirstAppPort+1 {
+		t.Fatalf("a gap: %d", p)
+	}
+	apps[1].Port = FirstAppPort + 1
+	if p := FreeAppPort(apps); p != FirstAppPort+3 {
+		t.Fatalf("after the last: %d", p)
+	}
+}

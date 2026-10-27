@@ -109,7 +109,7 @@ tools, from the same releases (from 0.0.4 on; `version` prints theirs).
 |---|---|---|
 | `-home DIR` | `$MYWEB_HOME`, else `~/.myweb` | myweb's own folder: the default data folder (`data/`) and installed apps (`apps/`) |
 | `-d DIR` | `~/.myweb/data` | folder to serve (created if it's the default); `-d .` for the current folder |
-| `-p PORT` | `8433` | port; the next free one is used if it is taken |
+| `-p PORT` | `8433` | port; the next free one is used if it is taken. An installed app at `/` (`-app`, `app run`): its own port, 8434 and up |
 | `-web DIR` | | serve your own web app at `/` (the file manager moves to `/_myweb/`) |
 | `-app NAME` | | serve an app installed with `-web-from`, by name, and keep it updated |
 | `-apps` | | list the installed apps and exit |
@@ -353,6 +353,11 @@ http://localhost:8433/_myweb/      the file manager
 http://127.0.0.1:8434/             rx-graphic (also: http://127.0.0.1:8433/apps/rx-graphic/)
 http://127.0.0.1:8435/             another app
 ```
+
+Each app's port is its own from the first time it's served (8434 and up, one
+no other app has) and is the same when it runs at `/` (`myweb app run
+rx-graphic`, `-app rx-graphic`, unless `-p`), so it's the same site to the
+browser either way and two apps never share what the browser stores.
 
 The terminal and `myweb status` show them; `myweb open rx-graphic` opens one,
 and apps installed or removed while myweb runs are served or dropped right

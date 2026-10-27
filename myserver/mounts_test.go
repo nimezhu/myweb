@@ -145,3 +145,35 @@ func TestMounts(t *testing.T) {
 		t.Errorf("MountURL = %s", u)
 	}
 }
+
+// A port taken by something else: the next free one is used, but not one an
+// app keeps (Config.Reserved), for the server and for a mounted app alike.
+func TestReservedPorts(t *testing.T) {
+	busy := freePort(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(busy))
+	if err != nil {
+		t.Skip(err)
+	}
+	defer ln.Close()
+	s := New(Config{Root: t.TempDir(), Port: busy, Reserved: func() map[int]bool { return map[int]bool{busy + 1: true, busy + 3: true} }})
+	if err := s.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { s.Shutdown(t.Context()) })
+	if s.Port() == busy || s.Port() == busy+1 || s.Port() == busy+3 {
+		t.Fatalf("server on %d (busy %d, reserved %d and %d)", s.Port(), busy, busy+1, busy+3)
+	}
+	mount := func(name string, port int) int {
+		p, err := s.Mount(&Mount{Access: &AppAccess{Name: name}, FS: http.FS(fstest.MapFS{}), Version: func() string { return "1" }}, port)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	if p := mount("x", 0); p == busy+1 || p == busy+3 {
+		t.Fatalf("an app with no port took a reserved one: %d", p)
+	}
+	if p := mount("y", busy+3); p != busy+3 {
+		t.Fatalf("an app's own reserved port: %d", p)
+	}
+}

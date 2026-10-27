@@ -66,7 +66,7 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	env := strings.ToUpper(strings.ReplaceAll(name, "-", "_"))
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	f := &serveFlags{}
-	f.port = fs.Int("p", 8433, "port to serve on (next free port is used if taken)")
+	f.port = fs.Int("p", 8433, "port to serve on (next free port is used if taken; an installed app at /\n(-app): its own port, 8434 and up, kept from one start to the next)")
 	f.global = fs.Bool("global", false, "listen on all interfaces (visible to your network)")
 	f.https = fs.Bool("https", false, "serve HTTPS, with a certificate made for this machine (kept in <home>/tls;\nbrowsers warn until you trust it)")
 	f.certFile = fs.String("cert", "", "serve HTTPS with this certificate (PEM; e.g. from mkcert or tailscale cert)")
@@ -223,6 +223,16 @@ func Serve(spec Spec) int {
 	if app != nil && !teamApp {
 		webFS = app.FS()
 	}
+	// an installed app at /: on its own port (unless -p), the one it has
+	// beside other apps too, so each app is its own site to the browser —
+	// what one keeps in localStorage isn't another's
+	appPort := app != nil && !teamApp && !flagSet(fs, "p")
+	if appPort {
+		if *port = app.Port(); *port == 0 {
+			installed, _ := webapp.InstalledApps(dirs.Apps())
+			*port = webapp.FreeAppPort(installed)
+		}
+	}
 
 	// the same folder and app already being served: open that copy
 	source := "files"
@@ -324,6 +334,7 @@ func Serve(spec Spec) int {
 		Instance:     instanceID,
 		WebVersion:   webVersion,
 		App:          appAccess,
+		Reserved:     func() map[int]bool { return appPorts(dirs, app) },
 	})
 	if len(f.cors) > 0 {
 		con.AddRow("CORS", "+ "+f.cors.String())
@@ -432,6 +443,9 @@ func Serve(spec Spec) int {
 			return fail(err)
 		}
 		defer tun.stop()
+	}
+	if appPort && app.Port() == 0 {
+		app.SetPort(srv.Port())
 	}
 	if srv.Port() != *port {
 		fmt.Fprintf(os.Stderr, "port %d is busy, using %d\n", *port, srv.Port())
