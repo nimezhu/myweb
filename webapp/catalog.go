@@ -40,7 +40,11 @@ type CatalogApp struct {
 	Icon        string   `json:"icon,omitempty"`        // an image URL, square; may be relative to apps.json
 	Screenshots []string `json:"screenshots,omitempty"` // image URLs; may be relative
 	Tags        []string `json:"tags,omitempty"`        // e.g. "graphics", "editor"
-	Catalog     string   `json:"catalog,omitempty"`     // set when loaded: the catalog's URL
+	// Plugins is the app's plugin store, if it has one (a plugdex store's
+	// …/hosts/<host>/index.json): Home lists the profiles its free channels
+	// offer for the app, and opens the app as one (?app=ID&profile=URL).
+	Plugins string `json:"plugins,omitempty"`
+	Catalog string `json:"catalog,omitempty"` // set when loaded: the catalog's URL
 }
 
 // Catalog is the content of apps.json.
@@ -68,6 +72,9 @@ func (c *Catalog) Validate() error {
 			if l != "" && !linkOK(l) {
 				return fmt.Errorf("%s: %q is not an http(s) link", a.Name, l)
 			}
+		}
+		if a.Plugins != "" && !linkOK(a.Plugins) {
+			return fmt.Errorf("%s: plugins %q is not an http(s) link", a.Name, a.Plugins)
 		}
 		for _, t := range a.Tags {
 			if t == "" || len(t) > 32 || strings.ContainsAny(t, ",<>\"\n") {
@@ -99,8 +106,9 @@ func webURL(s string) bool {
 
 // CatalogSource is a catalog myweb reads, and the key that signs it.
 type CatalogSource struct {
-	URL string `json:"url"`
-	Key string `json:"key"`
+	URL  string `json:"url"`
+	Key  string `json:"key"`
+	Name string `json:"name,omitempty"` // a store link's name: what to call it until its catalog is read
 }
 
 // Catalogs are the catalogs of one myweb home: the list in File, the
@@ -111,6 +119,7 @@ type Catalogs struct {
 	Cache  string // e.g. ~/.myweb/catalogs/
 	Client *http.Client
 	MaxAge time.Duration // a cached copy younger than this is used without asking (0: always ask)
+	Seeded string        // e.g. ~/.myweb/catalogs-seeded.json: the default stores added once (see Seed)
 }
 
 // Sources is the saved list (none until one is added).
@@ -154,6 +163,23 @@ func (c *Catalogs) Add(ctx context.Context, src CatalogSource) (*Catalog, error)
 		}
 	}
 	return cat, c.save(append(out, src))
+}
+
+// Preview reads a catalog without adding it (nor keeping a copy): what a
+// store link leads to, to show before it is added. Its signature is checked.
+func (c *Catalogs) Preview(ctx context.Context, src CatalogSource) (*Catalog, error) {
+	if !webURL(src.URL) {
+		return nil, fmt.Errorf("a catalog must be an https URL (http only for localhost): %s", src.URL)
+	}
+	key, err := ParsePublicKey(src.Key)
+	if err != nil {
+		return nil, err
+	}
+	got, err := c.download(ctx, src.URL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("catalog %s: %v", src.URL, err)
+	}
+	return parseCatalog(src, got.Data, got.Sig, key)
 }
 
 // Remove drops a catalog by URL.
@@ -277,7 +303,7 @@ func parseCatalog(src CatalogSource, data, sig []byte, key ed25519.PublicKey) (*
 	for i := range cat.Apps {
 		a := &cat.Apps[i]
 		a.Catalog = src.URL
-		a.Icon, a.Homepage = abs(a.Icon), abs(a.Homepage)
+		a.Icon, a.Homepage, a.Plugins = abs(a.Icon), abs(a.Homepage), abs(a.Plugins)
 		for j := range a.Screenshots {
 			a.Screenshots[j] = abs(a.Screenshots[j])
 		}

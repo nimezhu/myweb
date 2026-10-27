@@ -1,7 +1,7 @@
 // myweb-desktop is myweb in the system tray (the menu bar on macOS): it serves
-// your data folder while it runs, and its menu opens the file manager and the
-// apps, picks the folder, stops and starts the server, and starts the app at
-// login. Starting it again opens the file manager.
+// your data folder while it runs, and its menu opens Home (the apps), the file
+// manager and the apps, picks the folder, stops and starts the server, and
+// starts the app at login. It opens Home when it starts, and when started again.
 //
 // With arguments it is the myweb command line (myweb-desktop status, …); it
 // starts its server that way, as "myweb-desktop serve -no-tui -no-open -d DIR".
@@ -57,7 +57,7 @@ func main() {
 		os.Exit(1)
 	}
 	single, handed := claim(dirs, !login)
-	if handed { // already running: that one opens the file manager
+	if handed { // already running: that one opens Home
 		return
 	}
 	// started from a desktop, nothing reads stderr: the log is where to look;

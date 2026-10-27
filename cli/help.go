@@ -194,7 +194,9 @@ var helpTopics = map[string]string{
   %[1]s app access NAME                   the folders an app may use
   %[1]s app allow NAME FOLDER [-write]    let it read (and with -write change) a folder
   %[1]s app deny NAME FOLDER              take a folder back
-  %[1]s app catalog add URL -key KEY      also read this catalog
+  %[1]s app catalog add LINK              also read this store (its store link;
+                                          or add URL -key KEY)
+  %[1]s app catalog links                 the store links of the catalogs read
   %[1]s app catalog remove URL
 
 Every app command takes -home DIR. NAME may also be the app's manifest URL.

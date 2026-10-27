@@ -1,6 +1,13 @@
 # Plan: myweb for clients (desktop)
 
-Status: proposal, nothing built yet.
+Status: phases 1 (Home: `manager/web/home.html`, opened from myweb-desktop's menu), 2 (stores: store links,
+Home's Stores page, default stores for a release build) and 3 (the welcome, Settings, background myweb updates,
+notices) are built. Phases 4–5 are proposals.
+
+Settings reach the tray app through the server it starts: that server (and only that one) serves
+`POST /cmd/desktop` and passes each request to the tray on its local address (`cli/desktopcmd.go`,
+`cmd/myweb-desktop/bridge.go`). Notices of app updates come from Home remembering, in the browser, the
+version of each app it last showed.
 
 ## Goal
 

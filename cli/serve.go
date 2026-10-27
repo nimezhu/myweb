@@ -385,6 +385,8 @@ func Serve(spec Spec) int {
 		on: *f.otherApps && spec.Access == nil}
 	plugins.RegisterFileOps(srv)
 	registerCatalogCmd(srv, spec, apps)
+	registerStoresCmd(srv, apps)
+	registerDesktopCmd(srv, dirs)
 	registerAppCmd(srv, apps)
 	registerAppsCmd(srv, spec, apps)
 	if spec.Access == nil {

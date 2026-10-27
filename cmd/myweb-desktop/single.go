@@ -53,8 +53,9 @@ func ask(addr, msg string) bool {
 }
 
 // serveSingle answers the other starts, and "myweb-desktop upgrade": it
-// passes on "open" and "restart".
-func serveSingle(l net.Listener, do func(msg string)) {
+// passes on "open" and "restart". A line "json {…}" is a request from Home
+// (cli/desktopcmd.go), which answer answers with a line of JSON.
+func serveSingle(l net.Listener, answer func(req []byte) []byte, do func(msg string)) {
 	for {
 		c, err := l.Accept()
 		if err != nil {
@@ -64,6 +65,11 @@ func serveSingle(l net.Listener, do func(msg string)) {
 			defer c.Close()
 			c.SetDeadline(time.Now().Add(2 * time.Second))
 			line, _ := bufio.NewReader(c).ReadString('\n')
+			if req, ok := strings.CutPrefix(line, "json "); ok && answer != nil {
+				c.SetDeadline(time.Now().Add(11 * time.Minute)) // picking a folder waits for a person
+				c.Write(append(answer([]byte(req)), '\n'))
+				return
+			}
 			switch msg := strings.TrimSpace(line); msg {
 			case "open", "restart":
 				do(msg)

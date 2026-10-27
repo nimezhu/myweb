@@ -296,7 +296,7 @@ func doctorCmd(spec Spec, args []string, w io.Writer) error {
 	case err != nil:
 		d.bad("fix or remove "+tildePath(cats.File), "catalogs: %v", err)
 	case len(srcs) == 0:
-		d.ok("no catalogs (%s app catalog add URL -key KEY adds one)", name)
+		d.ok("no catalogs (%s app catalog add LINK adds one: a store's link)", name)
 	}
 	for _, src := range srcs {
 		if *offline {

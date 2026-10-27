@@ -31,7 +31,9 @@ const maxApps = 12
 
 // settings is <home>/desktop.json.
 type settings struct {
-	Folder string `json:"folder,omitempty"` // the data folder; empty: myweb's default
+	Folder   string `json:"folder,omitempty"`   // the data folder; empty: myweb's default
+	FirstRun bool   `json:"firstRun,omitempty"` // a new install: Home welcomes it, once
+	Updates  string `json:"updates,omitempty"`  // "ask": don't install myweb updates by themselves
 }
 
 func settingsFile(dirs home.Dirs) string { return filepath.Join(dirs.Root, "desktop.json") }
@@ -74,12 +76,18 @@ type tray struct {
 	cur        *cli.Running // the server for folder, if one answers
 	failed     string       // why the server it started stopped, if it failed
 	note       string       // shown instead of the state until the next click
-	openWhenUp bool         // open the file manager once the server answers
+	openWhenUp bool         // open openTo once the server answers
+	openTo     string       // the page to open then: "" for what the server serves at "/"
 
 	exe, app   string // what an update replaces ("" when it can't update)
 	cantUpdate string // why not
 	newer      string // a newer version, once found
 	updating   bool
+	auto       bool   // the update under way is a background one: no restart after
+	staged     string // installed in the background: runs from the next start
+
+	asks    chan homeAsk // Home's requests (bridge.go)
+	moveReq chan string  // serve this folder, asked from Home
 
 	openReq    chan struct{}
 	restartReq chan struct{}
@@ -91,15 +99,16 @@ type tray struct {
 	hidden     map[*systray.MenuItem]bool
 	iconOn     int // 1 on, 0 off, -1 not set yet
 
-	mStatus, mOpen, mManager, mApps                       *systray.MenuItem
+	mStatus, mHome, mOpen, mManager, mApps                *systray.MenuItem
 	mShow, mChoose, mToggle, mLogin, mLog, mUpdate, mQuit *systray.MenuItem
 	appItems                                              []*systray.MenuItem
 }
 
 func newTray(dirs home.Dirs, logFile *os.File, single net.Listener, open bool) *tray {
-	t := &tray{dirs: dirs, logFile: logFile, single: single, set: loadSettings(dirs), openWhenUp: open,
+	t := &tray{dirs: dirs, logFile: logFile, single: single, set: loadSettings(dirs), openWhenUp: open, openTo: homePath,
 		openReq: make(chan struct{}, 1), restartReq: make(chan struct{}, 1), found: make(chan string, 1),
-		checked: make(chan checkResult, 1), updated: make(chan error, 1), exits: make(chan exited, 4), shown: map[*systray.MenuItem]string{}, hidden: map[*systray.MenuItem]bool{}, iconOn: -1}
+		checked: make(chan checkResult, 1), updated: make(chan error, 1), exits: make(chan exited, 4), shown: map[*systray.MenuItem]string{}, hidden: map[*systray.MenuItem]bool{}, iconOn: -1,
+		asks: make(chan homeAsk), moveReq: make(chan string, 1)}
 	// found now: after an update, the running binary's path may be the old one's
 	var err error
 	if t.exe, t.app, err = installed(); err != nil {
@@ -112,6 +121,12 @@ func newTray(dirs home.Dirs, logFile *os.File, single net.Listener, open bool) *
 			log.Printf("data folder: %v", err)
 		}
 		t.folder = d
+		if f, ok := newInstallFolder(dirs, d); ok { // a new install: files in Documents
+			t.folder, t.set.Folder, t.set.FirstRun = f, f, true
+			if err := t.set.save(dirs); err != nil {
+				log.Printf("settings: %v", err)
+			}
+		}
 	}
 	return t
 }
@@ -121,6 +136,7 @@ func (t *tray) ready() {
 	systray.SetTooltip("myweb")
 	t.mStatus = systray.AddMenuItem("myweb", "")
 	t.mStatus.Disable()
+	t.mHome = systray.AddMenuItem("Home", "Your apps: open, install and update them")
 	t.mOpen = systray.AddMenuItem("Open file manager", "Open it in the browser, signed in")
 	t.mManager = systray.AddMenuItem("Open file manager", "Open it in the browser, signed in")
 	t.mManager.Hide()
@@ -148,7 +164,7 @@ func (t *tray) ready() {
 	systray.AddSeparator()
 	t.mQuit = systray.AddMenuItem("Quit myweb", "Stop the server it started, and quit")
 	if t.single != nil {
-		go serveSingle(t.single, func(msg string) {
+		go serveSingle(t.single, t.answer, func(msg string) {
 			req := t.openReq
 			if msg == "restart" {
 				req = t.restartReq
@@ -200,14 +216,19 @@ func (t *tray) loop() {
 		case <-tick.C:
 		case e := <-t.exits:
 			t.reap(e)
-		case <-t.openReq:
-			t.open(false)
+		case <-t.openReq: // started again: Home
+			t.open(homePath)
 		case <-t.restartReq: // updated by "myweb-desktop upgrade"
 			t.restart()
 			return
+		case a := <-t.asks:
+			a.reply <- t.handle(a.req)
+		case dir := <-t.moveReq:
+			t.moveTo(dir, homePath)
 		case v := <-t.found:
 			if selfupdate.Newer(v, myserver.VERSION) {
 				t.newer = v
+				t.download()
 			}
 		case r := <-t.checked:
 			t.note = "" // "checking for updates…"
@@ -216,14 +237,23 @@ func (t *tray) loop() {
 				t.note = "could not check for updates: " + r.err.Error()
 			case selfupdate.Newer(r.version, myserver.VERSION):
 				t.newer = r.version
+				t.download()
 			default:
 				t.note = "myweb " + myserver.VERSION + " is the latest version"
 			}
 		case err := <-t.updated:
 			t.updating = false
 			if err != nil {
-				t.note = "update failed: " + err.Error()
+				if !t.auto { // a background one tries again at the next check
+					t.note = "update failed: " + err.Error()
+				}
+				t.auto = false
 				log.Printf("update to %s: %v", t.newer, err)
+				break
+			}
+			if t.auto { // runs from the next start
+				t.auto, t.staged = false, t.newer
+				log.Printf("myweb %s is installed; it runs from the next start", t.staged)
 				break
 			}
 			log.Printf("updated to %s; restarting", t.newer)
@@ -231,13 +261,20 @@ func (t *tray) loop() {
 			return
 		case <-t.mUpdate.ClickedCh:
 			t.note = ""
+			if t.staged != "" && !t.updating {
+				t.restart()
+				return
+			}
 			t.checkOrUpdate()
+		case <-t.mHome.ClickedCh:
+			t.note = ""
+			t.open(homePath)
 		case <-t.mOpen.ClickedCh:
 			t.note = ""
-			t.open(false)
+			t.open("")
 		case <-t.mManager.ClickedCh:
 			t.note = ""
-			t.open(true)
+			t.open(myserver.ManagerPath)
 		case i := <-appClicks:
 			t.note = ""
 			if t.cur != nil && i < len(t.cur.Apps) {
@@ -290,7 +327,7 @@ func (t *tray) update() {
 	}
 	if t.cur != nil && t.openWhenUp {
 		t.openWhenUp = false
-		t.openURL(t.cur.Login)
+		t.openURL(pageURL(t.cur.Login, t.openTo))
 	}
 
 	state := "Stopped"
@@ -302,7 +339,7 @@ func (t *tray) update() {
 	case t.failed != "":
 		state = "Stopped: " + t.failed
 	}
-	if t.updating {
+	if t.updating && !t.auto {
 		state = "Updating to " + t.newer + "…"
 	}
 	if t.note != "" {
@@ -313,6 +350,9 @@ func (t *tray) update() {
 	switch {
 	case t.updating:
 		t.title(t.mUpdate, "Updating to "+t.newer+"…")
+	case t.staged != "":
+		t.title(t.mUpdate, "Restart to use myweb "+t.staged)
+		tip += " · update ready"
 	case t.newer != "":
 		t.title(t.mUpdate, "Update to myweb "+t.newer)
 		tip += " · update available"
@@ -385,6 +425,7 @@ func (t *tray) start() {
 		args = append(args, "-d", t.set.Folder)
 	}
 	cmd := exec.Command(exe, args...)
+	cmd.Env = append(os.Environ(), cli.DesktopEnv+"=1") // it serves Home's settings
 	out := &tail{w: io.Discard}
 	if t.logFile != nil {
 		out.w = t.logFile
@@ -419,21 +460,20 @@ func (t *tray) reap(e exited) {
 	}
 }
 
-// open opens what the server serves at "/" (or the file manager), starting
-// the server first if none runs.
-func (t *tray) open(manager bool) {
+// homePath is Home: the apps, to open, install and update.
+const homePath = myserver.ManagerPath + "home.html"
+
+// open opens page (a path; "" for what the server serves at "/"), signed
+// in, starting the server first if none runs.
+func (t *tray) open(page string) {
 	if t.cur == nil {
-		t.openWhenUp = true
+		t.openWhenUp, t.openTo = true, page
 		if t.child == nil {
 			t.start()
 		}
 		return
 	}
-	u := t.cur.Login
-	if manager {
-		u = managerURL(u)
-	}
-	t.openURL(u)
+	t.openURL(pageURL(t.cur.Login, page))
 }
 
 func (t *tray) openURL(u string) {
@@ -443,12 +483,19 @@ func (t *tray) openURL(u string) {
 }
 
 // managerURL is the file manager's address on the server login opens.
-func managerURL(login string) string {
+func managerURL(login string) string { return pageURL(login, myserver.ManagerPath) }
+
+// pageURL is page (a path) on the server login opens, keeping its sign-in;
+// "" is login itself.
+func pageURL(login, page string) string {
+	if page == "" {
+		return login
+	}
 	u, err := url.Parse(login)
 	if err != nil {
 		return login
 	}
-	u.Path = myserver.ManagerPath
+	u.Path = page
 	return u.String()
 }
 
@@ -469,6 +516,11 @@ func (t *tray) choose() {
 		t.note = err.Error()
 		return
 	}
+	t.moveTo(dir, "")
+}
+
+// moveTo serves dir instead, and opens page there once it is up.
+func (t *tray) moveTo(dir, page string) {
 	if dir == "" || dir == t.folder {
 		return
 	}
@@ -482,23 +534,26 @@ func (t *tray) choose() {
 	if err := t.set.save(t.dirs); err != nil {
 		log.Printf("settings: %v", err)
 	}
-	t.openWhenUp = true
+	t.openWhenUp, t.openTo = true, page
 	t.update()
 	if t.cur == nil {
 		t.start()
 	}
 }
 
-func (t *tray) setLogin(on bool) {
+func (t *tray) setLogin(on bool) error {
 	if err := setAutostart(on); err != nil {
 		t.note = "start at login: " + err.Error()
-		return
+		return err
 	}
-	if on {
-		t.mLogin.Check()
-	} else {
-		t.mLogin.Uncheck()
+	if t.mLogin != nil { // no menu in tests
+		if on {
+			t.mLogin.Check()
+		} else {
+			t.mLogin.Uncheck()
+		}
 	}
+	return nil
 }
 
 // update_ installs the newer version found, or looks for one; the answers
@@ -515,19 +570,33 @@ func (t *tray) checkOrUpdate() {
 	case t.cantUpdate != "":
 		t.note = t.cantUpdate
 	default:
-		t.updating = true
-		version, exe, app := t.newer, t.exe, t.app
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-			defer cancel()
-			u := newUpdater()
-			rel, err := u.Get(ctx, version)
-			if err == nil {
-				err = install(ctx, u, rel, exe, app, runtime.GOOS)
-			}
-			t.updated <- err
-		}()
+		t.install(false)
 	}
+}
+
+// download installs the newer version found in the background, when updates
+// install by themselves: it runs from the next start.
+func (t *tray) download() {
+	if t.newer == "" || t.updating || t.staged == t.newer || t.cantUpdate != "" || t.set.Updates == "ask" {
+		return
+	}
+	t.install(true)
+}
+
+// install installs t.newer; then, unless auto, restarts into it.
+func (t *tray) install(auto bool) {
+	t.updating, t.auto = true, auto
+	version, exe, app := t.newer, t.exe, t.app
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		defer cancel()
+		u := newUpdater()
+		rel, err := u.Get(ctx, version)
+		if err == nil {
+			err = install(ctx, u, rel, exe, app, runtime.GOOS)
+		}
+		t.updated <- err
+	}()
 }
 
 // restart stops the server it started and starts this program again (now

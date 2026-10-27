@@ -164,9 +164,13 @@ writes. If it does not, `myweb -no-tui -no-open` prints the startup URL for manu
 ## Desktop app (system tray)
 
 `myweb-desktop` is myweb in the system tray (the menu bar on macOS). While it
-runs, it serves your data folder, and opens the file manager on start. Its
-menu:
+runs, it serves your data folder, and opens **Home** (your apps: open,
+install, update) on start. Its menu:
 
+- **Home**: the same, any time. Its **Settings** (the gear) has the
+  folder your files live in, start at login and updates; a new install
+  starts with a short welcome there (where files live, start at login, the
+  stores), and keeps its files in `Documents/myweb`.
 - **Open file manager** (or the app served at `/`), and **Apps**: the other
   installed apps, signed in.
 - **Show data folder**, **Choose data folder…** (kept in
@@ -177,9 +181,12 @@ menu:
   at login, it serves without opening the browser.
 - **Show log**: `~/.myweb/logs/desktop.log`, which also holds the server's
   output.
-- **Check for updates**: it also checks once a day, and then offers
-  **Update to myweb VERSION**, which installs that release (checked against
-  its signed checksums, as `myweb upgrade` does) and restarts into it. On
+- **Check for updates**: it also checks once a day. A newer release
+  (checked against its signed checksums, as `myweb upgrade` does) installs
+  in the background and runs from the next start, or at once with **Restart
+  to use myweb VERSION**; with "Install myweb updates by themselves" off in
+  Home's Settings, the menu offers **Update to myweb VERSION**, which
+  installs it and restarts into it. On
   macOS it replaces the whole `myweb.app`, keeping the previous one as
   `myweb.app.old`. `myweb-desktop upgrade [-check | VERSION]` does the same
   from a terminal, and a running tray restarts into the new version.
@@ -188,7 +195,7 @@ menu:
 
 It shares `~/.myweb` (the config, apps, catalogs and share links) with the
 `myweb` command, and `myweb status`, `open` and `stop` see its server. Only
-one runs at a time: starting it again opens the file manager. With
+one runs at a time: starting it again opens Home. With
 arguments, it is the myweb command line (`myweb-desktop status`), except on
 Windows, where it has no console to print to.
 
@@ -378,13 +385,27 @@ myweb app install rx-graphic   # install one; or just: myweb app run rx-graphic
 
 In the browser, the file manager's **App catalog** shows the same apps as
 cards (icon, description, tags, screenshots; search and filter by tag) with
-**Install** and **Open**. In the terminal UI, `i` lists them: ⏎ installs or
+**Install** and **Open**. **Home** (`/_myweb/home.html`, the **Home** link in the file
+manager, and the first item of myweb-desktop's menu) is the same without the
+technical parts, for people who just use the apps: My apps (Open, an update
+badge) and Get apps (search, Install), and a page per app with its
+screenshots, release notes, the folders it can use (allow another, take one
+back), its version (go back to one still installed, or follow updates) and
+Remove. In the terminal UI, `i` lists them: ⏎ installs or
 opens. An installed app is served by the running myweb right away; with
 `-other-apps=false`, Open starts `myweb app run NAME` in the background (logs
 in `~/.myweb/logs`).
 
-myweb reads the catalogs you add, none until then: `myweb app catalog add URL
--key KEY` (`remove URL` drops one). A catalog is checked with its server each time it is read (an unchanged one
+myweb reads the catalogs you add, none until then: `myweb app catalog add
+LINK` with the catalog's **store link**, its address and key in one
+(`https://…/apps.json#key=…&name=…`; `myweb-publish catalog link -url URL`
+prints it for a catalog you publish), or `add URL -key KEY`; `remove URL`
+drops one and `links` prints the links of those you read. Home's **Stores**
+page does the same: paste a link, see the store's site, apps and key
+fingerprint, then add it. A release build may add stores of its own to a new
+home, once (`MYWEB_DEFAULT_STORES` for `scripts/release-build.sh`, or a
+`stores.txt` of links beside the program); a store you remove doesn't come
+back. The open-source build has none. A catalog is checked with its server each time it is read (an unchanged one
 is not downloaded again) and its last copy is used offline.
 
 Publishing a catalog:
@@ -395,7 +416,8 @@ myweb-publish catalog init -title "My apps"       # apps.json, and catalog.key +
 # to apps.json; adding an app again keeps what isn't given
 myweb-publish catalog add -manifest https://…/stable.json -app-key app.key.pub \
     -title "My app" -description "What it does" \
-    -icon img/myapp.png -screenshot img/myapp-1.png -tags graphics,editor
+    -icon img/myapp.png -screenshot img/myapp-1.png -tags graphics,editor \
+    -plugins https://…/store/hosts/myapp/index.json   # optional: its plugin store
 myweb-publish catalog remove myapp
 myweb-publish catalog list                        # check the signature
 # each change signs apps.json again: upload apps.json and apps.json.sig together
@@ -406,6 +428,13 @@ installs and updates the app exactly as with `-web-from` and `-web-key`. An
 installed app keeps the key it was installed with, so a later change to the
 catalog can't redirect its updates. Catalogs and manifests must be https (http
 only for localhost).
+
+An app with a plugin store (`-plugins`: a plugdex store's
+`…/hosts/HOST/index.json`) may have **profiles**: the app set up for a
+purpose, offered by the store's free channels. Home lists them on the app's
+card ("Open as …") and page, and opens the app as one with
+`?app=ID&profile=URL&name=TITLE`. Apps built on rx-substrate take such a link
+only from their own store.
 
 ## Network drive (WebDAV)
 

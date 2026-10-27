@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,14 +23,37 @@ import (
 // Catalogs: signed lists of apps that can be installed by name.
 //
 //	app catalog [WORD] [-refresh]       the apps of every catalog
-//	app catalog add URL -key KEY        read another catalog too
+//	app catalog add LINK                read another catalog too: its store link
+//	app catalog add URL -key KEY        …or its address and key
+//	app catalog links                   the store links of the catalogs read
 //	app catalog remove URL
 //	app install NAME                    install an app from a catalog
 //
 // "app run NAME" and "-app NAME" install a catalog app that isn't installed.
 
 func catalogsFor(dirs home.Dirs) *webapp.Catalogs {
-	return &webapp.Catalogs{File: filepath.Join(dirs.Root, "catalogs.json"), Cache: filepath.Join(dirs.Root, "catalogs")}
+	c := &webapp.Catalogs{File: filepath.Join(dirs.Root, "catalogs.json"), Cache: filepath.Join(dirs.Root, "catalogs"),
+		Seeded: filepath.Join(dirs.Root, "catalogs-seeded.json")}
+	if err := c.Seed(defaultStoreLinks()); err != nil {
+		log.Printf("%v", err)
+	}
+	return c
+}
+
+// defaultStoreLinks are the stores this build adds to a new home: those built
+// in (webapp.DefaultStores) and those in a stores.txt beside the program,
+// which an installer may put there — one store link per line.
+func defaultStoreLinks() []string {
+	links := webapp.SplitStoreLinks(webapp.DefaultStores)
+	if exe, err := os.Executable(); err == nil {
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real
+		}
+		if b, err := os.ReadFile(filepath.Join(filepath.Dir(exe), "stores.txt")); err == nil {
+			links = append(links, webapp.SplitStoreLinks(string(b))...)
+		}
+	}
+	return links
 }
 
 func appCatalog(name string, args []string) error {
@@ -48,10 +72,18 @@ func appCatalog(name string, args []string) error {
 	ctx := context.Background()
 	switch {
 	case len(pos) > 0 && pos[0] == "add":
-		if len(pos) != 2 || *key == "" {
-			return usageError{fmt.Errorf("usage: %s app catalog add URL -key KEY", name)}
+		if len(pos) != 2 {
+			return usageError{fmt.Errorf("usage: %s app catalog add LINK, or add URL -key KEY", name)}
 		}
-		cat, err := cats.Add(ctx, webapp.CatalogSource{URL: pos[1], Key: *key})
+		src := webapp.CatalogSource{URL: pos[1], Key: *key}
+		if *key == "" {
+			l, err := webapp.ParseStoreLink(pos[1])
+			if err != nil {
+				return usageError{fmt.Errorf("%v\nusage: %s app catalog add LINK, or add URL -key KEY", err, name)}
+			}
+			src = l.Source()
+		}
+		cat, err := cats.Add(ctx, src)
 		if err != nil {
 			return err
 		}
@@ -60,6 +92,18 @@ func appCatalog(name string, args []string) error {
 			title = pos[1]
 		}
 		fmt.Printf("added %s: %d apps (%s app catalog lists them)\n", title, len(cat.Apps), name)
+		return nil
+	case len(pos) == 1 && pos[0] == "links":
+		srcs, err := cats.Sources()
+		if err != nil {
+			return err
+		}
+		if len(srcs) == 0 {
+			fmt.Printf("no catalogs; add one with: %s app catalog add LINK\n", name)
+		}
+		for _, s := range srcs {
+			fmt.Println(webapp.LinkOf(s))
+		}
 		return nil
 	case len(pos) > 0 && (pos[0] == "remove" || pos[0] == "rm"):
 		if len(pos) != 2 {
@@ -121,7 +165,7 @@ func appCatalog(name string, args []string) error {
 	case len(errs) == 0:
 		srcs, _ := cats.Sources()
 		if len(srcs) == 0 {
-			fmt.Printf("no catalogs; add one with: %s app catalog add URL -key KEY\n", name)
+			fmt.Printf("no catalogs; add one with: %s app catalog add LINK (a store's link)\n", name)
 		} else {
 			fmt.Println("the catalogs list no apps yet")
 		}

@@ -1,0 +1,955 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>myweb · Home</title>
+<meta name="theme-color" content="#5a3fd8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='0' y2='1'%3E%3Cstop offset='0' stop-color='%237052f0'/%3E%3Cstop offset='1' stop-color='%234a2fc4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='512' height='512' rx='112' fill='url(%23g)'/%3E%3Cg transform='translate(256 256) scale(1.1) translate(-256 -256)'%3E%3Cpath d='M256 92 L420 222 Q432 232 432 248 V388 Q432 420 400 420 H112 Q80 420 80 388 V248 Q80 232 92 222 Z' fill='%23fff' stroke='%23fff' stroke-width='24' stroke-linejoin='round'/%3E%3Crect x='166' y='246' width='78' height='66' rx='15' fill='%235a3fd8'/%3E%3Crect x='268' y='246' width='78' height='66' rx='15' fill='%235a3fd8'/%3E%3Crect x='166' y='330' width='78' height='66' rx='15' fill='%235a3fd8'/%3E%3Crect x='268' y='330' width='78' height='66' rx='15' fill='%235a3fd8'/%3E%3C/g%3E%3C/svg%3E">
+<script>
+  // the theme the file manager keeps, before the first paint (auto follows the system)
+  try { const t = localStorage.getItem("myweb.theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch {}
+</script>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f6f8; --panel: #ffffff; --text: #1d1d22; --muted: #6b6b76;
+    --line: #e4e4ea; --hover: #f1f0f5; --accent: #5a3fd8; --accent-soft: #eeeafd; --on-accent: #fff;
+    --ok: #1a7f37; --warn: #9a6700; --err: #cf222e;
+    --shadow: 0 8px 28px rgba(20, 20, 40, .14), 0 1px 3px rgba(20, 20, 40, .08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --bg: #121216; --panel: #1b1b21; --text: #e6e6ea; --muted: #8d8d99;
+      --line: #2c2c35; --hover: #24242c; --accent: #a08cff; --accent-soft: #26213f; --on-accent: #16112e;
+      --ok: #56d364; --warn: #e3b341; --err: #ff7b72;
+      --shadow: 0 8px 28px rgba(0, 0, 0, .5), 0 1px 3px rgba(0, 0, 0, .4);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #121216; --panel: #1b1b21; --text: #e6e6ea; --muted: #8d8d99;
+    --line: #2c2c35; --hover: #24242c; --accent: #a08cff; --accent-soft: #26213f; --on-accent: #16112e;
+    --ok: #56d364; --warn: #e3b341; --err: #ff7b72;
+    --shadow: 0 8px 28px rgba(0, 0, 0, .5), 0 1px 3px rgba(0, 0, 0, .4);
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .top { position: sticky; top: 0; z-index: 20; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+  .top-in { max-width: 1080px; margin: 0 auto; padding: 0 16px; display: flex; align-items: center; gap: 14px; height: 56px; }
+  .brand { display: flex; align-items: center; gap: 9px; color: var(--text); text-decoration: none; font-weight: 700; font-size: 17px; flex-shrink: 0; }
+  .logo { width: 28px; height: 28px; border-radius: 7px; background: var(--accent); display: grid; place-items: center; color: var(--on-accent); font-weight: 700; font-size: 15px; }
+  .tabs { display: flex; gap: 2px; flex: 1; min-width: 0; }
+  .tabs a { color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; padding: 7px 12px; border-radius: 8px; position: relative; white-space: nowrap; }
+  .tabs a:hover { background: var(--hover); color: var(--text); }
+  .tabs a[aria-current="page"] { color: var(--text); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+  .tabs .badge { position: absolute; top: 6px; right: 4px; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+  .files { color: var(--muted); text-decoration: none; font-size: 14px; font-weight: 600; padding: 7px 10px; border-radius: 8px; }
+  .files:hover { background: var(--hover); color: var(--text); }
+
+  main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 16px; margin: 28px 0 10px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+
+  button, .btn { font: 600 14px system-ui, sans-serif; border: 1px solid var(--line); background: var(--panel); color: var(--text); padding: 8px 16px; border-radius: 9px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; }
+  button:hover:not(:disabled), .btn:hover { background: var(--hover); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+  button.primary:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+  button.danger { color: var(--err); }
+  button.primary.danger { background: var(--err); border-color: var(--err); color: #fff; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.small { padding: 5px 11px; font-size: 13px; }
+  button.link { border: 0; background: none; color: var(--accent); padding: 2px 4px; font-weight: 500; }
+  button.link:hover:not(:disabled) { background: none; text-decoration: underline; }
+
+  .notice { border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); border-radius: 10px; padding: 12px 14px; margin: 0 0 20px; font-size: 14px; }
+  .empty { color: var(--muted); text-align: center; padding: 48px 16px; border: 1px dashed var(--line); border-radius: 14px; }
+  .empty a { color: var(--accent); }
+
+  /* app cards */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 10px; cursor: pointer; transition: box-shadow .15s, border-color .15s; }
+  .card:hover { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); box-shadow: var(--shadow); }
+  .card-head { display: flex; gap: 12px; align-items: center; min-width: 0; }
+  .card-title { font-weight: 700; font-size: 15.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .card-meta { color: var(--muted); font-size: 12.5px; }
+  .card-desc { color: var(--muted); font-size: 13.5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 0; min-height: 3.1em; }
+  .card-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+  .card-foot .grow { flex: 1; }
+  .icon { width: 52px; height: 52px; border-radius: 12px; flex-shrink: 0; object-fit: cover; background: var(--accent-soft); }
+  .icon.big { width: 76px; height: 76px; border-radius: 17px; }
+  .icon.letter { display: grid; place-items: center; font-weight: 700; font-size: 22px; color: #fff; }
+  .icon.big.letter { font-size: 32px; }
+  .pill { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); white-space: nowrap; }
+  .pill.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+  .pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+  .pill.err { color: var(--err); background: color-mix(in srgb, var(--err) 14%, transparent); }
+
+  .toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 18px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { font: 14px system-ui, sans-serif; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 8px 12px; }
+  .toolbar input { flex: 1; min-width: 180px; }
+
+  /* an app's page */
+  .back { color: var(--muted); text-decoration: none; font-size: 14px; display: inline-block; margin-bottom: 16px; }
+  .back:hover { color: var(--text); }
+  .app-head { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+  .app-head .who { flex: 1; min-width: 220px; }
+  .app-head p { margin: 6px 0 0; color: var(--muted); max-width: 62ch; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .tags span { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 9px; }
+  .shots { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x mandatory; }
+  .shots img { height: 340px; max-width: 90%; border-radius: 10px; border: 1px solid var(--line); scroll-snap-align: start; background: var(--panel); }
+  .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 6px 16px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); flex-wrap: wrap; }
+  .row:first-child { border-top: 0; }
+  .row .grow { flex: 1; min-width: 160px; }
+  .row .what { font-weight: 600; overflow-wrap: anywhere; }
+  .row .how { color: var(--muted); font-size: 13px; }
+  .notes { white-space: pre-wrap; font-size: 14px; margin: 10px 0; color: var(--text); }
+  .update { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); background: var(--accent-soft); border-radius: 12px; padding: 12px 14px; margin-top: 20px; }
+  .update .grow { flex: 1; min-width: 200px; }
+  select.versions { font: 14px system-ui, sans-serif; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 7px 10px; }
+
+  /* dialogs */
+  dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); color: var(--text); box-shadow: var(--shadow); padding: 20px; width: min(460px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(10, 10, 20, .35); }
+  dialog h3 { margin: 0 0 8px; font-size: 17px; }
+  dialog p { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+  #askText { white-space: pre-line; overflow-wrap: anywhere; }
+  .dlg-foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .crumbs { font-size: 13px; color: var(--muted); margin-bottom: 8px; word-break: break-all; }
+  .crumbs a { color: var(--accent); text-decoration: none; }
+  .folders { border: 1px solid var(--line); border-radius: 10px; max-height: 260px; overflow-y: auto; }
+  .folders button { display: flex; width: 100%; justify-content: flex-start; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; font-weight: 500; padding: 9px 12px; background: none; }
+  .folders button:last-child { border-bottom: 0; }
+  .folders .empty { border: 0; padding: 20px; }
+  .radios { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
+
+  .addstore { display: flex; gap: 10px; margin-bottom: 20px; }
+  .addstore input { flex: 1; min-width: 0; font: 14px system-ui, sans-serif; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; }
+  .store { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .store .grow { flex: 1; min-width: 200px; }
+  .store .what { font-weight: 700; }
+  .store .how { color: var(--muted); font-size: 13px; }
+  .store .how.err { color: var(--err); }
+  #dlgStore .site { font-size: 22px; font-weight: 700; word-break: break-all; margin: 6px 0 2px; }
+  #dlgStore .stname { color: var(--muted); margin-bottom: 12px; }
+  #dlgStore .stapps { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  #dlgStore .stapps span { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px 3px 4px; }
+  #dlgStore .stapps img { width: 20px; height: 20px; border-radius: 5px; }
+  #dlgStore .fp { font-size: 13px; margin: 0 0 8px; }
+  #dlgStore .warn { font-size: 13px; color: var(--warn); margin: 0; }
+  code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--hover); padding: 1px 5px; border-radius: 4px; }
+  .files.gear { display: grid; place-items: center; padding: 7px 8px; }
+  .files.gear[aria-current="page"] { color: var(--text); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+  .note { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; padding: 10px 12px 10px 14px; margin: 0 0 10px; font-size: 14px; }
+  .note.err { border-left-color: var(--err); }
+  .note .grow { flex: 1; min-width: 200px; }
+  .note a { color: var(--accent); font-weight: 600; text-decoration: none; }
+  .note a:hover { text-decoration: underline; }
+  .note .x { border: 0; background: none; color: var(--muted); padding: 2px 6px; font-size: 18px; line-height: 1; }
+  #notices:not(:empty) { margin-bottom: 14px; }
+  .switch { position: relative; width: 44px; height: 26px; flex-shrink: 0; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch span { position: absolute; inset: 0; background: var(--line); border-radius: 999px; transition: background .15s; }
+  .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s; }
+  .switch input:checked + span { background: var(--accent); }
+  .switch input:checked + span::after { transform: translateX(18px); }
+  .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .switch input:disabled { cursor: not-allowed; }
+  .switch input:disabled + span { opacity: .5; }
+  .path { font: 600 14.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; word-break: break-all; }
+  details.adv { margin-top: 28px; }
+  details.adv summary { cursor: pointer; font-weight: 700; font-size: 16px; color: var(--muted); }
+  details.adv summary:hover { color: var(--text); }
+  details.adv .box { margin-top: 12px; }
+  .wiz { max-width: 560px; margin: 4vh auto 0; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 32px 28px 24px; box-shadow: var(--shadow); }
+  .wiz .logo { width: 48px; height: 48px; border-radius: 12px; font-size: 24px; margin-bottom: 18px; }
+  .wiz h1 { font-size: 26px; margin-bottom: 8px; }
+  .wiz p { color: var(--muted); margin: 0 0 18px; }
+  .wiz .choice { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-bottom: 18px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .wiz .choice .grow { flex: 1; min-width: 180px; }
+  .wiz .foot { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .wiz .foot .grow { flex: 1; }
+  .dots { display: flex; gap: 6px; }
+  .dots i { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+  .dots i.on { background: var(--accent); }
+  .wiz .stlist { margin: 0 0 18px; display: grid; gap: 8px; }
+  .wiz .stlist > div { display: flex; gap: 12px; align-items: center; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; }
+  .wiz .stlist .what { font-weight: 600; }
+  .wiz .stlist .how { color: var(--muted); font-size: 13px; }
+  .wiz .stlist .ok { color: var(--ok); font-weight: 700; }
+  .wiz .addstore { margin-bottom: 18px; }
+  .profs { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--muted); }
+  .profs button { font-size: 12.5px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .profs a { color: var(--muted); }
+  .toasts { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); display: grid; gap: 8px; z-index: 50; width: min(440px, calc(100vw - 32px)); }
+  .toast { background: var(--text); color: var(--bg); border-radius: 10px; padding: 10px 14px; font-size: 14px; box-shadow: var(--shadow); }
+  .toast.err { background: var(--err); color: #fff; }
+  .spin { width: 14px; height: 14px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 520px) {
+    .brand > span:last-child { display: none; } .shots img { height: 180px; }
+    .top-in { gap: 6px; } .tabs a { padding: 7px 8px; }
+    .files:not(.gear) { display: none; } /* the file manager is in Settings ▸ Advanced */
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a class="brand" href="#apps"><span class="logo"><svg viewBox="64 76 384 360" width="64%" aria-hidden="true"><path d="M256 92 L420 222 Q432 232 432 248 V388 Q432 420 400 420 H112 Q80 420 80 388 V248 Q80 232 92 222 Z" fill="currentColor" stroke="currentColor" stroke-width="24" stroke-linejoin="round"/><g style="fill:var(--accent)"><rect x="166" y="246" width="78" height="66" rx="15"/><rect x="268" y="246" width="78" height="66" rx="15"/><rect x="166" y="330" width="78" height="66" rx="15"/><rect x="268" y="330" width="78" height="66" rx="15"/></g></svg></span><span>myweb</span></a>
+    <nav class="tabs" aria-label="Home">
+      <a href="#apps" data-nav="apps">My apps<span class="badge" id="updBadge" hidden title="An update is available"></span></a>
+      <a href="#get" data-nav="get">Get apps</a>
+      <a href="#stores" data-nav="stores">Stores</a>
+    </nav>
+    <a class="files" href="/_myweb/" title="Your files">Files</a>
+    <a class="files gear" href="#settings" data-nav="settings" title="Settings" aria-label="Settings"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></a>
+  </div>
+</header>
+
+<main>
+  <div class="notice" id="signin" hidden>
+    <strong>Not signed in.</strong> Open Home from myweb's menu (the icon in your menu bar or taskbar) to sign in on this browser.
+  </div>
+  <div class="notice" id="storeErr" hidden></div>
+  <div id="notices"></div>
+
+  <section id="vApps" hidden>
+    <h1>My apps</h1>
+    <p class="sub" id="appsSub">&nbsp;</p>
+    <div class="grid" id="appsGrid"></div>
+  </section>
+
+  <section id="vGet" hidden>
+    <h1>Get apps</h1>
+    <p class="sub" id="getSub">&nbsp;</p>
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Search apps" aria-label="Search apps">
+      <select id="storeSel" aria-label="Store" hidden></select>
+      <button id="refresh" title="Look for new apps now">Refresh</button>
+    </div>
+    <div class="grid" id="getGrid"></div>
+  </section>
+
+  <section id="vApp" hidden></section>
+
+  <section id="vStores" hidden>
+    <h1>Stores</h1>
+    <p class="sub">Where your apps come from. A store gives you a link to add it with.</p>
+    <form class="addstore" id="addForm">
+      <input type="text" id="linkIn" placeholder="Paste a store link" aria-label="Store link" autocomplete="off" spellcheck="false">
+      <button class="primary" id="addBtn">Add store…</button>
+    </form>
+    <div id="storeList"></div>
+  </section>
+
+  <section id="vSettings" hidden></section>
+
+  <section id="vWelcome" hidden></section>
+</main>
+
+<dialog id="dlgAsk">
+  <h3 id="askTitle"></h3>
+  <p id="askText"></p>
+  <div class="dlg-foot"><button id="askNo">Cancel</button><button class="primary" id="askYes">OK</button></div>
+</dialog>
+
+<dialog id="dlgFolder">
+  <h3 id="folderTitle"></h3>
+  <div class="crumbs" id="folderCrumbs"></div>
+  <div class="folders" id="folderList"></div>
+  <div class="radios">
+    <label><input type="radio" name="acc" value="read" checked> It may read the files in it</label>
+    <label><input type="radio" name="acc" value="write"> It may read and change the files in it</label>
+  </div>
+  <div class="dlg-foot"><button id="folderNo">Cancel</button><button class="primary" id="folderYes">Allow this folder</button></div>
+</dialog>
+
+<dialog id="dlgStore">
+  <h3>Add this store?</h3>
+  <div class="site" id="stSite"></div>
+  <div class="stname" id="stName"></div>
+  <div class="stapps" id="stApps"></div>
+  <p class="fp">Key fingerprint <code id="stFp"></code>: if the store's website shows one, it should be the same.</p>
+  <p class="warn">Only add stores you trust: their apps can use the folders you allow them.</p>
+  <div class="dlg-foot"><button id="stNo">Cancel</button><button class="primary" id="stYes">Add store</button></div>
+</dialog>
+
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const post = (url, body) => fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  async function errText(r) { try { const j = await r.json(); return j.error || r.statusText; } catch { return r.status + " " + r.statusText; } }
+  const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+
+  function toast(text, err) {
+    const t = document.createElement("div");
+    t.className = "toast" + (err ? " err" : "");
+    t.textContent = text;
+    $("toasts").append(t);
+    setTimeout(() => t.remove(), err ? 7000 : 3500);
+  }
+
+  // ---- what this server has: installed apps (/cmd/apps) and the stores' apps (/cmd/catalog) ----
+  let authOn = false, authed = true;
+  let rows = [], catalog = [], storeErrors = [], loaded = false;
+  const busy = new Map(); // app name → what it is doing ("install")
+
+  async function signedIn() {
+    try {
+      const j = await (await fetch("/cmd/status")).json();
+      authOn = !!j.auth; authed = !j.auth || !!j.authed;
+    } catch {}
+    $("signin").hidden = authed;
+  }
+
+  async function load(refresh) {
+    const [a, c] = await Promise.all([post("/cmd/apps", {}).catch(() => null), post("/cmd/catalog", refresh ? { refresh: true } : {}).catch(() => null)]);
+    if (a && a.status === 401 || c && c.status === 401) { authed = false; $("signin").hidden = false; }
+    rows = a && a.ok ? (await a.json()).result : [];
+    if (c && c.ok) { const j = (await c.json()).result; catalog = j.apps || []; storeErrors = j.errors || []; }
+    else { catalog = []; storeErrors = []; }
+    await Promise.all([loadStores(), loadDesk()]);
+    loaded = true;
+    render();
+    // while an app updates, look again
+    clearTimeout(load.t);
+    if (rows.some((r) => BUSY.test(r.status || ""))) load.t = setTimeout(() => load(false), 1500);
+  }
+
+  // One app as Home shows it: its catalog entry (words, pictures) and its installed row (versions, folders).
+  function apps() {
+    const by = new Map();
+    for (const e of catalog) if (!by.has(e.name)) by.set(e.name, { name: e.name, cat: e });
+    for (const r of rows) { const x = by.get(r.name) || { name: r.name }; x.row = r; by.set(r.name, x); }
+    return [...by.values()];
+  }
+  const find = (name) => apps().find((a) => a.name === name);
+  const title = (a) => (a.cat && a.cat.title) || a.name;
+  const hasUpdate = (a) => !!(a.row && a.row.latest && a.row.current && a.row.latest !== a.row.current && !a.row.pinned);
+  const storeName = (u) => { try { return new URL(u).host; } catch { return u || ""; } };
+  const stores = () => [...new Set(catalog.map((e) => e.catalog).filter(Boolean))];
+
+  function iconHTML(a, big) {
+    const cls = "icon" + (big ? " big" : "");
+    if (a.cat && a.cat.icon) return `<img class="${cls}" src="${esc(a.cat.icon)}" alt="" loading="lazy">`;
+    let h = 0; for (const ch of a.name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    return `<div class="${cls} letter" style="background:hsl(${h % 360} 55% 48%)" aria-hidden="true">${esc(title(a).charAt(0).toUpperCase())}</div>`;
+  }
+
+  // ---- views, in the address: #apps, #get, #app/NAME ----
+  function route() {
+    const h = decodeURIComponent(location.hash.slice(1));
+    if (h.startsWith("app/")) return { view: "app", name: h.slice(4) };
+    if (h === "stores" || h.startsWith("stores?")) return { view: "stores" };
+    if (h === "settings") return { view: "settings" };
+    return { view: h === "get" ? "get" : "apps" };
+  }
+  function render() {
+    const r = welcoming() ? { view: "welcome" } : route();
+    $("vApps").hidden = r.view !== "apps"; $("vGet").hidden = r.view !== "get"; $("vApp").hidden = r.view !== "app"; $("vStores").hidden = r.view !== "stores";
+    $("vSettings").hidden = r.view !== "settings"; $("vWelcome").hidden = r.view !== "welcome";
+    document.querySelectorAll(".top-in > :not(.brand)").forEach((el) => { el.style.visibility = r.view === "welcome" ? "hidden" : ""; });
+    renderNotices(r.view);
+    if (r.view === "welcome") return renderWelcome();
+    document.querySelectorAll("[data-nav]").forEach((a) => { if (a.dataset.nav === r.view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    $("updBadge").hidden = !apps().some(hasUpdate);
+    $("storeErr").hidden = !storeErrors.length;
+    $("storeErr").textContent = storeErrors.length ? `A store couldn't be reached, so some apps may be missing. (${storeErrors[0]})` : "";
+    if (!loaded) return;
+    if (!authed && !rows.length && !catalog.length) { // nothing can be read signed out
+      const box = r.view === "get" ? $("getGrid") : r.view === "apps" ? $("appsGrid") : r.view === "stores" ? $("storeList") : $("vApp");
+      $("appsSub").innerHTML = $("getSub").innerHTML = "&nbsp;";
+      box.innerHTML = `<div class="empty" style="grid-column:1/-1">Sign in to see your apps.</div>`;
+      return;
+    }
+    if (r.view === "apps") renderMine();
+    else if (r.view === "get") renderGet();
+    else if (r.view === "stores") renderStores();
+    else if (r.view === "settings") renderSettings();
+    else renderApp(r.name);
+  }
+  window.addEventListener("hashchange", () => { render(); window.scrollTo(0, 0); });
+
+  function renderMine() {
+    const list = apps().filter((a) => a.row).sort((x, y) => title(x).localeCompare(title(y)));
+    list.forEach(loadProfiles);
+    const n = list.filter(hasUpdate).length;
+    $("appsSub").textContent = !list.length ? "Apps you install show up here." : plural(list.length, "app") + (n ? ` · ${plural(n, "update")} available` : "");
+    $("appsGrid").innerHTML = list.length ? list.map((a) => `
+      <div class="card" data-app="${esc(a.name)}" tabindex="0" role="link" aria-label="${esc(title(a))}">
+        <div class="card-head">${iconHTML(a)}<div style="min-width:0"><div class="card-title">${esc(title(a))}</div>
+          <div class="card-meta">${hasUpdate(a) ? `<span class="pill warn">Update available</span>` : a.row.current ? "Version " + esc(a.row.current) : ""}</div></div></div>
+        ${profileLinks(a)}
+        <div class="card-foot"><span class="grow"></span><button class="primary small" data-open="${esc(a.name)}" ${authed ? "" : "disabled"}>Open</button></div>
+      </div>`).join("") : `<div class="empty" style="grid-column:1/-1">No apps yet. <a href="#get">Get apps →</a></div>`;
+  }
+
+  function renderGet() {
+    const all = stores();
+    const sel = $("storeSel");
+    sel.hidden = all.length < 2;
+    if (all.length > 1 && sel.options.length !== all.length + 1) {
+      sel.innerHTML = `<option value="">All stores</option>` + all.map((u) => `<option value="${esc(u)}">${esc(storeName(u))}</option>`).join("");
+    }
+    const q = $("q").value.trim().toLowerCase(), store = sel.hidden ? "" : sel.value;
+    const list = apps().filter((a) => a.cat && (!store || a.cat.catalog === store) &&
+      (!q || [title(a), a.name, a.cat.description, ...(a.cat.tags || [])].join(" ").toLowerCase().includes(q)))
+      .sort((x, y) => title(x).localeCompare(title(y)));
+    $("getSub").textContent = !all.length ? "" : `${plural(apps().filter((a) => a.cat).length, "app")} from ${all.length === 1 ? storeName(all[0]) : plural(all.length, "store")}`;
+    $("getGrid").innerHTML = !all.length
+      ? `<div class="empty" style="grid-column:1/-1">No stores yet. <a href="#stores">Add a store</a> with the link it gives you.</div>`
+      : list.length ? list.map((a) => `
+      <div class="card" data-app="${esc(a.name)}" tabindex="0" role="link" aria-label="${esc(title(a))}">
+        <div class="card-head">${iconHTML(a)}<div style="min-width:0"><div class="card-title">${esc(title(a))}</div>
+          ${all.length > 1 ? `<div class="card-meta">${esc(storeName(a.cat.catalog))}</div>` : ""}</div></div>
+        <p class="card-desc">${esc(a.cat.description || "")}</p>
+        <div class="card-foot"><span class="grow"></span>${actionButton(a, true)}</div>
+      </div>`).join("") : `<div class="empty" style="grid-column:1/-1">No apps match “${esc(q)}”.</div>`;
+  }
+
+  // Install, Installing… or Open
+  function actionButton(a, small) {
+    const s = small ? " small" : "", off = authed ? "" : "disabled";
+    if (busy.get(a.name) === "install") return `<button class="primary${s}" disabled><span class="spin"></span>Installing…</button>`;
+    if (a.row) return `<button class="primary${s}" data-open="${esc(a.name)}" ${off}>Open</button>`;
+    return `<button class="primary${s}" data-install="${esc(a.name)}" ${off}>Install</button>`;
+  }
+
+  // ---- stores: POST /cmd/stores ----
+  let storeRows = [];
+  async function loadStores(body) {
+    const r = await post("/cmd/stores", body || {}).catch(() => null);
+    if (r && r.ok) storeRows = (await r.json()).result || [];
+    return r;
+  }
+  const storeTitle = (st) => st.title || st.name || st.site;
+  function ago(t) {
+    const s = (Date.now() - new Date(t)) / 1000;
+    return s < 90 ? "just now" : s < 5400 ? Math.round(s / 60) + " minutes ago" : s < 129600 ? Math.round(s / 3600) + " hours ago" : Math.round(s / 86400) + " days ago";
+  }
+  function renderStores() {
+    const off = authed ? "" : "disabled";
+    $("addBtn").disabled = !authed;
+    // #stores?add=LINK: a link handed to Home, shown in the box (it's only added once confirmed)
+    const m = /^stores\?add=(.+)$/.exec(location.hash.slice(1));
+    if (m) { try { $("linkIn").value = decodeURIComponent(m[1]); } catch {} history.replaceState(null, "", "#stores"); }
+    $("storeList").innerHTML = storeRows.length ? storeRows.map((st) => `<div class="store">
+        <div class="grow"><div class="what">${esc(storeTitle(st))}</div>
+          <div class="how">${esc(st.site)}${st.error ? "" : ` · ${plural(st.apps, "app")}`}${st.checked ? " · checked " + ago(st.checked) : ""}</div>
+          ${st.error ? `<div class="how err">Can't be reached right now. ${esc(st.error)}</div>` : ""}</div>
+        <button class="small" data-copylink="${esc(st.link)}">Copy link</button>
+        <button class="small danger" data-unstore="${esc(st.url)}" ${off}>Remove</button></div>`).join("")
+      : `<div class="empty">No stores yet. Paste the link a store gives you above.</div>`;
+  }
+  async function addStore(link) {
+    link = link.trim();
+    if (!link) return;
+    $("addBtn").disabled = true; $("addBtn").innerHTML = `<span class="spin"></span>Reading…`;
+    const r = await post("/cmd/stores", { preview: link }).catch(() => null);
+    $("addBtn").disabled = !authed; $("addBtn").textContent = "Add store…";
+    if (!r || !r.ok) { toast(r ? await errText(r) : "myweb isn't answering", true); return; }
+    const pv = (await r.json()).result;
+    if (pv.added) { toast(`${storeTitle(pv)} is already one of your stores.`); return; }
+    const d = $("dlgStore");
+    $("stSite").textContent = pv.site;
+    $("stName").textContent = `${storeTitle(pv)} · ${plural(pv.apps, "app")}`;
+    $("stApps").innerHTML = pv.appList.slice(0, 12).map((a) => `<span>${a.icon ? `<img src="${esc(a.icon)}" alt="">` : ""}${esc(a.title || a.name)}</span>`).join("");
+    $("stFp").textContent = pv.fingerprint;
+    const ok = await new Promise((resolve) => {
+      const done = (v) => { d.close(); $("stYes").onclick = $("stNo").onclick = null; resolve(v); };
+      $("stYes").onclick = () => done(true); $("stNo").onclick = () => done(false); d.oncancel = () => done(false);
+      d.showModal();
+    });
+    if (!ok) return;
+    const a = await loadStores({ add: link });
+    if (a && a.ok) { toast(`${storeTitle(pv)} added. Its apps are in Get apps.`); $("linkIn").value = ""; await load(false); }
+    else toast(a ? await errText(a) : "myweb isn't answering", true);
+  }
+  $("addForm").addEventListener("submit", (e) => { e.preventDefault(); addStore($("linkIn").value); });
+
+  // ---- the myweb app's settings: POST /cmd/desktop, only when the tray app started this server ----
+  let desk = null; // its state; null: myweb was started otherwise (Settings shows less)
+  async function loadDesk(body) {
+    const r = await post("/cmd/desktop", body || {}).catch(() => null);
+    if (r && r.ok) desk = (await r.json()).result;
+    else if (!body) desk = null;
+    // while it checks for or downloads an update, look again
+    clearTimeout(loadDesk.t);
+    if (desk && (desk.updating || /^checking/.test(desk.note || ""))) loadDesk.t = setTimeout(async () => { await loadDesk(); render(); }, 2000);
+    return r;
+  }
+  async function deskDo(body, done) {
+    const r = await loadDesk(body);
+    if (r && r.ok) { if (done) toast(done); } else toast(r ? await errText(r) : "myweb isn't answering", true);
+    render();
+    return r && r.ok ? desk : null;
+  }
+  const showIn = () => desk && desk.os === "darwin" ? "Show in Finder" : desk && desk.os === "windows" ? "Show in Explorer" : "Show folder";
+
+  // a new folder for the files: the server restarts there, and the tray opens Home on it
+  async function moveTo(folder, short) {
+    const r = await post("/cmd/desktop", { folder, welcomed: true }).catch(() => null);
+    if (!r || !r.ok) { toast(r ? await errText(r) : "myweb isn't answering", true); return false; }
+    $("notices").innerHTML = "";
+    document.querySelector("main").innerHTML = `<div class="wiz"><span class="logo"><svg viewBox="64 76 384 360" width="64%" aria-hidden="true"><path d="M256 92 L420 222 Q432 232 432 248 V388 Q432 420 400 420 H112 Q80 420 80 388 V248 Q80 232 92 222 Z" fill="currentColor" stroke="currentColor" stroke-width="24" stroke-linejoin="round"/><g style="fill:var(--accent)"><rect x="166" y="246" width="78" height="66" rx="15"/><rect x="268" y="246" width="78" height="66" rx="15"/><rect x="166" y="330" width="78" height="66" rx="15"/><rect x="268" y="330" width="78" height="66" rx="15"/></g></svg></span><h1>Moving to your new folder…</h1>
+      <p>myweb is starting again with your files in <span class="path">${esc(short || folder)}</span>, and opens Home there in a moment.</p>
+      <p>You can close this window.</p></div>`;
+    return true;
+  }
+  async function chooseFolder() {
+    const r = await post("/cmd/desktop", { pick: true }).catch(() => null);
+    if (!r || !r.ok) { toast(r ? await errText(r) : "myweb isn't answering", true); return ""; }
+    const j = (await r.json()).result;
+    return j.picked ? { path: j.picked, short: j.pickedShort || j.picked } : null;
+  }
+  async function restartMyweb() {
+    const r = await post("/cmd/desktop", { restart: true }).catch(() => null);
+    if (!r || !r.ok) { toast(r ? await errText(r) : "myweb isn't answering", true); return; }
+    toast("myweb is restarting…");
+    // back when it answers again
+    const until = Date.now() + 60000;
+    await new Promise((ok) => setTimeout(ok, 2500));
+    while (Date.now() < until) {
+      try { if ((await fetch("/cmd/status", { cache: "no-store" })).ok) { location.reload(); return; } } catch {}
+      await new Promise((ok) => setTimeout(ok, 1000));
+    }
+    toast("myweb hasn't come back yet: open Home from its menu.", true);
+  }
+
+  function updateLine() {
+    if (!desk) return "";
+    if (desk.ready) return `<div class="row"><div class="grow"><div class="what">myweb ${esc(desk.ready)} is ready</div><div class="how">It's used from the next time myweb starts.</div></div>
+      <button class="primary small" data-restart="1">Restart now</button></div>`;
+    if (desk.updating) return `<div class="row"><span class="spin"></span><div class="grow">Downloading myweb ${esc(desk.newer)}…</div></div>`;
+    if (desk.newer) return `<div class="row"><div class="grow"><div class="what">myweb ${esc(desk.newer)} is available</div>
+      <div class="how">${desk.cantUpdate ? esc(desk.cantUpdate) : "You're on " + esc(desk.version) + "."}</div></div>
+      ${desk.cantUpdate ? "" : `<button class="primary small" data-deskcheck="1">Update now</button>`}</div>`;
+    if (/^checking/.test(desk.note || "")) return `<div class="row"><span class="spin"></span><div class="grow">Checking for updates…</div></div>`;
+    return `<div class="row"><div class="grow"><div class="what">myweb ${esc(desk.version)}</div><div class="how">${esc(desk.note ? cap(desk.note) : "Checked for updates every day.")}</div></div>
+      <button class="small" data-deskcheck="1">Check now</button></div>`;
+  }
+
+  function renderSettings() {
+    const off = authed ? "" : "disabled";
+    let html = `<h1>Settings</h1><p class="sub">${desk ? "How myweb runs on this computer." : "This myweb was started from the command line: its settings are there (myweb help config)."}</p>`;
+    if (desk) {
+      html += `<h2>Your files</h2><div class="box"><div class="row"><div class="grow"><div class="path">${esc(desk.folderShort)}</div>
+          <div class="how">Apps keep what they make here, in the folders you let them use.</div></div>
+          <button class="small" data-show="folder">${showIn()}</button><button class="small" data-movefolder="1" ${off}>Change…</button></div></div>
+        <h2>Starting</h2><div class="box"><div class="row"><div class="grow"><div class="what">Start myweb when you log in</div>
+          <div class="how">So your apps are ready when you are.</div></div>
+          <label class="switch"><input type="checkbox" data-desk="login" ${desk.login ? "checked" : ""} ${off} aria-label="Start myweb when you log in"><span></span></label></div></div>
+        <h2>Updates</h2><div class="box"><div class="row"><div class="grow"><div class="what">Install myweb updates by themselves</div>
+          <div class="how">They download in the background and are used from the next start.</div></div>
+          <label class="switch"><input type="checkbox" data-desk="autoUpdate" ${desk.autoUpdate ? "checked" : ""} ${off} aria-label="Install myweb updates by themselves"><span></span></label></div>
+          ${updateLine()}
+          <div class="row"><div class="grow"><div class="how">Apps update by themselves too, unless you keep one at a version (on its page).</div></div></div></div>`;
+    }
+    html += `<details class="adv"><summary>Advanced</summary><div class="box">
+        <div class="row"><div class="grow"><div class="what">File manager</div><div class="how">All your files, and myweb's own tools.</div></div><a class="btn small" href="/_myweb/">Open</a></div>
+        <div class="row"><div class="grow"><div class="what">Address</div><div class="how"><code>${esc(location.origin)}</code></div></div></div>
+        ${desk ? `<div class="row"><div class="grow"><div class="what">Log</div><div class="how">What myweb did, to send along with a problem.</div></div><button class="small" data-show="log">Show log</button></div>
+        <div class="row"><div class="grow"><div class="what">Version</div><div class="how">myweb ${esc(desk.version)}${desk.os ? " · " + esc(desk.os) : ""}</div></div></div>` : ""}
+        <div class="row"><div class="grow"><div class="what">Command line</div><div class="how">Everything here, and more: <code>myweb help</code></div></div></div>
+      </div></details>`;
+    $("vSettings").innerHTML = html;
+  }
+
+  // ---- notices: a myweb update ready, apps updated (since this browser last looked), apps that couldn't update ----
+  const SEEN = "myweb.home.seen";
+  function seenVersions() { try { return JSON.parse(localStorage.getItem(SEEN)); } catch { return null; } }
+  function saveSeen(m) { try { localStorage.setItem(SEEN, JSON.stringify(m)); } catch {} }
+  function markSeen(name) {
+    const m = seenVersions() || {}, r = rows.find((x) => x.name === name);
+    if (r && r.current) { m[name] = r.current; saveSeen(m); }
+  }
+  function renderNotices(view) {
+    if (!loaded || view === "welcome") { $("notices").innerHTML = ""; return; }
+    let seen = seenVersions();
+    if (!seen) { // the first look: nothing is news yet
+      seen = {}; for (const r of rows) if (r.current) seen[r.name] = r.current;
+      saveSeen(seen);
+    }
+    const out = [];
+    if (desk && desk.ready && view !== "settings")
+      out.push(`<div class="note"><div class="grow">myweb ${esc(desk.ready)} is ready. It's used from the next time myweb starts.</div><button class="small" data-restart="1">Restart now</button></div>`);
+    for (const a of apps()) {
+      const r = a.row;
+      if (!r || !r.current) continue;
+      if (seen[a.name] && seen[a.name] !== r.current && !(view === "app" && route().name === a.name))
+        out.push(`<div class="note"><div class="grow">${esc(title(a))} updated to ${esc(r.current)} · <a href="#app/${encodeURIComponent(a.name)}">What's new</a></div><button class="x" data-seen="${esc(a.name)}" aria-label="Dismiss">×</button></div>`);
+      else if (!seen[a.name]) { seen[a.name] = r.current; saveSeen(seen); } // installed since: not news
+      if (r.status && !BUSY.test(r.status) && !QUIET.test(r.status) && view !== "app")
+        out.push(`<div class="note err"><div class="grow">${esc(title(a))} couldn't update · <a href="#app/${encodeURIComponent(a.name)}">Details</a></div></div>`);
+    }
+    $("notices").innerHTML = out.join("");
+  }
+
+  // ---- first run: shown once, on a new install of the myweb app ----
+  const wiz = { on: false, step: 0, folder: "", login: true };
+  function welcoming() {
+    if (!desk || !desk.firstRun || !authed) return false;
+    if (!wiz.on) Object.assign(wiz, { on: true, folder: desk.folder });
+    return true;
+  }
+  function renderWelcome() {
+    const steps = 4, dots = `<div class="dots" aria-hidden="true">${Array.from({ length: steps }, (_, i) => `<i class="${i === wiz.step ? "on" : ""}"></i>`).join("")}</div>`;
+    const foot = (back, next) => `<div class="foot">${dots}<span class="grow"></span>${back ? `<button data-wiz="back">Back</button>` : ""}${next}</div>`;
+    let html = "";
+    if (wiz.step === 0) {
+      html = `<span class="logo"><svg viewBox="64 76 384 360" width="64%" aria-hidden="true"><path d="M256 92 L420 222 Q432 232 432 248 V388 Q432 420 400 420 H112 Q80 420 80 388 V248 Q80 232 92 222 Z" fill="currentColor" stroke="currentColor" stroke-width="24" stroke-linejoin="round"/><g style="fill:var(--accent)"><rect x="166" y="246" width="78" height="66" rx="15"/><rect x="268" y="246" width="78" height="66" rx="15"/><rect x="166" y="330" width="78" height="66" rx="15"/><rect x="268" y="330" width="78" height="66" rx="15"/></g></svg></span><h1>Welcome to myweb</h1>
+        <p>myweb runs apps on this computer, in your browser. Your files stay here, in a folder you choose, and each app uses only the folders you allow.</p>
+        <p>Two quick questions, and you're ready.</p>${foot(false, `<button class="primary" data-wiz="next">Get started</button>`)}`;
+    } else if (wiz.step === 1) {
+      html = `<h1>Where should your files live?</h1><p>What you make with your apps is kept in this folder.</p>
+        <div class="choice"><div class="grow"><div class="path">${esc(tildeOf(wiz.folder))}</div></div><button class="small" data-wiz="pick">Choose another folder…</button></div>
+        ${foot(true, `<button class="primary" data-wiz="next">Continue</button>`)}`;
+    } else if (wiz.step === 2) {
+      html = `<h1>Start myweb when you log in?</h1><p>So your apps are ready when you are. You can change this in Settings.</p>
+        <div class="choice"><div class="grow"><div class="what">Start myweb when I log in</div></div>
+          <label class="switch"><input type="checkbox" id="wizLogin" ${wiz.login ? "checked" : ""} aria-label="Start myweb when I log in"><span></span></label></div>
+        ${foot(true, `<button class="primary" data-wiz="next">Continue</button>`)}`;
+    } else {
+      const list = storeRows.map((st) => `<div><span class="ok">✓</span><div class="grow"><div class="what">${esc(storeTitle(st))}</div><div class="how">${esc(st.site)}${st.error ? "" : " · " + plural(st.apps, "app")}</div></div></div>`).join("");
+      html = `<h1>${storeRows.length ? "Your apps come from" : "Add a store"}</h1>
+        <p>${storeRows.length ? "You can add more stores later, in Stores." : "Apps come from stores. Paste the link a store gave you, or skip this and add one later in Stores."}</p>
+        ${list ? `<div class="stlist">${list}</div>` : `<form class="addstore" id="wizAdd"><input type="text" id="wizLink" placeholder="Paste a store link" aria-label="Store link" autocomplete="off" spellcheck="false"><button>Add store…</button></form>`}
+        ${foot(true, `<button class="primary" data-wiz="done">${storeRows.length ? "See the apps" : "Skip for now"}</button>`)}`;
+    }
+    $("vWelcome").innerHTML = `<div class="wiz">${html}</div>`;
+    const f = $("wizAdd");
+    if (f) f.onsubmit = async (e) => { e.preventDefault(); await addStore($("wizLink").value); render(); };
+    const first = $("vWelcome").querySelector("button.primary"); if (first) first.focus();
+  }
+  function tildeOf(p) { return desk && p === desk.folder ? desk.folderShort : p === wiz.folder && wiz.short || p; }
+  async function wizard(act) {
+    if (act === "next") wiz.step++;
+    else if (act === "back") wiz.step--;
+    else if (act === "pick") { const d = await chooseFolder(); if (d) { wiz.folder = d.path; wiz.short = d.short; } }
+    if (wiz.step === 3 && act === "next") { // leaving the login step: apply it now
+      const want = $("wizLogin") ? $("wizLogin").checked : wiz.login;
+      wiz.login = want;
+      if (want !== desk.login) await deskDo({ login: want });
+    }
+    if (act === "done") {
+      if (wiz.folder && wiz.folder !== desk.folder) { await moveTo(wiz.folder, wiz.short); return; }
+      await deskDo({ welcomed: true });
+      wiz.on = false;
+      location.hash = catalog.length ? "get" : "apps";
+    }
+    render();
+  }
+  document.addEventListener("change", async (e) => {
+    const k = e.target.dataset && e.target.dataset.desk;
+    if (!k) return;
+    const on = e.target.checked;
+    await deskDo({ [k]: on }, k === "login" ? (on ? "myweb starts when you log in." : "myweb won't start at login.") : (on ? "myweb updates install by themselves." : "myweb asks before updating."));
+  });
+
+  // ---- profiles: an app set up for a purpose (its own plugins and documents), offered by the free channels of its
+  // plugin store (the catalog entry's "plugins": a plugdex store's …/hosts/HOST/index.json). Opened as
+  // ?app=ID&profile=URL: the app takes it only from its own store. ----
+  const profileCache = new Map(); // app name → [{ id, title, description, url, channel }] (null while reading)
+  const PROFILE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  async function loadProfiles(a) {
+    const src = a.cat && a.cat.plugins;
+    if (!src || profileCache.has(a.name)) return;
+    profileCache.set(a.name, null);
+    const get = async (u) => { const r = await fetch(u, { cache: "no-cache", referrerPolicy: "no-referrer" }); if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); };
+    const out = new Map();
+    try {
+      const idx = await get(src);
+      if (typeof idx.channels === "string") {
+        const chUrl = new URL(idx.channels, src).href, chans = await get(chUrl);
+        await Promise.all((Array.isArray(chans) ? chans : []).filter((c) => c && !c.premium && typeof c.index === "string").map(async (c) => {
+          try {
+            const cUrl = new URL(c.index, chUrl).href, ci = await get(cUrl);
+            if (typeof ci.profiles !== "string") return;
+            const pUrl = new URL(ci.profiles, cUrl).href;
+            for (const p of await get(pUrl)) {
+              if (p && PROFILE_ID.test(p.id || "") && p.url && (!idx.host || p.host === idx.host) && !out.has(p.id))
+                out.set(p.id, { id: p.id, title: p.appTitle || p.id, description: p.description || "", url: new URL(p.url, pUrl).href, channel: c.name || c.id });
+            }
+          } catch {} // a channel that doesn't answer: its profiles aren't listed now
+        }));
+      }
+    } catch {} // the store unreachable: no profiles listed
+    profileCache.set(a.name, [...out.values()].sort((x, y) => x.title.localeCompare(y.title)));
+    if (out.size) render();
+  }
+  function profileLinks(a) {
+    const profs = profileCache.get(a.name);
+    if (!profs || !profs.length) return "";
+    const more = profs.length - 3;
+    return `<div class="profs">Open as ${profs.slice(0, 3).map((p) => `<button data-open="${esc(a.name)}" data-prof="${esc(p.id)}" title="${esc(p.description || p.title)}" ${authed ? "" : "disabled"}>${esc(p.title)}</button>`).join("")}${more > 0 ? `<a href="#app/${encodeURIComponent(a.name)}">+${more} more</a>` : ""}</div>`;
+  }
+  // the app's address, opened as one of its profiles
+  function withProfile(u, name, id) {
+    const p = (profileCache.get(name) || []).find((x) => x.id === id);
+    if (!p) return u;
+    try { const x = new URL(u); x.search = new URLSearchParams({ app: p.id, profile: p.url, name: p.title }).toString(); x.hash = ""; return x.href; } catch { return u; }
+  }
+
+  // ---- an app's page ----
+  const statusCache = new Map(); // name → /cmd/app's status (notes, installed versions), when this server serves it
+  async function loadStatus(name) {
+    try {
+      const r = await post("/cmd/app", { name });
+      statusCache.set(name, r.ok ? (await r.json()).result : null);
+    } catch { statusCache.set(name, null); }
+    if (route().view === "app" && route().name === name) renderApp(name);
+  }
+
+  function renderApp(name) {
+    const a = find(name), v = $("vApp");
+    if (!a) { v.innerHTML = `<a class="back" href="#apps">← My apps</a><div class="empty">There's no app “${esc(name)}” here.</div>`; return; }
+    if (a.row && !statusCache.has(name)) { statusCache.set(name, undefined); loadStatus(name); }
+    const st = statusCache.get(name), row = a.row, cat = a.cat || {}, off = authed ? "" : "disabled";
+    const back = row ? `<a class="back" href="#apps">← My apps</a>` : `<a class="back" href="#get">← Get apps</a>`;
+    let html = `${back}
+      <div class="app-head">${iconHTML(a, true)}
+        <div class="who"><h1>${esc(title(a))}</h1>
+          <div class="card-meta">${cat.catalog ? "From " + esc(storeName(cat.catalog)) : "Added by its address"}${row && row.current ? " · version " + esc(row.current) : ""}</div>
+          ${cat.description ? `<p>${esc(cat.description)}</p>` : ""}
+          ${(cat.tags || []).length ? `<div class="tags">${cat.tags.map((t) => `<span>${esc(t)}</span>`).join("")}</div>` : ""}
+          <div class="actions">${actionButton(a)}
+            ${row && !row.noKey ? `<button data-check="${esc(name)}" ${off}>Check for updates</button>` : ""}
+            ${cat.homepage ? `<a class="btn" href="${esc(cat.homepage)}" target="_blank" rel="noopener">Website</a>` : ""}</div>
+        </div>
+      </div>`;
+    if (hasUpdate(a)) {
+      html += `<div class="update"><div class="grow"><strong>Version ${esc(row.latest)} is available.</strong>
+        ${st && st.latestNotes ? `<div class="notes" style="margin:4px 0 0">${esc(st.latestNotes)}</div>` : ""}</div>
+        <button class="primary" data-check="${esc(name)}" ${off}>Update now</button></div>`;
+    } else if (row && BUSY.test(row.status || "")) {
+      html += `<div class="update"><span class="spin"></span><div class="grow">${esc(cap(row.status))}</div></div>`;
+    } else if (row && row.status && !QUIET.test(row.status)) {
+      html += `<div class="notice" style="margin-top:20px"><strong>The last update didn't work.</strong> ${esc(row.status)}</div>`;
+    }
+    if ((cat.screenshots || []).length) html += `<h2>Screenshots</h2><div class="shots">${cat.screenshots.map((s) => `<img src="${esc(s)}" alt="" loading="lazy">`).join("")}</div>`;
+    loadProfiles(a);
+    const profs = profileCache.get(name);
+    if (profs && profs.length) {
+      html += `<h2>Profiles</h2><p class="sub" style="margin-top:-4px">${esc(title(a))} set up for a purpose, from its store: its own plugins, and its own documents.</p><div class="box">${profs.map((p) => `
+        <div class="row"><div class="grow"><div class="what">${esc(p.title)}</div><div class="how">${p.description ? esc(p.description) + " · " : ""}${esc(p.channel)} channel</div></div>
+          ${row ? `<button class="small" data-open="${esc(name)}" data-prof="${esc(p.id)}" ${off}>Open</button>` : `<span class="how">Install ${esc(title(a))} to open it</span>`}</div>`).join("")}</div>`;
+    }
+    if (row) {
+      const notes = st && st.notes && st.notes[row.current];
+      if (notes) html += `<h2>What's new in ${esc(row.current)}</h2><div class="box"><div class="notes">${esc(notes)}</div></div>`;
+      html += foldersHTML(row, off) + versionHTML(a, st);
+      if (!row.main) html += `<h2>Remove</h2><div class="box"><div class="row"><div class="grow"><div class="how">Removes the app from this computer. The files it made stay in your files.</div></div>
+        <button class="danger" data-remove="${esc(name)}" ${off}>Remove ${esc(title(a))}…</button></div></div>`;
+    }
+    v.innerHTML = html;
+    if (row) markSeen(name);
+  }
+  const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+  // the installer's status: at work, nothing to say, or else a failure
+  const BUSY = /^(checking|downloading|installing)/i, QUIET = /^(installed|up to date|pinned|updates off|not installed)/i;
+
+  function foldersHTML(row, off) {
+    const granted = new Set((row.grants || []).map((g) => g.path));
+    const list = row.access || [];
+    return `<h2>Folders it can use</h2><div class="box">${list.map((f) => `<div class="row">
+        <div class="grow"><div class="what">${esc(f.path)}</div><div class="how">${f.readOnly ? "Can read the files in it" : "Can read and change the files in it"}${granted.has(f.path) ? "" : " · needed by the app"}</div></div>
+        ${granted.has(f.path) ? `<button class="small" data-deny="${esc(row.name)}" data-folder="${esc(f.path)}" ${off}>Remove</button>` : ""}</div>`).join("")}
+      <div class="row">${list.length ? "" : `<div class="grow how">It uses no folders yet.</div>`}<button class="small" data-allow="${esc(row.name)}" ${off}>Allow another folder…</button></div></div>`;
+  }
+
+  function versionHTML(a, st) {
+    const row = a.row, name = a.name;
+    if (row.noKey) return `<h2>Version</h2><div class="box"><div class="row"><div class="grow">Version ${esc(row.current)}<div class="how">Installed by an older myweb, so it can't be updated. Remove it and install it again to get updates.</div></div></div></div>`;
+    const others = (row.versions || []).filter((x) => x !== row.current);
+    const vOff = !authed || !st ? "disabled" : ""; // choosing a version: /cmd/app, for an app this myweb serves
+    let inner;
+    if (row.pinned) {
+      inner = `<div class="row"><div class="grow">Kept at version ${esc(row.pinned)}<div class="how">It doesn't update until you let it.</div></div>
+        <button class="small" data-use="${esc(name)}" data-version="latest" ${vOff}>Follow updates</button></div>`;
+    } else {
+      inner = `<div class="row"><div class="grow">Version ${esc(row.current)}<div class="how">Updates install by themselves.</div></div></div>`;
+    }
+    if (others.length) inner += `<div class="row"><div class="grow how">Go back to a version still on this computer. It then stays at that version until you choose Follow updates.</div>
+        <select class="versions" id="verSel" aria-label="Version">${others.map((x) => `<option>${esc(x)}</option>`).join("")}</select>
+        <button class="small" data-use="${esc(name)}" ${vOff}>Use this version</button></div>`;
+    if (st === null && (row.pinned || others.length)) inner += `<div class="row how">Choosing a version needs the app to be running in this myweb.</div>`;
+    return `<h2>Version</h2><div class="box">${inner}</div>`;
+  }
+
+  // ---- actions ----
+  async function openApp(name, prof) {
+    // open the window now, while the click still counts, then send it to the app
+    const w = window.open("about:blank", "_blank");
+    const r = await post("/cmd/catalog", { open: name }).catch(() => null);
+    if (r && r.ok) {
+      const u = withProfile(appLink((await r.json()).result.url), name, prof);
+      if (w) w.location.href = u; else location.href = u;
+      return;
+    }
+    if (w) w.close();
+    const row = rows.find((x) => x.name === name);
+    if ((!r || r.status === 404) && row && row.url) { window.open(withProfile(appLink(row.url), name, prof), "_blank"); return; }
+    toast(`Couldn't open ${name}: ${r ? await errText(r) : "myweb isn't answering"}`, true);
+  }
+  // an app's address at the name this page was opened with (on a network, the server's own guess may not be it)
+  function appLink(u) {
+    try { const x = new URL(u); if (!["localhost", "127.0.0.1"].includes(location.hostname)) x.hostname = location.hostname; return x.href; } catch { return u; }
+  }
+
+  async function install(name) {
+    busy.set(name, "install"); render();
+    const r = await post("/cmd/catalog", { install: name }).catch(() => null);
+    busy.delete(name);
+    if (r && r.ok) toast(`${title(find(name) || { name })} is installed.`);
+    else toast(`Couldn't install ${name}: ${r ? await errText(r) : "myweb isn't answering"}`, true);
+    statusCache.delete(name);
+    await load(false);
+  }
+
+  async function appsDo(body, done) {
+    const r = await post("/cmd/apps", body).catch(() => null);
+    if (r && r.ok) { if (done) toast(done); }
+    else toast(r ? await errText(r) : "myweb isn't answering", true);
+    statusCache.delete(body.name);
+    await load(false);
+  }
+
+  async function useVersion(name, version) {
+    const r = await post("/cmd/app", { name, use: version }).catch(() => null);
+    if (r && r.ok) toast(version === "latest" ? `${name} follows updates again.` : `${name} now uses version ${version}.`);
+    else toast(r ? await errText(r) : "myweb isn't answering", true);
+    statusCache.delete(name);
+    await load(false);
+  }
+
+  function ask(titleText, text, ok, danger) {
+    return new Promise((resolve) => {
+      const d = $("dlgAsk");
+      $("askTitle").textContent = titleText; $("askText").textContent = text;
+      $("askYes").textContent = ok; $("askYes").className = "primary" + (danger ? " danger" : "");
+      const done = (v) => { d.close(); $("askYes").onclick = $("askNo").onclick = null; resolve(v); };
+      $("askYes").onclick = () => done(true); $("askNo").onclick = () => done(false);
+      d.oncancel = () => done(false);
+      d.showModal();
+    });
+  }
+
+  // a folder of the data folder, browsed with /ls
+  function pickFolder(appTitle) {
+    return new Promise((resolve) => {
+      const d = $("dlgFolder");
+      $("folderTitle").textContent = `Let ${appTitle} use a folder`;
+      let dir = "/";
+      const show = async () => {
+        const parts = dir.split("/").filter(Boolean);
+        let acc = "", crumbs = `<a href="#" data-dir="/">Your files</a>`;
+        for (const p of parts) { acc += "/" + p; crumbs += ` / <a href="#" data-dir="${esc(acc)}">${esc(p)}</a>`; }
+        $("folderCrumbs").innerHTML = crumbs;
+        $("folderYes").textContent = dir === "/" ? "Allow all your files" : `Allow “${parts[parts.length - 1]}”`;
+        $("folderList").innerHTML = `<div class="empty">Loading…</div>`;
+        try {
+          const r = await fetch("/ls" + dir.split("/").map(encodeURIComponent).join("/"));
+          if (!r.ok) throw new Error(await errText(r));
+          const dirs = (await r.json()).filter((f) => f.isdir && !f.name.startsWith(".")).sort((x, y) => x.name.localeCompare(y.name));
+          $("folderList").innerHTML = dirs.map((f) => `<button type="button" data-dir="${esc((dir === "/" ? "" : dir) + "/" + f.name)}">📁&nbsp; ${esc(f.name)}</button>`).join("") || `<div class="empty">No folders in here.</div>`;
+        } catch (e) { $("folderList").innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+      };
+      const nav = (e) => { const t = e.target.closest("[data-dir]"); if (t) { e.preventDefault(); dir = t.dataset.dir; show(); } };
+      $("folderCrumbs").onclick = nav; $("folderList").onclick = nav;
+      const done = (v) => { d.close(); $("folderYes").onclick = $("folderNo").onclick = null; resolve(v); };
+      $("folderYes").onclick = () => done({ path: dir, write: d.querySelector("input[name=acc]:checked").value === "write" });
+      $("folderNo").onclick = () => done(null);
+      d.oncancel = () => done(null);
+      d.querySelector("input[value=read]").checked = true;
+      show(); d.showModal();
+    });
+  }
+
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("button");
+    if (b && !b.disabled) {
+      const d = b.dataset;
+      if (d.open) { e.stopPropagation(); return openApp(d.open, d.prof); }
+      if (d.install) { e.stopPropagation(); return install(d.install); }
+      if (d.check) return appsDo({ name: d.check, update: true }, `Looking for an update to ${title(find(d.check))}…`);
+      if (d.deny) {
+        if (await ask(`Stop ${title(find(d.deny))} using ${d.folder}?`, "The folder and its files stay; the app just can't open them any more.", "Remove", true))
+          appsDo({ name: d.deny, deny: d.folder }, `${title(find(d.deny))} can no longer use ${d.folder}.`);
+        return;
+      }
+      if (d.allow) {
+        const t = title(find(d.allow)), res = await pickFolder(t);
+        if (res) appsDo({ name: d.allow, allow: res.path, write: res.write }, `${t} may now ${res.write ? "read and change" : "read"} ${res.path === "/" ? "all your files" : res.path}.`);
+        return;
+      }
+      if (d.use) {
+        const v = d.version || $("verSel").value, t = title(find(d.use));
+        if (v === "latest" || await ask(`Go back to version ${v}?`, `${t} will stay at version ${v} until you choose Follow updates.`, "Use this version")) useVersion(d.use, v);
+        return;
+      }
+      if (d.remove) {
+        const t = title(find(d.remove));
+        if (await ask(`Remove ${t}?`, "It's removed from this computer. The files it made stay in your files, and you can install it again any time.", "Remove", true)) {
+          await appsDo({ name: d.remove, remove: true }, `${t} is removed.`);
+          location.hash = "apps";
+        }
+        return;
+      }
+      if (d.unstore) {
+        const st = storeRows.find((x) => x.url === d.unstore) || { site: d.unstore };
+        if (await ask(`Remove ${storeTitle(st)}?`, "Its apps leave Get apps. The ones you installed stay, and keep updating.", "Remove", true)) {
+          const r = await loadStores({ remove: d.unstore });
+          if (r && r.ok) { toast(`${storeTitle(st)} removed.`); await load(false); } else toast(r ? await errText(r) : "myweb isn't answering", true);
+        }
+        return;
+      }
+      if (d.copylink) {
+        try { await navigator.clipboard.writeText(d.copylink); toast("Store link copied."); } catch { toast("Couldn't copy the link.", true); }
+        return;
+      }
+      if (d.wiz) return wizard(d.wiz);
+      if (d.seen) { markSeen(d.seen); return render(); }
+      if (d.restart) return restartMyweb();
+      if (d.deskcheck) return deskDo({ check: true });
+      if (d.show) return deskDo({ show: d.show });
+      if (d.movefolder) {
+        const dir = await chooseFolder();
+        if (dir && dir.path !== desk.folder && await ask("Keep your files in this folder?", `${dir.short}\n\nmyweb starts again there, and opens Home in a new window. Files in the old folder stay where they are; your apps stay installed.`, "Use this folder"))
+          await moveTo(dir.path, dir.short);
+        return;
+      }
+      if (b.id === "refresh") { b.disabled = true; await load(true); b.disabled = false; toast("Up to date with the stores."); return; }
+      return;
+    }
+    const card = e.target.closest(".card[data-app]");
+    if (card) location.hash = "app/" + encodeURIComponent(card.dataset.app);
+  });
+  document.addEventListener("keydown", (e) => {
+    const card = e.target.closest && e.target.closest(".card[data-app]");
+    if (card && e.target === card && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); location.hash = "app/" + encodeURIComponent(card.dataset.app); }
+  });
+  $("q").addEventListener("input", renderGet);
+  $("storeSel").addEventListener("change", renderGet);
+
+  if (!location.hash) history.replaceState(null, "", "#apps");
+  render();
+  signedIn().then(() => load(false));
+  // back from an app's window: what changed meanwhile
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && loaded) load(false); });
+})();
+</script>
+</body>
+</html>

@@ -189,7 +189,8 @@ func TestCatalogLinks(t *testing.T) {
 	r := newRelease(t)
 	catPub, catPriv, _ := ed25519.GenerateKey(rand.Reader)
 	r.putCatalog(t, Catalog{Apps: []CatalogApp{{Name: "demo", Manifest: r.ts.URL + "/stable.json", Key: EncodePublicKey(r.pub),
-		Icon: "img/demo.png", Screenshots: []string{"img/s1.png", "https://cdn.example/s2.png"}, Tags: []string{"graphics"}}}}, catPriv)
+		Icon: "img/demo.png", Screenshots: []string{"img/s1.png", "https://cdn.example/s2.png"}, Tags: []string{"graphics"},
+		Plugins: "store/hosts/demo/index.json"}}}, catPriv)
 	cats := newCatalogs(t)
 	cat, _, err := cats.Fetch(context.Background(), CatalogSource{URL: r.ts.URL + "/apps.json", Key: EncodePublicKey(catPub)}, true)
 	if err != nil {
@@ -199,12 +200,16 @@ func TestCatalogLinks(t *testing.T) {
 	if a.Icon != r.ts.URL+"/img/demo.png" || a.Screenshots[0] != r.ts.URL+"/img/s1.png" || a.Screenshots[1] != "https://cdn.example/s2.png" {
 		t.Fatalf("links: %+v", a)
 	}
+	if a.Plugins != r.ts.URL+"/store/hosts/demo/index.json" {
+		t.Fatalf("plugins: %q", a.Plugins)
+	}
 	key := EncodePublicKey(make([]byte, ed25519.PublicKeySize))
 	for name, a := range map[string]CatalogApp{
 		"javascript icon": {Icon: "javascript:alert(1)"},
 		"data screenshot": {Screenshots: []string{"data:image/png;base64,AAAA"}},
 		"bad tag":         {Tags: []string{"a,b"}},
 		"empty tag":       {Tags: []string{""}},
+		"file plugins":    {Plugins: "file:///etc/x.json"},
 	} {
 		a.Name, a.Manifest, a.Key = "x", "https://x/stable.json", key
 		if err := (&Catalog{Apps: []CatalogApp{a}}).Validate(); err == nil {

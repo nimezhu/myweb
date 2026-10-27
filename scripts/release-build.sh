@@ -12,6 +12,12 @@ out=${2:-dist/release}
 rm -rf "$out"
 mkdir -p "$out"
 ldflags="-s -w -X github.com/nimezhu/myweb/myserver.VERSION=$version"
+# $MYWEB_DEFAULT_STORES: store links (space or newline separated) this build
+# adds to a new home, once (webapp.DefaultStores). Unset: no store.
+if [ -n "${MYWEB_DEFAULT_STORES:-}" ]; then
+	stores=$(printf '%s' "$MYWEB_DEFAULT_STORES" | tr '\n' ' ')
+	ldflags="$ldflags -X 'github.com/nimezhu/myweb/webapp.DefaultStores=$stores'"
+fi
 for platform in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64; do
 	os=${platform%/*}
 	arch=${platform#*/}

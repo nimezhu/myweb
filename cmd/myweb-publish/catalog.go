@@ -26,6 +26,8 @@ import (
 //	myweb-publish catalog remove NAME
 //	myweb-publish catalog sign                      after editing apps.json by hand
 //	myweb-publish catalog list                      check the signature, list the apps
+//	myweb-publish catalog link -url URL [-name N]   the store link users add it with (URL: where
+//	                                                apps.json is online)
 //
 // Every command takes -file apps.json and -key catalog.key (the defaults);
 // the ones that change apps.json sign it again. Upload apps.json and
@@ -33,7 +35,7 @@ import (
 
 func catalogCmd(args []string) error {
 	if len(args) == 0 || strings.HasPrefix(args[0], "-") {
-		return errors.New("usage: myweb-publish catalog init|add|remove|sign|list [flags]")
+		return errors.New("usage: myweb-publish catalog init|add|remove|sign|list|link [flags]")
 	}
 	sub, args := args[0], args[1:]
 	fs := flag.NewFlagSet("catalog "+sub, flag.ExitOnError)
@@ -55,6 +57,7 @@ func catalogCmd(args []string) error {
 		var shots listFlag
 		fs.Var(&shots, "screenshot", "an image of the app (link, may be relative); repeat for more")
 		tags := fs.String("tags", "", "comma-separated, e.g. graphics,editor")
+		plugins := fs.String("plugins", "", "the app's plugin store, for Home to list its profiles (a plugdex store's …/hosts/HOST/index.json)")
 		noCheck := fs.Bool("no-check", false, "don't download the manifest to check its signature")
 		fs.Parse(args)
 		if *manifest == "" || *appKey == "" {
@@ -66,7 +69,7 @@ func catalogCmd(args []string) error {
 				return fmt.Errorf("-app-key: %v", err)
 			}
 			a := webapp.CatalogApp{Name: *name, Title: *title, Description: *desc, Manifest: *manifest,
-				Key: webapp.EncodePublicKey(key), Homepage: *homepage, Icon: *icon, Screenshots: shots}
+				Key: webapp.EncodePublicKey(key), Homepage: *homepage, Icon: *icon, Screenshots: shots, Plugins: *plugins}
 			for _, t := range strings.Split(*tags, ",") {
 				if t = strings.TrimSpace(t); t != "" {
 					a.Tags = append(a.Tags, t)
@@ -102,6 +105,9 @@ func catalogCmd(args []string) error {
 					if len(a.Tags) == 0 {
 						a.Tags = old.Tags
 					}
+					if a.Plugins == "" {
+						a.Plugins = old.Plugins
+					}
 					c.Apps[i] = a
 					fmt.Printf("replaced %s\n", a.Name)
 					return nil
@@ -135,6 +141,11 @@ func catalogCmd(args []string) error {
 	case "list", "ls":
 		fs.Parse(args)
 		return catalogList(*file, *keyFile+".pub")
+	case "link":
+		u := fs.String("url", "", "where apps.json is online, e.g. https://…/apps.json")
+		name := fs.String("name", "", "what to call the store until its catalog is read (default: the catalog's title)")
+		fs.Parse(args)
+		return catalogLink(*file, *keyFile+".pub", *u, *name)
 	}
 	return fmt.Errorf("unknown command \"catalog %s\"", sub)
 }
@@ -165,6 +176,34 @@ func catalogInit(file, keyFile, title string) error {
 	}
 	fmt.Printf("\nupload %s and %s.sig, then users add the catalog with:\n  myweb app catalog add https://…/%s -key %s\n",
 		file, file, filepath.Base(file), strings.TrimSpace(string(pub)))
+	fmt.Printf("or its store link (myweb-publish catalog link -url https://…/%s prints it)\n", filepath.Base(file))
+	return nil
+}
+
+// catalogLink prints the catalog's store link: its address and key in one,
+// for users to paste into myweb (Home ▸ Stores, or myweb app catalog add).
+func catalogLink(file, pubFile, u, name string) error {
+	if u == "" {
+		return errors.New("usage: myweb-publish catalog link -url https://…/apps.json [-name NAME]")
+	}
+	pub, err := os.ReadFile(pubFile)
+	if err != nil {
+		return err
+	}
+	if name == "" {
+		if b, err := os.ReadFile(file); err == nil {
+			var c webapp.Catalog
+			if json.Unmarshal(b, &c) == nil {
+				name = c.Title
+			}
+		}
+	}
+	l, err := webapp.ParseStoreLink(webapp.StoreLink{URL: u, Key: strings.TrimSpace(string(pub)), Name: name}.String())
+	if err != nil {
+		return err
+	}
+	fmt.Println(l)
+	fmt.Fprintf(os.Stderr, "key fingerprint: %s (show it beside the link, so users can compare)\n", webapp.KeyFingerprint(l.Key))
 	return nil
 }
 

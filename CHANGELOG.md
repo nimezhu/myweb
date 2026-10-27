@@ -3,6 +3,42 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## Unreleased
+
+New:
+
+- **Home** (`/_myweb/home.html`): your apps for people who don't want the
+  technical parts. My apps to open them, Get apps to find and install them,
+  and a page per app: screenshots, what's new, the folders it can use, its
+  version, Remove. myweb-desktop opens it when it starts (and when started
+  again) instead of the file manager, and its menu starts with it; the file
+  manager links to it.
+- **Store links**: a store's catalog address and key in one link
+  (`https://…/apps.json#key=…&name=…`). Paste one into Home's new **Stores**
+  page, which shows the store's site, its apps and its key fingerprint
+  before adding it, or `myweb app catalog add LINK`. `myweb app catalog
+  links` prints them; `myweb-publish catalog link -url URL` makes one.
+- A release build can come with stores of its own (`MYWEB_DEFAULT_STORES`
+  when building, or a `stores.txt` beside the program): added to a new home
+  once, and not again once removed.
+- Home's **Settings** (myweb-desktop): the folder your files live in
+  (Change…, Show in Finder/Explorer), start at login, and updates; the file
+  manager, the address and the log under Advanced.
+- A **welcome** on a new install of myweb-desktop: where your files live,
+  start at login, the stores; then the apps. A new install keeps its files
+  in `Documents/myweb` (a home already in use keeps its folder).
+- **myweb-desktop updates itself in the background**: a new release is
+  installed when found and runs from the next start (Restart now in Home or
+  the menu); Settings can turn that off, back to asking first.
+- **A new icon**: a home holding apps, in place of the "M" that looked like
+  a mail app's. The tray, myweb.app, the pages and the installed web app.
+- **Profiles in Home**: a catalog entry may name the app's plugin store
+  (`"plugins"`, `myweb-publish catalog add -plugins URL`); Home then lists the
+  profiles its free channels offer for the app, as "Open as …" quick links on
+  its card and a Profiles section on its page.
+- **Notices in Home**: an app updated (with what's new), an app that couldn't
+  update, a myweb update ready.
+
 ## 0.0.9
 
 Changed:
