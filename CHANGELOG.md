@@ -3,6 +3,15 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## Unreleased
+
+New:
+
+- **The channel in use, in Home**: the channel Home last opened an app with
+  shows on its card and as "In use" in its channel list; a channel joined
+  with a token stays listed (open it again without the token, or Forget it),
+  and its profiles join the app's "Open as" links.
+
 ## 0.0.12
 
 Fixed:

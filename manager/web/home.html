@@ -394,7 +394,7 @@
     $("appsGrid").innerHTML = list.length ? list.map((a) => `
       <div class="card" data-app="${esc(a.name)}" tabindex="0" role="link" aria-label="${esc(title(a))}">
         <div class="card-head">${iconHTML(a)}<div style="min-width:0"><div class="card-title">${esc(title(a))}</div>
-          <div class="card-meta">${hasUpdate(a) ? `<span class="pill warn">Update available</span>` : a.row.current ? "Version " + esc(a.row.current) : ""}</div></div></div>
+          <div class="card-meta">${hasUpdate(a) ? `<span class="pill warn">Update available</span>` : a.row.current ? "Version " + esc(a.row.current) : ""}${joinedOf(a.name) ? ` · ${esc(joinedOf(a.name).name)} channel` : ""}</div></div></div>
         ${profileLinks(a)}
         <div class="card-foot"><span class="grow"></span><button class="primary small" data-open="${esc(a.name)}" ${authed ? "" : "disabled"}>Open</button></div>
       </div>`).join("") : `<div class="empty" style="grid-column:1/-1">No apps yet. <a href="#get">Get apps →</a></div>`;
@@ -669,6 +669,18 @@
   const channelCache = new Map(); // app name → its store's channels: [{ id, name, description, count, premium }]
   const channelsUrlOf = new Map(); // app name → its store's channel list (where a token is checked)
   const PROFILE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
+  // the channel Home last opened each app with: app name → { id, name, token? } (a token: a channel joined with one, so
+  // its profiles can be read). Kept in this browser; the app's own channel menu may have changed it since.
+  const CHANNELS_KEY = "myweb.home.channels";
+  const readJoined = () => { try { return JSON.parse(localStorage.getItem(CHANNELS_KEY) || "{}") || {}; } catch { return {}; } };
+  const joinedOf = (name) => { const c = readJoined()[name]; return c && PROFILE_ID.test(c.id || "") ? c : null; };
+  function setJoined(name, c) {
+    const all = readJoined();
+    if (c) all[name] = c; else delete all[name];
+    try { localStorage.setItem(CHANNELS_KEY, JSON.stringify(all)); } catch {}
+    profileCache.delete(name); // its profiles again: a channel joined with a token has its own
+    const a = find(name); if (a) loadProfiles(a);
+  }
   async function loadProfiles(a) {
     const src = a.cat && a.cat.plugins;
     if (!src || profileCache.has(a.name)) return;
@@ -693,6 +705,20 @@
             }
           } catch {} // a channel that doesn't answer: its profiles aren't listed now
         }));
+        // the channel joined here with a token: read under it
+        const j = joinedOf(a.name);
+        if (j && j.token) {
+          try {
+            const cUrl = new URL(`k/${encodeURIComponent(j.token)}/channels/${encodeURIComponent(j.id)}/index.json`, chUrl).href, ci = await get(cUrl);
+            if (typeof ci.profiles === "string") {
+              const pUrl = new URL(ci.profiles, cUrl).href;
+              for (const p of await get(pUrl)) {
+                if (p && PROFILE_ID.test(p.id || "") && p.url && (!idx.host || p.host === idx.host) && !out.has(p.id))
+                  out.set(p.id, { id: p.id, title: p.appTitle || p.id, description: p.description || "", url: new URL(p.url, pUrl).href, channel: j.name || j.id });
+              }
+            }
+          } catch {} // a token no longer accepted: its profiles aren't listed
+        }
       }
     } catch {} // the store unreachable: no profiles listed
     profileCache.set(a.name, [...out.values()].sort((x, y) => x.title.localeCompare(y.title)));
@@ -709,6 +735,8 @@
   // server (the app drops it at once)
   function linkFor(u, name, { prof, channel, token } = {}) {
     const p = prof && (profileCache.get(name) || []).find((x) => x.id === prof);
+    const j = joinedOf(name);
+    if (channel && !token && j && j.id === channel && j.token) token = j.token;
     const c = channel && (token ? { id: channel } : (channelCache.get(name) || []).find((x) => x.id === channel && !x.premium));
     if (!p && !c) return u;
     try {
@@ -775,13 +803,17 @@
         <div class="row"><div class="grow"><div class="what">${esc(p.title)}</div><div class="how">${p.description ? esc(p.description) + " · " : ""}${esc(p.channel)} channel</div></div>
           ${row ? `<button class="small" data-open="${esc(name)}" data-prof="${esc(p.id)}" ${off}>Open</button>` : `<span class="how">Install ${esc(title(a))} to open it</span>`}</div>`).join("")}</div>`;
     }
-    const chans = channelCache.get(name);
+    const joined = joinedOf(name);
+    let chans = channelCache.get(name);
+    if (chans && joined && joined.token && !chans.some((c) => c.id === joined.id))
+      chans = [...chans, { id: joined.id, name: joined.name || joined.id, description: "joined with your token", count: null, premium: true }];
     if (chans && (chans.length || row)) {
       html += `<h2>Plugin channels</h2><p class="sub" style="margin-top:-4px">The plugins ${esc(title(a))}'s store offers, in sets. Open ${esc(title(a))} reading one of them; its channel menu switches too. A channel that needs a token takes the one its store gave you.</p><div class="box">${chans.map((c) => `
-        <div class="row"><div class="grow"><div class="what">${esc(c.name)}${c.premium ? ` <span class="pill">needs a token</span>` : ""}</div><div class="how">${[c.description, c.count != null ? plural(c.count, "plugin") : ""].filter(Boolean).map(esc).join(" · ")}</div></div>
-          ${!row ? "" : c.premium ? `<span class="how">With its token, below</span>`
+        <div class="row"><div class="grow"><div class="what">${esc(c.name)}${joined && joined.id === c.id ? ` <span class="pill ok" title="The channel Home last opened ${esc(title(a))} with">In use</span>` : c.premium ? ` <span class="pill">needs a token</span>` : ""}</div><div class="how">${[c.description, c.count != null ? plural(c.count, "plugin") : ""].filter(Boolean).map(esc).join(" · ")}</div></div>
+          ${!row ? "" : c.premium && joined && joined.id === c.id && joined.token ? `<div class="tok"><button class="small" data-open="${esc(name)}" data-channel="${esc(c.id)}" ${off}>Open with this channel</button><button class="small" data-forget="${esc(name)}" title="Forget its token in Home (${esc(title(a))} keeps its own)">Forget</button></div>`
+            : c.premium ? `<span class="how">With its token, below</span>`
             : `<button class="small" data-open="${esc(name)}" data-channel="${esc(c.id)}" ${off}>Open with this channel</button>`}</div>`).join("")}
-        ${row ? `<div class="row"><div class="grow"><div class="what">Have a token?</div><div class="how">A store gives a token for a channel of its own, e.g. one you pay for. It stays in ${esc(title(a))}, in this browser.</div></div>
+        ${row ? `<div class="row"><div class="grow"><div class="what">Have a token?</div><div class="how">A store gives a token for a channel of its own, e.g. one you pay for. ${esc(title(a))} and Home keep it in this browser.</div></div>
           <div class="tok"><input type="password" autocomplete="off" spellcheck="false" placeholder="Paste your token" aria-label="Channel token" data-tokenfor="${esc(name)}"><button class="small" data-open="${esc(name)}" data-withtoken="1" ${off}>Join and open</button></div></div>` : ""}</div>`;
     }
     if (row) {
@@ -835,6 +867,10 @@
       if (t.error) { if (w) w.close(); toast(t.error, true); return; }
       how = { channel: t.channel.id, token: how.token };
       toast(`Opening ${title(find(name))} with the channel “${t.channel.name}”…`);
+      setJoined(name, { id: t.channel.id, name: t.channel.name, token: how.token });
+    } else if (how.channel) {
+      const j = joinedOf(name), c = (channelCache.get(name) || []).find((x) => x.id === how.channel);
+      if (!(j && j.id === how.channel)) setJoined(name, { id: how.channel, name: (c && c.name) || how.channel });
     }
     const r = await post("/cmd/catalog", { open: name }).catch(() => null);
     if (r && r.ok) {
@@ -937,6 +973,12 @@
         return openApp(d.open, { prof: d.prof, channel: d.channel });
       }
       if (d.install) { e.stopPropagation(); return install(d.install); }
+      if (d.forget) {
+        const j = joinedOf(d.forget);
+        if (await ask(`Forget the channel “${j ? j.name : ""}” in Home?`, `Home forgets its token, and its profiles. ${title(find(d.forget))} keeps its own copy: leave the channel in its Plugin Manager.`, "Forget", true))
+          setJoined(d.forget, null);
+        return;
+      }
       if (d.check) return appsDo({ name: d.check, update: true }, `Looking for an update to ${title(find(d.check))}…`);
       if (d.deny) {
         if (await ask(`Stop ${title(find(d.deny))} using ${d.folder}?`, "The folder and its files stay; the app just can't open them any more.", "Remove", true))
