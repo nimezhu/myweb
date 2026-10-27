@@ -104,12 +104,13 @@ type CatalogSource struct {
 }
 
 // Catalogs are the catalogs of one myweb home: the list in File, the
-// downloaded copies in Cache (used for an hour, and when offline).
+// downloaded copies in Cache (checked with the server each time they are
+// read, and used as they are when offline).
 type Catalogs struct {
 	File   string // e.g. ~/.myweb/catalogs.json
 	Cache  string // e.g. ~/.myweb/catalogs/
 	Client *http.Client
-	MaxAge time.Duration
+	MaxAge time.Duration // a cached copy younger than this is used without asking (0: always ask)
 }
 
 // Sources is the saved list (none until one is added).
@@ -183,9 +184,11 @@ func (c *Catalogs) save(list []CatalogSource) error {
 }
 
 type cachedCatalog struct {
-	Fetched time.Time `json:"fetched"`
-	Data    []byte    `json:"data"` // apps.json as signed
-	Sig     []byte    `json:"sig"`
+	Fetched      time.Time `json:"fetched"` // when the server last said this is current
+	Data         []byte    `json:"data"`    // apps.json as signed
+	Sig          []byte    `json:"sig"`
+	ETag         string    `json:"etag,omitempty"` // apps.json's validators, to ask if it changed
+	LastModified string    `json:"lastModified,omitempty"`
 }
 
 func (c *Catalogs) cacheFile(u string) string {
@@ -193,9 +196,12 @@ func (c *Catalogs) cacheFile(u string) string {
 	return filepath.Join(c.Cache, hex.EncodeToString(sum[:6])+".json")
 }
 
-// Fetch reads one catalog: the cached copy while it is fresh (unless
-// refresh), else from its URL; offline, the cached copy of any age. Either
-// way the signature is checked. It returns when the copy was fetched.
+// Fetch reads one catalog. It asks the server whether apps.json changed
+// since the cached copy (a conditional GET: an unchanged catalog costs one
+// small request) and downloads it when it did; refresh downloads it anyway,
+// and MaxAge skips asking while the copy is that young. Offline, the cached
+// copy of any age. Either way the signature is checked. It returns when the
+// copy was last known current.
 func (c *Catalogs) Fetch(ctx context.Context, src CatalogSource, refresh bool) (*Catalog, time.Time, error) {
 	if !webURL(src.URL) {
 		return nil, time.Time{}, fmt.Errorf("catalog %s: must be https (http only for localhost)", src.URL)
@@ -204,10 +210,6 @@ func (c *Catalogs) Fetch(ctx context.Context, src CatalogSource, refresh bool) (
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("catalog %s: key: %v", src.URL, err)
 	}
-	maxAge := c.MaxAge
-	if maxAge == 0 {
-		maxAge = time.Hour
-	}
 	var cached *cachedCatalog
 	if b, err := os.ReadFile(c.cacheFile(src.URL)); err == nil {
 		var cc cachedCatalog
@@ -215,29 +217,43 @@ func (c *Catalogs) Fetch(ctx context.Context, src CatalogSource, refresh bool) (
 			cached = &cc
 		}
 	}
-	if cached != nil && !refresh && time.Since(cached.Fetched) < maxAge {
-		if cat, err := parseCatalog(src, cached.Data, cached.Sig, key); err == nil {
-			return cat, cached.Fetched, nil
+	var cat *Catalog
+	if cached != nil {
+		if cat, err = parseCatalog(src, cached.Data, cached.Sig, key); err != nil {
+			cached, cat = nil, nil // not to be trusted, nor asked about: download it
 		}
 	}
-	data, sig, err := c.download(ctx, src.URL)
+	if cached != nil && !refresh && c.MaxAge > 0 && time.Since(cached.Fetched) < c.MaxAge {
+		return cat, cached.Fetched, nil
+	}
+	var since *cachedCatalog
+	if !refresh {
+		since = cached
+	}
+	got, err := c.download(ctx, src.URL, since)
+	if err == nil && got == nil { // not modified
+		cached.Fetched = time.Now().UTC()
+		c.saveCache(src.URL, cached)
+		return cat, cached.Fetched, nil
+	}
 	if err != nil {
 		if cached != nil { // offline: what we had
-			if cat, err2 := parseCatalog(src, cached.Data, cached.Sig, key); err2 == nil {
-				return cat, cached.Fetched, nil
-			}
+			return cat, cached.Fetched, nil
 		}
 		return nil, time.Time{}, fmt.Errorf("catalog %s: %v", src.URL, err)
 	}
-	cat, err := parseCatalog(src, data, sig, key)
-	if err != nil {
+	if cat, err = parseCatalog(src, got.Data, got.Sig, key); err != nil {
 		return nil, time.Time{}, err
 	}
-	now := time.Now().UTC()
-	if b, err := json.Marshal(cachedCatalog{now, data, sig}); err == nil && os.MkdirAll(c.Cache, 0o755) == nil {
-		os.WriteFile(c.cacheFile(src.URL), b, 0o644)
+	got.Fetched = time.Now().UTC()
+	c.saveCache(src.URL, got)
+	return cat, got.Fetched, nil
+}
+
+func (c *Catalogs) saveCache(u string, cc *cachedCatalog) {
+	if b, err := json.Marshal(cc); err == nil && os.MkdirAll(c.Cache, 0o755) == nil {
+		os.WriteFile(c.cacheFile(u), b, 0o644)
 	}
-	return cat, now, nil
 }
 
 func parseCatalog(src CatalogSource, data, sig []byte, key ed25519.PublicKey) (*Catalog, error) {
@@ -269,17 +285,34 @@ func parseCatalog(src CatalogSource, data, sig []byte, key ed25519.PublicKey) (*
 	return &cat, nil
 }
 
-func (c *Catalogs) download(ctx context.Context, u string) (data, sig []byte, err error) {
-	if data, err = c.get(ctx, u); err != nil {
-		return nil, nil, err
+// download gets apps.json and its signature — nil, nil when since (a cached
+// copy) is still what the server has.
+func (c *Catalogs) download(ctx context.Context, u string, since *cachedCatalog) (*cachedCatalog, error) {
+	got := &cachedCatalog{}
+	resp, err := c.get(ctx, u, since)
+	if err != nil {
+		return nil, err
 	}
-	if sig, err = c.get(ctx, u+".sig"); err != nil {
-		return nil, nil, fmt.Errorf("signature: %v", err)
+	if resp == nil {
+		return nil, nil
 	}
-	return data, sig, nil
+	got.ETag, got.LastModified = resp.Header.Get("ETag"), resp.Header.Get("Last-Modified")
+	if got.Data, err = readBody(resp); err != nil {
+		return nil, err
+	}
+	sresp, err := c.get(ctx, u+".sig", nil)
+	if err == nil {
+		got.Sig, err = readBody(sresp)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("signature: %v", err)
+	}
+	return got, nil
 }
 
-func (c *Catalogs) get(ctx context.Context, u string) ([]byte, error) {
+// get is a GET of u, conditional on since's validators; nil, nil when the
+// server answers 304 Not Modified. The caller reads (and closes) the body.
+func (c *Catalogs) get(ctx context.Context, u string, since *cachedCatalog) (*http.Response, error) {
 	client := c.Client
 	if client == nil {
 		client = &http.Client{Timeout: 20 * time.Second}
@@ -288,14 +321,31 @@ func (c *Catalogs) get(ctx context.Context, u string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if since != nil {
+		if since.ETag != "" {
+			req.Header.Set("If-None-Match", since.ETag)
+		}
+		if since.LastModified != "" {
+			req.Header.Set("If-Modified-Since", since.LastModified)
+		}
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	if since != nil && (since.ETag != "" || since.LastModified != "") && resp.StatusCode == http.StatusNotModified {
+		resp.Body.Close()
+		return nil, nil
+	}
 	if resp.StatusCode != http.StatusOK {
+		resp.Body.Close()
 		return nil, fmt.Errorf("%s: %s", u, resp.Status)
 	}
+	return resp, nil
+}
+
+func readBody(resp *http.Response) ([]byte, error) {
+	defer resp.Body.Close()
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20+1))
 	if err == nil && len(b) > 4<<20 {
 		err = errors.New("larger than 4 MiB")

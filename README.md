@@ -379,7 +379,8 @@ opens. An installed app is served by the running myweb right away; with
 in `~/.myweb/logs`).
 
 myweb reads the catalogs you add, none until then: `myweb app catalog add URL
--key KEY` (`remove URL` drops one). Catalogs are cached for an hour and used offline.
+-key KEY` (`remove URL` drops one). A catalog is checked with its server each time it is read (an unchanged one
+is not downloaded again) and its last copy is used offline.
 
 Publishing a catalog:
 

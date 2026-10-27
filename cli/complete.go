@@ -88,7 +88,9 @@ func completions(spec Spec, words []string) []string {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		list, _ := catalogsFor(dirs).Apps(ctx, false)
+		cats := catalogsFor(dirs)
+		cats.MaxAge = time.Hour // a tab press doesn't wait on the network for a recent copy
+		list, _ := cats.Apps(ctx, false)
 		var names []string
 		for _, a := range list {
 			names = append(names, a.Name)

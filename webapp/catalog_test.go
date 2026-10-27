@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // putCatalog publishes apps.json on the release server, signed with priv.
@@ -96,6 +97,41 @@ func TestCatalog(t *testing.T) {
 	os.WriteFile(files[0], []byte(strings.Replace(string(b), `"data":"`, `"data":"AAAA`, 1)), 0o644)
 	if _, _, err := cats.Fetch(ctx, src, false); err == nil {
 		t.Fatal("a tampered cache was accepted")
+	}
+}
+
+// A catalog is checked with the server each time it is read: a change shows
+// at once, an unchanged one is not downloaded again.
+func TestCatalogRevalidate(t *testing.T) {
+	r := newRelease(t)
+	catPub, catPriv, _ := ed25519.GenerateKey(rand.Reader)
+	one := CatalogApp{Name: "one", Manifest: r.ts.URL + "/stable.json", Key: EncodePublicKey(r.pub)}
+	two := CatalogApp{Name: "two", Manifest: r.ts.URL + "/stable.json", Key: EncodePublicKey(r.pub)}
+	r.putCatalog(t, Catalog{Apps: []CatalogApp{one}}, catPriv)
+	src := CatalogSource{URL: r.ts.URL + "/apps.json", Key: EncodePublicKey(catPub)}
+	cats := newCatalogs(t)
+	ctx := context.Background()
+	if _, err := cats.Add(ctx, src); err != nil {
+		t.Fatal(err)
+	}
+	sent := func() int { r.mu.Lock(); defer r.mu.Unlock(); return r.sent["/apps.json"] }
+	before := sent()
+	if apps, errs := cats.Apps(ctx, false); len(errs) != 0 || len(apps) != 1 || sent() != before {
+		t.Fatalf("unchanged: %v %v, downloaded %d times", apps, errs, sent()-before)
+	}
+
+	r.putCatalog(t, Catalog{Apps: []CatalogApp{one, two}}, catPriv)
+	if apps, _ := cats.Apps(ctx, false); len(apps) != 2 || sent() != before+1 {
+		t.Fatalf("changed on the server: %v, downloaded %d times", apps, sent()-before)
+	}
+	// MaxAge: a young copy is used without asking
+	r.putCatalog(t, Catalog{Apps: []CatalogApp{one}}, catPriv)
+	cats.MaxAge = time.Hour
+	if apps, _ := cats.Apps(ctx, false); len(apps) != 2 {
+		t.Fatalf("MaxAge: %v", apps)
+	}
+	if apps, _ := cats.Apps(ctx, true); len(apps) != 1 {
+		t.Fatalf("refresh: %v", apps)
 	}
 }
 

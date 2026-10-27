@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -30,11 +31,12 @@ type release struct {
 	list  Versions             // what publish has put up, signed as stable.versions.json
 	sign  []ed25519.PrivateKey // keys that sign; just priv when empty
 	down  bool
+	sent  map[string]int // full (200) responses, by path
 }
 
 func newRelease(t *testing.T) *release {
 	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
-	r := &release{files: map[string][]byte{}, priv: priv, pub: pub}
+	r := &release{files: map[string][]byte{}, priv: priv, pub: pub, sent: map[string]int{}}
 	r.ts = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		r.mu.Lock()
 		defer r.mu.Unlock()
@@ -43,6 +45,13 @@ func newRelease(t *testing.T) *release {
 			http.NotFound(w, req)
 			return
 		}
+		etag := fmt.Sprintf(`"%x"`, sha256.Sum256(b))
+		w.Header().Set("ETag", etag)
+		if req.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		r.sent[req.URL.Path]++
 		w.Write(b)
 	}))
 	t.Cleanup(r.ts.Close)
