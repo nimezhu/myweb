@@ -3,6 +3,14 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## Unreleased
+
+Changed:
+
+- `-web DIR` serves only that app: the other installed apps are no longer
+  served beside it on ports of their own unless you add `-other-apps` (or set
+  it in the config). `-app` and `-web-from` serve them as before.
+
 ## 0.0.6
 
 New:

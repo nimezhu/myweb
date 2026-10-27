@@ -89,6 +89,13 @@ func (c config) apply(fs *flag.FlagSet, file string) error {
 	return nil
 }
 
+// flagSet reports whether the command line or the config set the flag.
+func flagSet(fs *flag.FlagSet, name string) bool {
+	set := false
+	fs.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
+}
+
 func checkKey(fs *flag.FlagSet, k string) error {
 	if notInConfig[k] {
 		return fmt.Errorf("%q can't be set in the config", k)

@@ -137,7 +137,7 @@ tools, from the same releases (from 0.0.4 on; `version` prints theirs).
 | `-no-tui` | | plain log output |
 | `-no-open` | | don't open the browser on start |
 | `-new` | | start another copy even if one already serves this folder and app |
-| `-other-apps` | true | also serve the other installed apps, each on a port of its own |
+| `-other-apps` | true (false with `-web`) | also serve the other installed apps, each on a port of its own |
 | `-no-upgrade-check` | | don't look for a newer myweb release (checked once a day) |
 | `-v`, `-version` | | print the version |
 
@@ -358,7 +358,8 @@ The terminal and `myweb status` show them; `myweb open rx-graphic` opens one,
 and apps installed or removed while myweb runs are served or dropped right
 away. Each app is a separate site to the browser, limited to its own folders,
 so apps can't reach each other's data. `-other-apps=false` serves only the
-app at `/`.
+app at `/` — the default with `-web DIR` (a local build you're working on);
+`-web DIR -other-apps` serves the others too.
 
 ### App catalogs: install by name
 

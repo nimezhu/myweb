@@ -99,7 +99,7 @@ func newServeFlags(spec Spec) (*flag.FlagSet, *serveFlags) {
 	f.version = fs.Bool("version", false, "print version and exit")
 	fs.BoolVar(f.version, "v", false, "print version and exit (shorthand)")
 	f.webFlags = webapp.AddFlags(fs)
-	f.otherApps = fs.Bool("other-apps", true, "also serve the other installed apps, each on a port of its own (on;\n-other-apps=false serves only the app at /)")
+	f.otherApps = fs.Bool("other-apps", true, "also serve the other installed apps, each on a port of its own (on;\noff with -web, a local build, unless given; -other-apps=false serves only the app at /)")
 	fs.Usage = func() { fmt.Fprintf(fs.Output(), "run '%s -h' for help\n", name) }
 	return fs, f
 }
@@ -155,6 +155,9 @@ func Serve(spec Spec) int {
 	}
 	if *web != "" && (webFlags.From != "" || webFlags.App != "") {
 		return fail(fmt.Errorf("use -web, -web-from or -app, not several"))
+	}
+	if *web != "" && !flagSet(fs, "other-apps") {
+		*f.otherApps = false // a local build at /: just it, unless -other-apps says otherwise
 	}
 
 	if (*f.certFile == "") != (*f.keyFile == "") {
