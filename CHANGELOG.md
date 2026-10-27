@@ -3,6 +3,15 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## 0.0.8
+
+Changed:
+
+- App catalogs are checked with their server each time they are read (the
+  manager page, `myweb app catalog`, `app install`), so an app added to a
+  catalog shows up at once instead of after up to an hour. An unchanged
+  catalog isn't downloaded again; offline, the last copy is used as before.
+
 ## 0.0.7
 
 Changes to know before upgrading:
