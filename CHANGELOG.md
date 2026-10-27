@@ -3,7 +3,7 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
-## Unreleased
+## 0.0.9
 
 Changed:
 
