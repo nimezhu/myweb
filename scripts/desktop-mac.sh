@@ -12,9 +12,20 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$out"
 ldflags="-s -w -X github.com/nimezhu/myweb/myserver.VERSION=$version"
+# the oldest macOS it runs on (Go's own minimum, and Info.plist's below):
+# without it the cgo parts target the building Mac's macOS, and older Macs
+# refuse the app ("can't use this version of the application")
+minos=11.0
+export MACOSX_DEPLOYMENT_TARGET=$minos
+export CGO_CFLAGS="-mmacosx-version-min=$minos" CGO_LDFLAGS="-mmacosx-version-min=$minos"
 for arch in arm64 amd64; do
 	CGO_ENABLED=1 GOOS=darwin GOARCH=$arch go build -trimpath -ldflags "$ldflags" \
 		-o "$work/myweb-desktop-$arch" ./cmd/myweb-desktop
+	got=$(otool -l "$work/myweb-desktop-$arch" | awk '$1 == "minos" { print $2; exit }')
+	if [ "$got" != "$minos" ]; then
+		echo "myweb-desktop ($arch) needs macOS $got, not $minos" >&2
+		exit 1
+	fi
 done
 
 app=$work/myweb.app
@@ -44,7 +55,7 @@ cat > "$app/Contents/Info.plist" <<EOF
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>$version</string>
 	<key>CFBundleVersion</key><string>$version</string>
-	<key>LSMinimumSystemVersion</key><string>11.0</string>
+	<key>LSMinimumSystemVersion</key><string>$minos</string>
 	<key>LSUIElement</key><true/>
 	<key>NSHighResolutionCapable</key><true/>
 </dict>

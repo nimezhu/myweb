@@ -3,6 +3,14 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## 0.0.12
+
+Fixed:
+
+- **myweb.app runs on macOS 11 and later again**: it was built for the
+  macOS of the Mac that built it (macOS 26), so older Macs refused it with
+  "You can't use this version of the application". The build now checks it.
+
 ## 0.0.11
 
 New:
