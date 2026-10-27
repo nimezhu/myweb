@@ -29,7 +29,7 @@ import (
 // defaultVersion.
 var VERSION = defaultVersion
 
-const defaultVersion = "0.0.10"
+const defaultVersion = "0.0.11"
 
 // releaseTag matches a tag like v0.0.2 or v1.2.0-beta.1, not the
 // pseudo-versions Go gives untagged builds (v0.0.0-20261023…-170f780bd079).
