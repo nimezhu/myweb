@@ -434,8 +434,10 @@ An app with a plugin store (`-plugins`: a plugdex store's
 purpose, offered by the store's free channels. Home lists them on the app's
 card ("Open as …") and page, and opens the app as one with
 `?app=ID&profile=URL&name=TITLE`. The app's page also lists the store's
-plugin channels, and opens the app reading a free one (`?channel=ID`). Apps
-built on rx-substrate take such links only for their own store.
+plugin channels, and opens the app reading a free one (`?channel=ID`); **Have a
+token?** joins a channel the store gave you a token for (the token goes in the
+link's `#` part, which isn't sent to any server). Apps built on rx-substrate
+take such links only for their own store.
 
 ## Network drive (WebDAV)
 

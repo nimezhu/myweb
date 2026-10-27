@@ -3,6 +3,14 @@
 Each release's section here is its notes on GitHub, and what `myweb upgrade`
 prints after installing it.
 
+## Unreleased
+
+New:
+
+- **Join a channel with a token in Home**: an app's page takes a token a store
+  gave you ("Have a token?"), checks it with the store, and opens the app on
+  that channel, as joining it in the app's Plugin Manager would.
+
 ## 0.0.10
 
 New:
