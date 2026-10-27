@@ -663,6 +663,7 @@
   // plugin store (the catalog entry's "plugins": a plugdex store's …/hosts/HOST/index.json). Opened as
   // ?app=ID&profile=URL: the app takes it only from its own store. ----
   const profileCache = new Map(); // app name → [{ id, title, description, url, channel }] (null while reading)
+  const channelCache = new Map(); // app name → its store's channels: [{ id, name, description, count, premium }]
   const PROFILE_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
   async function loadProfiles(a) {
     const src = a.cat && a.cat.plugins;
@@ -674,6 +675,8 @@
       const idx = await get(src);
       if (typeof idx.channels === "string") {
         const chUrl = new URL(idx.channels, src).href, chans = await get(chUrl);
+        channelCache.set(a.name, (Array.isArray(chans) ? chans : []).filter((c) => c && PROFILE_ID.test(c.id || ""))
+          .map((c) => ({ id: c.id, name: c.name || c.id, description: c.description || "", count: typeof c.count === "number" ? c.count : null, premium: !!c.premium })));
         await Promise.all((Array.isArray(chans) ? chans : []).filter((c) => c && !c.premium && typeof c.index === "string").map(async (c) => {
           try {
             const cUrl = new URL(c.index, chUrl).href, ci = await get(cUrl);
@@ -688,7 +691,7 @@
       }
     } catch {} // the store unreachable: no profiles listed
     profileCache.set(a.name, [...out.values()].sort((x, y) => x.title.localeCompare(y.title)));
-    if (out.size) render();
+    if (out.size || (channelCache.get(a.name) || []).length) render();
   }
   function profileLinks(a) {
     const profs = profileCache.get(a.name);
@@ -696,11 +699,16 @@
     const more = profs.length - 3;
     return `<div class="profs">Open as ${profs.slice(0, 3).map((p) => `<button data-open="${esc(a.name)}" data-prof="${esc(p.id)}" title="${esc(p.description || p.title)}" ${authed ? "" : "disabled"}>${esc(p.title)}</button>`).join("")}${more > 0 ? `<a href="#app/${encodeURIComponent(a.name)}">+${more} more</a>` : ""}</div>`;
   }
-  // the app's address, opened as one of its profiles
-  function withProfile(u, name, id) {
-    const p = (profileCache.get(name) || []).find((x) => x.id === id);
-    if (!p) return u;
-    try { const x = new URL(u); x.search = new URLSearchParams({ app: p.id, profile: p.url, name: p.title }).toString(); x.hash = ""; return x.href; } catch { return u; }
+  // the app's address, opened as one of its profiles (prof) or reading one of its store's channels (channel)
+  function linkFor(u, name, { prof, channel } = {}) {
+    const p = prof && (profileCache.get(name) || []).find((x) => x.id === prof);
+    const c = channel && (channelCache.get(name) || []).find((x) => x.id === channel && !x.premium);
+    if (!p && !c) return u;
+    try {
+      const x = new URL(u);
+      x.search = new URLSearchParams(p ? { app: p.id, profile: p.url, name: p.title } : { channel: c.id }).toString(); x.hash = "";
+      return x.href;
+    } catch { return u; }
   }
 
   // ---- an app's page ----
@@ -747,6 +755,12 @@
         <div class="row"><div class="grow"><div class="what">${esc(p.title)}</div><div class="how">${p.description ? esc(p.description) + " · " : ""}${esc(p.channel)} channel</div></div>
           ${row ? `<button class="small" data-open="${esc(name)}" data-prof="${esc(p.id)}" ${off}>Open</button>` : `<span class="how">Install ${esc(title(a))} to open it</span>`}</div>`).join("")}</div>`;
     }
+    const chans = channelCache.get(name);
+    if (chans && chans.length) {
+      html += `<h2>Plugin channels</h2><p class="sub" style="margin-top:-4px">The plugins ${esc(title(a))}'s store offers, in sets. Open ${esc(title(a))} reading one of them; its channel menu switches too.</p><div class="box">${chans.map((c) => `
+        <div class="row"><div class="grow"><div class="what">${esc(c.name)}${c.premium ? ` <span class="pill">needs a token</span>` : ""}</div><div class="how">${[c.description, c.count != null ? plural(c.count, "plugin") : ""].filter(Boolean).map(esc).join(" · ")}</div></div>
+          ${c.premium ? `<span class="how">Join it in ${esc(title(a))}'s Plugin Manager</span>` : row ? `<button class="small" data-open="${esc(name)}" data-channel="${esc(c.id)}" ${off}>Open with this channel</button>` : ""}</div>`).join("")}</div>`;
+    }
     if (row) {
       const notes = st && st.notes && st.notes[row.current];
       if (notes) html += `<h2>What's new in ${esc(row.current)}</h2><div class="box"><div class="notes">${esc(notes)}</div></div>`;
@@ -790,18 +804,18 @@
   }
 
   // ---- actions ----
-  async function openApp(name, prof) {
+  async function openApp(name, how) {
     // open the window now, while the click still counts, then send it to the app
     const w = window.open("about:blank", "_blank");
     const r = await post("/cmd/catalog", { open: name }).catch(() => null);
     if (r && r.ok) {
-      const u = withProfile(appLink((await r.json()).result.url), name, prof);
+      const u = linkFor(appLink((await r.json()).result.url), name, how);
       if (w) w.location.href = u; else location.href = u;
       return;
     }
     if (w) w.close();
     const row = rows.find((x) => x.name === name);
-    if ((!r || r.status === 404) && row && row.url) { window.open(withProfile(appLink(row.url), name, prof), "_blank"); return; }
+    if ((!r || r.status === 404) && row && row.url) { window.open(linkFor(appLink(row.url), name, how), "_blank"); return; }
     toast(`Couldn't open ${name}: ${r ? await errText(r) : "myweb isn't answering"}`, true);
   }
   // an app's address at the name this page was opened with (on a network, the server's own guess may not be it)
@@ -882,7 +896,7 @@
     const b = e.target.closest("button");
     if (b && !b.disabled) {
       const d = b.dataset;
-      if (d.open) { e.stopPropagation(); return openApp(d.open, d.prof); }
+      if (d.open) { e.stopPropagation(); return openApp(d.open, { prof: d.prof, channel: d.channel }); }
       if (d.install) { e.stopPropagation(); return install(d.install); }
       if (d.check) return appsDo({ name: d.check, update: true }, `Looking for an update to ${title(find(d.check))}…`);
       if (d.deny) {

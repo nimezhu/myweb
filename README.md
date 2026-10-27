@@ -433,8 +433,9 @@ An app with a plugin store (`-plugins`: a plugdex store's
 `…/hosts/HOST/index.json`) may have **profiles**: the app set up for a
 purpose, offered by the store's free channels. Home lists them on the app's
 card ("Open as …") and page, and opens the app as one with
-`?app=ID&profile=URL&name=TITLE`. Apps built on rx-substrate take such a link
-only from their own store.
+`?app=ID&profile=URL&name=TITLE`. The app's page also lists the store's
+plugin channels, and opens the app reading a free one (`?channel=ID`). Apps
+built on rx-substrate take such links only for their own store.
 
 ## Network drive (WebDAV)
 

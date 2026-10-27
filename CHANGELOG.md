@@ -35,7 +35,8 @@ New:
 - **Profiles in Home**: a catalog entry may name the app's plugin store
   (`"plugins"`, `myweb-publish catalog add -plugins URL`); Home then lists the
   profiles its free channels offer for the app, as "Open as …" quick links on
-  its card and a Profiles section on its page.
+  its card and a Profiles section on its page; the page also lists the store's
+  plugin channels, with "Open with this channel" for a free one.
 - **Notices in Home**: an app updated (with what's new), an app that couldn't
   update, a myweb update ready.
 
